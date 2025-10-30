@@ -1,0 +1,56 @@
+# Environment variables
+# Never commit secrets or local environment configurations.
+.env
+
+# Python / Django
+# ----------------
+# Virtual environment
+/venv/
+
+# Compiled Python files and cache
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local database files
+*.sqlite3
+db.sqlite3
+db_warehouse.sqlite3
+
+# Frontend / Node.js
+# --------------------
+# Dependencies
+/frontend/node_modules/
+
+# Build output
+/frontend/dist/
+
+# Cache and logs
+/frontend/.eslintcache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local Database Instances
+# ------------------------
+# Embedded PostgreSQL instance data and AI vector database
+/pgdata/
+/pgsql/
+/chroma_db/
+/backend/embedded_db/
+
+# Logs & Temporary Files
+# ----------------------
+*.log
+*.tmp
+pg.log
+backend_patch.tmp
+temp.txt
+
+# IDE & Editor Configuration
+# --------------------------
+.idea/
+.vscode/
+*.swp
+*.swo

@@ -1,0 +1,183 @@
+
+# Create Docker Compose configuration for complete TWIST ERP stack
+
+docker_compose = """version: '3.8'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: twist_erp_db
+    environment:
+      POSTGRES_DB: twist_erp_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-dev_password}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "54322:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - twist_network
+    restart: unless-stopped
+
+  # Redis for Caching and Celery
+  redis:
+    image: redis:7-alpine
+    container_name: twist_erp_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - twist_network
+    restart: unless-stopped
+
+  # Django Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: twist_erp_backend
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py collectstatic --noinput &&
+             gunicorn core.wsgi:application --bind 0.0.0.0:8000 --workers 4 --timeout 120"
+    volumes:
+      - ./backend:/app
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:${DB_PASSWORD:-dev_password}@db:5432/twist_erp_db
+      - REDIS_URL=redis://redis:6379/0
+      - DEBUG=False
+      - SECRET_KEY=${SECRET_KEY}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1}
+    depends_on:
+      - db
+      - redis
+    networks:
+      - twist_network
+    restart: unless-stopped
+
+  # Celery Worker
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: twist_erp_celery
+    command: celery -A core worker -l info --concurrency=4
+    volumes:
+      - ./backend:/app
+      - media_volume:/app/media
+    environment:
+      - DATABASE_URL=postgresql://postgres:${DB_PASSWORD:-dev_password}@db:5432/twist_erp_db
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+    networks:
+      - twist_network
+    restart: unless-stopped
+
+  # Celery Beat (Scheduler)
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: twist_erp_celery_beat
+    command: celery -A core beat -l info
+    volumes:
+      - ./backend:/app
+    environment:
+      - DATABASE_URL=postgresql://postgres:${DB_PASSWORD:-dev_password}@db:5432/twist_erp_db
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+    networks:
+      - twist_network
+    restart: unless-stopped
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: twist_erp_frontend
+    ports:
+      - "3000:80"
+    volumes:
+      - ./frontend/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+    networks:
+      - twist_network
+    restart: unless-stopped
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: twist_erp_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - static_volume:/static
+      - media_volume:/media
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - twist_network
+    restart: unless-stopped
+
+  # Rasa AI Server (Phase 5)
+  rasa:
+    image: rasa/rasa:3.6.13
+    container_name: twist_erp_rasa
+    ports:
+      - "5005:5005"
+    volumes:
+      - ./backend/apps/ai_companion/rasa:/app
+    command: >
+      run --enable-api --cors "*" --debug
+    networks:
+      - twist_network
+    restart: unless-stopped
+
+  # ChromaDB for Vector Storage (Phase 5)
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: twist_erp_chromadb
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      - ALLOW_RESET=TRUE
+    networks:
+      - twist_network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  static_volume:
+  media_volume:
+  chroma_data:
+
+networks:
+  twist_network:
+    driver: bridge
+"""
+
+with open('docker-compose.yml', 'w') as f:
+    f.write(docker_compose)
+
+print("✓ Created docker-compose.yml")

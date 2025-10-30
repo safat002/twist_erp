@@ -1,0 +1,53 @@
+﻿{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+  <div class="twist-admin-dashboard">
+    <section class="twist-summary">
+      <div class="twist-card">
+        <div class="twist-card__title">Applications</div>
+        <div class="twist-card__value">{{ app_list|length }}</div>
+        <div class="twist-card__hint">Registered modules inside your Twist workspace.</div>
+      </div>
+      <div class="twist-card">
+        <div class="twist-card__title">Recent activity</div>
+        <div class="twist-card__value">{% if user_log %}{{ user_log|length }}{% else %}0{% endif %}</div>
+        <div class="twist-card__hint">Latest actions recorded in the control centre.</div>
+      </div>
+      <div class="twist-card">
+        <div class="twist-card__title">Quick actions</div>
+        <div class="twist-card__hint">
+          <a href="{% url 'admin:password_change' %}">Update password</a> &middot;
+          <a href="{% url 'admin:logout' %}">Sign out</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="twist-app-grid">
+      {% if app_list %}
+        {% for app in app_list %}
+          <div class="twist-app">
+            <h3>{{ app.name }}</h3>
+            <ul>
+              {% for model in app.models %}
+                <li>
+                  {% if model.admin_url %}
+                    <a href="{{ model.admin_url }}">{{ model.name }}</a>
+                  {% else %}
+                    <span>{{ model.name }}</span>
+                  {% endif %}
+                </li>
+              {% endfor %}
+            </ul>
+          </div>
+        {% endfor %}
+      {% else %}
+        <p>{% translate "You don’t have permission to view or edit anything." %}</p>
+      {% endif %}
+    </section>
+
+    {% block sidebar %}
+      {{ block.super }}
+    {% endblock %}
+  </div>
+{% endblock %}

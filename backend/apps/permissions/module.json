@@ -1,0 +1,6 @@
+{
+    "name": "Permissions",
+    "entryPoint": "apps.permissions",
+    "version": "1.0.0",
+    "description": "Manages roles, permissions, and access control."
+}

@@ -1,0 +1,80 @@
+{% extends "admin/base.html" %}
+{% load static %}
+
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | TWIST ERP{% endblock %}
+
+{% block branding %}
+<h1>
+    <a href="{% url 'admin:index' %}">
+        <img src="" alt="TWIST ERP" height="30"> 
+        TWIST ERP
+    </a>
+</h1>
+{% endblock %}
+
+{% block userlinks %}
+<div style="display: flex; align-items: center; gap: 15px;">
+    {% if user.is_authenticated and show_company_selector %}
+        <div class="company-selector">
+            <select id="company-switch" style="padding: 5px 10px; border-radius: 4px;">
+                {% for company in companies %}
+                    <option value="{{ company.id }}" {% if company == current_company %}selected{% endif %}>
+                        {{ company.name }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+    {% endif %}
+    {{ block.super }}
+</div>
+{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+#header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+#branding h1 a {
+    color: white;
+}
+.module h2, .module caption {
+    background: #667eea;
+}
+a:link, a:visited {
+    color: #667eea;
+}
+.button, input[type=submit], input[type=button], .submit-row input {
+    background: #667eea;
+    border: none;
+}
+.button:hover, input[type=submit]:hover {
+    background: #764ba2;
+}
+</style>
+{% endblock %}
+
+{% block extrahead %}
+{{ block.super }}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const companySwitch = document.getElementById('company-switch');
+    if (companySwitch) {
+        companySwitch.addEventListener('change', function() {
+            const companyId = this.value;
+            // Set company in session and reload
+            fetch('/api/v1/set-company/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify({ company_id: companyId })
+            }).then(() => {
+                window.location.reload();
+            });
+        });
+    }
+});
+</script>
+{% endblock %}

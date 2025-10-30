@@ -1,0 +1,24 @@
+[
+  {
+    "model": "companies.company",
+    "pk": 1,
+    "fields": {
+      "code": "DEMO",
+      "name": "Demo Company",
+      "legal_name": "Demo Company Limited",
+      "parent_company": null,
+      "currency_code": "BDT",
+      "fiscal_year_start": "2024-01-01",
+      "tax_id": "DEMO-TAX-001",
+      "registration_number": "REG-DEMO-001",
+      "settings": {
+        "timezone": "Asia/Dhaka",
+        "date_format": "DD-MM-YYYY",
+        "decimal_places": 2
+      },
+      "is_active": true,
+      "created_at": "2025-10-23T12:00:00Z",
+      "updated_at": "2025-10-23T12:00:00Z"
+    }
+  }
+]

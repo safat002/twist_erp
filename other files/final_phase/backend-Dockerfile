@@ -1,0 +1,44 @@
+FROM python:3.10-slim
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Set work directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    build-essential \
+    libpq-dev \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY requirements.txt /app/
+COPY phase4-6-requirements.txt /app/
+RUN pip install --upgrade pip && \
+    pip install -r requirements.txt && \
+    pip install -r phase4-6-requirements.txt
+
+# Download spaCy model
+RUN python -m spacy download en_core_web_sm
+
+# Copy project
+COPY . /app/
+
+# Create directories
+RUN mkdir -p /app/media /app/staticfiles /app/logs
+
+# Collect static files
+RUN python manage.py collectstatic --noinput || true
+
+# Run as non-root user
+RUN useradd -m -u 1000 twist && chown -R twist:twist /app
+USER twist
+
+EXPOSE 8000
+
+CMD ["gunicorn", "core.wsgi:application", "--bind", "0.0.0.0:8000"]

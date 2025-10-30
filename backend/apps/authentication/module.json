@@ -1,0 +1,6 @@
+{
+    "name": "Authentication",
+    "entryPoint": "apps.authentication",
+    "version": "1.0.0",
+    "description": "Handles user authentication, token management, and SSO."
+}

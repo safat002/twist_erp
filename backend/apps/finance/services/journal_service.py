@@ -1,0 +1,220 @@
+
+from decimal import Decimal, ROUND_HALF_UP
+
+from django.db import transaction
+from django.db.models import F
+from django.utils import timezone
+
+from ..models import (
+    Account,
+    AccountType,
+    Journal,
+    JournalEntry,
+    JournalSequence,
+    JournalStatus,
+    JournalVoucher,
+)
+
+class JournalService:
+    """
+    Service layer for handling all journal voucher and entry logic.
+    Ensures that all interactions with the General Ledger are valid and balanced.
+    """
+
+    DECIMAL_PLACES = Decimal('0.01')
+
+    @staticmethod
+    def _normalize_decimal(value):
+        """
+        Coerce incoming debit/credit values to Decimal with two decimal places.
+        """
+        if value in (None, ''):
+            value = 0
+        quantized = Decimal(value).quantize(JournalService.DECIMAL_PLACES, rounding=ROUND_HALF_UP)
+        if quantized < 0:
+            raise ValueError("Debit/Credit values cannot be negative.")
+        return quantized
+
+    @staticmethod
+    def _generate_voucher_number(company, journal, entry_date):
+        fiscal_year = entry_date.strftime('%Y')
+        sequence, _ = (
+            JournalSequence.objects
+            .select_for_update()
+            .get_or_create(
+                company=company,
+                journal=journal,
+                fiscal_year=fiscal_year,
+                defaults={'current_value': 0},
+            )
+        )
+        sequence.current_value += 1
+        sequence.save(update_fields=['current_value'])
+        sequence_number = sequence.current_value
+        prefix = f"{journal.code}-{fiscal_year}"
+        voucher_number = f"{prefix}-{sequence_number:04d}"
+        return voucher_number, sequence_number
+
+    @staticmethod
+    def _prepare_entries(entries_data, company):
+        prepared = []
+        total_debit = Decimal('0.00')
+        total_credit = Decimal('0.00')
+
+        for index, raw in enumerate(entries_data):
+            account = raw.get('account')
+            if isinstance(account, int):
+                account = Account.objects.select_for_update().get(pk=account, company=company)
+            elif isinstance(account, Account):
+                account = Account.objects.select_for_update().get(pk=account.pk, company=company)
+            else:
+                raise ValueError("Each journal entry must reference an Account instance or ID.")
+
+            if account.company_id != company.id:
+                raise ValueError(f"Account {account.code} does not belong to company {company.code}.")
+
+            debit = JournalService._normalize_decimal(raw.get('debit', 0))
+            credit = JournalService._normalize_decimal(raw.get('credit', 0))
+
+            if debit and credit:
+                raise ValueError("A journal line cannot have both debit and credit values.")
+
+            if not debit and not credit:
+                raise ValueError("Each journal line must have either a debit or credit amount.")
+
+            if not account.allow_direct_posting:
+                raise ValueError(f"Direct posting is not allowed for account: {account.code} {account.name}")
+
+            prepared.append(
+                {
+                    'account': account,
+                    'debit': debit,
+                    'credit': credit,
+                    'description': raw.get('description', ''),
+                    'line_number': index + 1,
+                }
+            )
+            total_debit += debit
+            total_credit += credit
+
+        if total_debit != total_credit:
+            raise ValueError("Journal entries are not balanced. Debits must equal credits.")
+
+        if total_debit == 0:
+            raise ValueError("Journal entries must have a non-zero debit and credit amount.")
+
+        return prepared
+
+    @staticmethod
+    @transaction.atomic
+    def create_journal_voucher(
+        journal,
+        entry_date,
+        description,
+        entries_data,
+        reference="",
+        source_document_type="",
+        source_document_id=None,
+        company=None,
+        created_by=None,
+    ):
+        """
+        Creates a new Journal Voucher in a DRAFT state.
+        """
+        if company is None:
+            raise ValueError("company must be supplied when creating a journal voucher.")
+
+        if not isinstance(journal, Journal):
+            raise ValueError("journal must be a Journal instance.")
+
+        if journal.company_id != company.id:
+            raise ValueError("Journal does not belong to the supplied company.")
+
+        prepared_entries = JournalService._prepare_entries(entries_data, company)
+        voucher_number, sequence_number = JournalService._generate_voucher_number(
+            company=company,
+            journal=journal,
+            entry_date=entry_date,
+        )
+
+        voucher = JournalVoucher.objects.create(
+            company=company,
+            journal=journal,
+            entry_date=entry_date,
+            period=entry_date.strftime('%Y-%m'),
+            description=description,
+            reference=reference,
+            status=JournalStatus.DRAFT,
+            source_document_type=source_document_type,
+            source_document_id=source_document_id,
+            voucher_number=voucher_number,
+            sequence_number=sequence_number,
+            created_by=created_by,
+        )
+
+        JournalEntry.objects.bulk_create(
+            [
+                JournalEntry(
+                    voucher=voucher,
+                    line_number=entry['line_number'],
+                    account=entry['account'],
+                    debit_amount=entry['debit'],
+                    credit_amount=entry['credit'],
+                    description=entry['description'],
+                )
+                for entry in prepared_entries
+            ]
+        )
+
+        return voucher
+
+    @staticmethod
+    @transaction.atomic
+    def post_journal_voucher(voucher: JournalVoucher, posted_by):
+        """
+        Posts a journal voucher, updating account balances.
+        """
+        voucher = (
+            JournalVoucher.objects
+            .select_for_update()
+            .get(pk=voucher.pk)
+        )
+
+        if voucher.status != JournalStatus.DRAFT:
+            raise ValueError(f"Voucher {voucher.voucher_number} is not in Draft state and cannot be posted.")
+
+        entries = list(
+            voucher.entries
+            .select_for_update()
+            .select_related('account')
+        )
+
+        total_debit = sum((entry.debit_amount for entry in entries), Decimal('0.00'))
+        total_credit = sum((entry.credit_amount for entry in entries), Decimal('0.00'))
+        if total_debit != total_credit:
+            raise ValueError(f"Voucher {voucher.voucher_number} is unbalanced and cannot be posted.")
+
+        account_ids = {entry.account_id for entry in entries}
+        accounts = {
+            account.pk: account
+            for account in Account.objects.select_for_update().filter(pk__in=account_ids)
+        }
+
+        for entry in entries:
+            account = accounts[entry.account_id]
+            balance_change = entry.debit_amount - entry.credit_amount
+            if account.account_type in [AccountType.ASSET, AccountType.EXPENSE]:
+                Account.objects.filter(pk=account.pk).update(
+                    current_balance=F('current_balance') + balance_change
+                )
+            else:
+                Account.objects.filter(pk=account.pk).update(
+                    current_balance=F('current_balance') - balance_change
+                )
+
+        voucher.status = JournalStatus.POSTED
+        voucher.posted_by = posted_by
+        voucher.posted_at = timezone.now()
+        voucher.save(update_fields=['status', 'posted_by', 'posted_at'])
+
+        return voucher

@@ -1,0 +1,39 @@
+[
+  {
+    "model": "permissions.role",
+    "pk": 1,
+    "fields": {
+      "name": "System Administrator",
+      "company": null,
+      "description": "Full system access across all companies",
+      "is_system_role": true,
+      "permissions": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ]
+    }
+  },
+  {
+    "model": "permissions.role",
+    "pk": 2,
+    "fields": {
+      "name": "Company Administrator",
+      "company": 1,
+      "description": "Full access within company",
+      "is_system_role": false,
+      "permissions": [
+        1,
+        3,
+        5,
+        6,
+        7
+      ]
+    }
+  }
+]

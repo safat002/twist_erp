@@ -1,0 +1,74 @@
+[
+  {
+    "model": "permissions.permission",
+    "pk": 1,
+    "fields": {
+      "code": "company.view",
+      "name": "View Companies",
+      "module": "companies"
+    }
+  },
+  {
+    "model": "permissions.permission",
+    "pk": 2,
+    "fields": {
+      "code": "company.create",
+      "name": "Create Company",
+      "module": "companies"
+    }
+  },
+  {
+    "model": "permissions.permission",
+    "pk": 3,
+    "fields": {
+      "code": "company.edit",
+      "name": "Edit Company",
+      "module": "companies"
+    }
+  },
+  {
+    "model": "permissions.permission",
+    "pk": 4,
+    "fields": {
+      "code": "company.delete",
+      "name": "Delete Company",
+      "module": "companies"
+    }
+  },
+  {
+    "model": "permissions.permission",
+    "pk": 5,
+    "fields": {
+      "code": "user.view",
+      "name": "View Users",
+      "module": "users"
+    }
+  },
+  {
+    "model": "permissions.permission",
+    "pk": 6,
+    "fields": {
+      "code": "user.create",
+      "name": "Create User",
+      "module": "users"
+    }
+  },
+  {
+    "model": "permissions.permission",
+    "pk": 7,
+    "fields": {
+      "code": "user.edit",
+      "name": "Edit User",
+      "module": "users"
+    }
+  },
+  {
+    "model": "permissions.permission",
+    "pk": 8,
+    "fields": {
+      "code": "user.delete",
+      "name": "Delete User",
+      "module": "users"
+    }
+  }
+]

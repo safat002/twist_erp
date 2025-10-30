@@ -1,0 +1,65 @@
+{
+  "name": "twist-erp-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.20.0",
+    "antd": "^5.12.0",
+    "@ant-design/icons": "^5.2.6",
+    "@ant-design/charts": "^2.0.0",
+    "axios": "^1.6.2",
+    "react-query": "^3.39.3",
+    "react-beautiful-dnd": "^13.1.1",
+    "react-grid-layout": "^1.4.4",
+    "react-flow-renderer": "^10.3.17",
+    "recharts": "^2.10.3",
+    "dayjs": "^1.11.10",
+    "lodash": "^4.17.21",
+    "zustand": "^4.4.7",
+    "socket.io-client": "^4.5.4",
+    "react-hook-form": "^7.49.2",
+    "yup": "^1.3.3",
+    "framer-motion": "^10.16.16",
+    "react-dropzone": "^14.2.3",
+    "xlsx": "^0.18.5",
+    "pdfmake": "^0.2.8",
+    "react-to-print": "^2.14.15",
+    "echarts": "^5.4.3",
+    "echarts-for-react": "^3.0.2",
+    "react-syntax-highlighter": "^15.5.0",
+    "monaco-editor": "^0.45.0",
+    "@monaco-editor/react": "^4.6.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.43",
+    "@types/react-dom": "^18.2.17",
+    "@vitejs/plugin-react": "^4.2.1",
+    "vite": "^5.0.8",
+    "eslint": "^8.55.0",
+    "prettier": "^3.1.1",
+    "tailwindcss": "^3.3.6",
+    "postcss": "^8.4.32",
+    "autoprefixer": "^10.4.16"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint src --ext js,jsx",
+    "format": "prettier --write \"src/**/*.{js,jsx,json,css,md}\""
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}

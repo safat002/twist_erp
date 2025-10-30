@@ -1,0 +1,3 @@
+from .customer_views import CustomerViewSet
+from .sales_order_views import SalesOrderViewSet
+from .sales_order_line_views import SalesOrderLineViewSet

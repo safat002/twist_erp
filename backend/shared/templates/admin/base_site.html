@@ -1,0 +1,77 @@
+﻿{% extends "admin/base.html" %}
+{% load static %}
+
+{% block title %}{{ title }} | Twist Administration{% endblock %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'twist_admin.css' %}">
+{% endblock %}
+
+{% block extrahead %}
+  {{ block.super }}
+  <script>
+    (function () {
+      const STORAGE_KEY = 'twist-admin-theme';
+      const root = document.documentElement;
+      const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      let theme = localStorage.getItem(STORAGE_KEY) || (prefersDark ? 'twist-dark' : 'twist-light');
+
+      const applyTheme = (value) => {
+        theme = value;
+        root.setAttribute('data-theme', value);
+      };
+
+      applyTheme(theme);
+
+      window.addEventListener('DOMContentLoaded', function () {
+        const toggle = document.querySelector('[data-theme-toggle]');
+        const updateToggle = (value) => {
+          if (!toggle) {
+            return;
+          }
+          toggle.setAttribute('aria-label', value === 'twist-dark' ? 'Switch to light theme' : 'Switch to dark theme');
+          toggle.innerHTML = value === 'twist-dark'
+            ? '<span aria-hidden="true">🌙</span><span>Dark</span>'
+            : '<span aria-hidden="true">☀️</span><span>Light</span>';
+        };
+
+        updateToggle(theme);
+
+        if (toggle) {
+          toggle.addEventListener('click', function () {
+            const nextTheme = theme === 'twist-dark' ? 'twist-light' : 'twist-dark';
+            applyTheme(nextTheme);
+            updateToggle(nextTheme);
+            localStorage.setItem(STORAGE_KEY, nextTheme);
+          });
+        }
+      });
+    })();
+  </script>
+{% endblock %}
+
+{% block branding %}
+  <a class="twist-brand" href="{% url 'admin:index' %}">
+    <span class="twist-brand__mark">TWIST</span>
+    <span class="twist-brand__text">Administration</span>
+  </a>
+{% endblock %}
+
+{% block nav-global %}
+  <nav class="twist-admin-nav">
+    <a href="{% url 'admin:index' %}">Dashboard</a>
+    <a href="/api/" target="_blank" rel="noopener">API Root</a>
+    <a href="/api/docs/" target="_blank" rel="noopener">API Docs</a>
+    <a href="http://localhost:5173" target="_blank" rel="noopener">Frontend Workspace</a>
+    <button type="button" class="twist-theme-toggle" data-theme-toggle></button>
+  </nav>
+{% endblock %}
+
+{% block welcome-msg %}
+  <span class="twist-welcome">Hi, {{ user.get_short_name|default:user.username }}.</span>
+{% endblock %}
+
+{% block userlinks %}
+  {{ block.super }}
+{% endblock %}

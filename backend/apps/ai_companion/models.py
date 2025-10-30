@@ -1,0 +1,534 @@
+import uuid
+
+from django.conf import settings
+from django.db import models
+
+
+class AIConversation(models.Model):
+    """
+    Tracks an interactive session between a user and the AI assistant.
+    """
+
+    conversation_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="ai_conversations",
+    )
+    company = models.ForeignKey(
+        "companies.Company",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ai_conversations",
+    )
+    active_skill = models.CharField(max_length=120, blank=True, default="")
+    context = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-updated_at",)
+        indexes = [
+            models.Index(fields=["conversation_id"]),
+            models.Index(fields=["user", "updated_at"]),
+        ]
+
+
+class AIMessage(models.Model):
+    """
+    Stores messages exchanged within a conversation.
+    """
+
+    ROLE_CHOICES = [
+        ("user", "User"),
+        ("assistant", "Assistant"),
+        ("system", "System"),
+    ]
+
+    conversation = models.ForeignKey(
+        AIConversation,
+        on_delete=models.CASCADE,
+        related_name="messages",
+    )
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES)
+    content = models.TextField()
+    intent = models.CharField(max_length=120, blank=True, null=True)
+    confidence = models.FloatField(null=True, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("created_at",)
+        indexes = [
+            models.Index(fields=["conversation", "created_at"]),
+            models.Index(fields=["intent"]),
+        ]
+
+
+class AIFeedback(models.Model):
+    """
+    Explicit thumbs-up/thumbs-down or structured feedback from the user.
+    """
+
+    FEEDBACK_CHOICES = [
+        ("up", "Positive"),
+        ("down", "Negative"),
+    ]
+    FEEDBACK_TYPE_CHOICES = [
+        ("thumbs", "Thumbs"),
+        ("review", "Structured Review"),
+        ("task", "Review Task"),
+    ]
+
+    conversation = models.ForeignKey(
+        AIConversation,
+        on_delete=models.CASCADE,
+        related_name="feedback_items",
+    )
+    message = models.ForeignKey(
+        AIMessage,
+        on_delete=models.CASCADE,
+        related_name="feedback_items",
+        null=True,
+        blank=True,
+    )
+    rating = models.CharField(max_length=10, choices=FEEDBACK_CHOICES)
+    notes = models.TextField(blank=True)
+    feedback_type = models.CharField(
+        max_length=20,
+        choices=FEEDBACK_TYPE_CHOICES,
+        default="thumbs",
+    )
+    payload = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+
+
+class AIUserMemory(models.Model):
+    """
+    Stores personalised memory that the assistant can recall within scope.
+    """
+
+    SCOPE_CHOICES = [
+        ("user", "User"),
+        ("company", "Company"),
+        ("global", "Global"),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="ai_memories",
+        null=True,
+        blank=True,
+    )
+    company = models.ForeignKey(
+        "companies.Company",
+        on_delete=models.CASCADE,
+        related_name="ai_memories",
+        null=True,
+        blank=True,
+    )
+    scope = models.CharField(max_length=20, choices=SCOPE_CHOICES, default="user")
+    key = models.CharField(max_length=255)
+    value = models.JSONField(default=dict, blank=True)
+    tags = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("user", "company", "scope", "key")
+        indexes = [
+            models.Index(fields=["scope", "key"]),
+        ]
+
+
+class AIProactiveSuggestion(models.Model):
+    """
+    Suggestions generated automatically based on telemetry or scheduled insights.
+    """
+
+    class AlertSeverity(models.TextChoices):
+        INFO = "info", "Info"
+        WARNING = "warning", "Warning"
+        CRITICAL = "critical", "Critical"
+
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("dismissed", "Dismissed"),
+        ("accepted", "Accepted"),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="ai_suggestions",
+    )
+    company = models.ForeignKey(
+        "companies.Company",
+        on_delete=models.CASCADE,
+        related_name="ai_suggestions",
+        null=True,
+        blank=True,
+    )
+    title = models.CharField(max_length=255)
+    body = models.TextField()
+    metadata = models.JSONField(default=dict, blank=True)
+    alert_type = models.CharField(max_length=120, blank=True, default="")
+    severity = models.CharField(
+        max_length=20,
+        choices=AlertSeverity.choices,
+        default=AlertSeverity.INFO,
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    source_skill = models.CharField(max_length=120, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    delivered_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(fields=["user", "status"]),
+        ]
+
+
+class AITelemetryEvent(models.Model):
+    """
+    Lightweight activity log capturing user actions that AI can learn from.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="ai_telemetry_events",
+    )
+    company = models.ForeignKey(
+        "companies.Company",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="ai_telemetry_events",
+    )
+    conversation = models.ForeignKey(
+        AIConversation,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="telemetry_events",
+    )
+    event_type = models.CharField(max_length=120)
+    source = models.CharField(max_length=80, default="ai_companion")
+    payload = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(fields=["user", "created_at"]),
+            models.Index(fields=["company", "created_at"]),
+            models.Index(fields=["event_type"]),
+        ]
+
+
+class AITrainingExampleStatus(models.TextChoices):
+    REVIEW = "review", "Pending Review"
+    APPROVED = "approved", "Approved"
+    REJECTED = "rejected", "Rejected"
+
+
+class AITrainingExample(models.Model):
+    """
+    Stores curated prompt/response pairs sourced from feedback and reviews.
+    """
+
+    SOURCE_CHOICES = [
+        ("feedback", "Feedback"),
+        ("curated", "Curated"),
+        ("telemetry", "Telemetry"),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ai_training_examples",
+    )
+    company = models.ForeignKey(
+        "companies.Company",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="ai_training_examples",
+    )
+    feedback = models.ForeignKey(
+        AIFeedback,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="training_examples",
+    )
+    prompt = models.TextField()
+    completion = models.TextField()
+    source = models.CharField(max_length=32, choices=SOURCE_CHOICES, default="feedback")
+    status = models.CharField(
+        max_length=20,
+        choices=AITrainingExampleStatus.choices,
+        default=AITrainingExampleStatus.REVIEW,
+    )
+    metadata = models.JSONField(default=dict, blank=True)
+    review_notes = models.TextField(blank=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="ai_training_reviews",
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(fields=["status"]),
+            models.Index(fields=["source"]),
+            models.Index(fields=["company", "status"]),
+            models.Index(fields=["reviewed_by", "reviewed_at"]),
+        ]
+
+
+class AIGuardrailTestStatus(models.TextChoices):
+    ACTIVE = "active", "Active"
+    DISABLED = "disabled", "Disabled"
+
+
+class AIGuardrailTestResult(models.TextChoices):
+    NOT_RUN = "not_run", "Not Run"
+    PASS = "pass", "Pass"
+    FAIL = "fail", "Fail"
+
+
+class AIGuardrailTestCase(models.Model):
+    """
+    Regression test prompts tied to policy content to validate assistant guardrails.
+    """
+
+    company = models.ForeignKey(
+        "companies.Company",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="ai_guardrail_tests",
+    )
+    policy_name = models.CharField(max_length=255)
+    prompt = models.TextField()
+    expected_phrases = models.JSONField(default=list, blank=True)
+    status = models.CharField(
+        max_length=20,
+        choices=AIGuardrailTestStatus.choices,
+        default=AIGuardrailTestStatus.ACTIVE,
+    )
+    last_run_at = models.DateTimeField(null=True, blank=True)
+    last_result = models.CharField(
+        max_length=20,
+        choices=AIGuardrailTestResult.choices,
+        default=AIGuardrailTestResult.NOT_RUN,
+    )
+    last_output = models.TextField(blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("policy_name", "company")
+        unique_together = ("company", "policy_name")
+        indexes = [
+            models.Index(fields=["company", "status"]),
+            models.Index(fields=["policy_name"]),
+        ]
+
+    def __str__(self):
+        scope = getattr(self.company, "code", "Global")
+        return f"{self.policy_name} ({scope})"
+
+
+class AILoRARunStatus(models.TextChoices):
+    QUEUED = "queued", "Queued"
+    RUNNING = "running", "Running"
+    SUCCESS = "success", "Success"
+    FAILED = "failed", "Failed"
+
+
+class AILoRARun(models.Model):
+    """
+    Tracks LoRA/adapter fine-tuning runs initiated from the AI Ops workspace.
+    """
+
+    run_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    adapter_type = models.CharField(max_length=32, default="lora")
+    status = models.CharField(
+        max_length=20,
+        choices=AILoRARunStatus.choices,
+        default=AILoRARunStatus.QUEUED,
+    )
+    dataset_size = models.PositiveIntegerField(default=0)
+    dataset_snapshot = models.JSONField(default=list, blank=True)
+    training_args = models.JSONField(default=dict, blank=True)
+    metrics = models.JSONField(default=dict, blank=True)
+    artifact_path = models.CharField(max_length=512, blank=True)
+    error = models.TextField(blank=True)
+    scheduled_for = models.DateTimeField(null=True, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    triggered_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="ai_lora_runs",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(fields=["status", "created_at"]),
+            models.Index(fields=["adapter_type", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.adapter_type} run {self.run_id} ({self.status})"
+
+
+class AISkillProfile(models.Model):
+    """
+    Tracks skill usage statistics and preferences per user/company.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="ai_skill_profiles",
+        null=True,
+        blank=True,
+    )
+    company = models.ForeignKey(
+        "companies.Company",
+        on_delete=models.CASCADE,
+        related_name="ai_skill_profiles",
+        null=True,
+        blank=True,
+    )
+    skill_name = models.CharField(max_length=120)
+    usage_count = models.PositiveIntegerField(default=0)
+    success_count = models.PositiveIntegerField(default=0)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    preferences = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        unique_together = ("user", "company", "skill_name")
+        indexes = [
+            models.Index(fields=["skill_name"]),
+        ]
+
+
+class UserAIPreference(models.Model):
+    """
+    Stores user-specific AI preferences, optionally scoped to a company.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="ai_preferences",
+    )
+    company = models.ForeignKey(
+        "companies.Company",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="ai_preferences",
+    )
+    company_group = models.ForeignKey(
+        "companies.CompanyGroup",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="ai_preferences",
+    )
+    key = models.CharField(max_length=120)
+    value = models.JSONField(default=dict, blank=True)
+    source = models.CharField(max_length=32, default="manual", blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("user", "company", "key")
+        indexes = [
+            models.Index(fields=["user", "company", "key"]),
+            models.Index(fields=["user", "key"]),
+        ]
+        ordering = ("-updated_at",)
+
+    def save(self, *args, **kwargs):
+        if self.company and not self.company_group:
+            self.company_group = self.company.company_group
+        super().save(*args, **kwargs)
+
+    @property
+    def scope(self) -> str:
+        return "company" if self.company_id else "global"
+
+    def __str__(self) -> str:
+        scope = f"{self.company.code}" if self.company else "global"
+        return f"{self.user}::{self.key} ({scope})"
+
+
+class AIActionExecution(models.Model):
+    """
+    Audit-friendly log of conversational actions executed through the AI assistant.
+    """
+
+    STATUS_CHOICES = [
+        ("success", "Success"),
+        ("error", "Error"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    action_name = models.CharField(max_length=200)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="success")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="ai_action_executions",
+    )
+    company = models.ForeignKey(
+        "companies.Company",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="ai_action_executions",
+    )
+    payload = models.JSONField(default=dict, blank=True)
+    result = models.JSONField(default=dict, blank=True)
+    error_message = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(fields=["action_name", "created_at"]),
+            models.Index(fields=["user", "created_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.action_name} ({self.status})"

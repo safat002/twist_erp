@@ -1,0 +1,6 @@
+{
+    "name": "Sales",
+    "entryPoint": "apps.sales",
+    "version": "1.0.0",
+    "description": "Manages sales orders, customers, and invoicing."
+}
