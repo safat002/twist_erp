@@ -13,10 +13,9 @@ from apps.hr.models import (
     EmploymentGrade,
     OvertimeEntry,
     OvertimePolicy,
-    PayrollRun,
-    ShiftTemplate,
     SalaryStructure,
 )
+from apps.hr.models import OvertimeRequestStatus
 from apps.hr.views import OvertimeEntryViewSet
 from apps.hr.services.payroll import PayrollService
 
@@ -135,8 +134,8 @@ class HROvertimeIntegrationTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
         entry.refresh_from_db()
-        self.assertTrue(entry.posted_to_payroll is False)
-        self.assertEqual(entry.status, OvertimeEntry.status.APPROVED if hasattr(OvertimeEntry, 'status') else entry.status)
+        self.assertFalse(entry.posted_to_payroll)
+        self.assertEqual(entry.status, OvertimeRequestStatus.APPROVED)
 
         usage = BudgetUsage.objects.get(reference_type="hr.OvertimeEntry", reference_id=str(entry.id))
         self.assertEqual(usage.amount, entry.amount)
@@ -144,19 +143,9 @@ class HROvertimeIntegrationTests(TestCase):
 
     def test_payroll_generation_marks_overtime_consumed(self):
         # Approve entry and ensure it is included in payroll
-        entry = self._create_overtime_entry(status="APPROVED", approved_hours=3)
+        entry = self._create_overtime_entry(status=OvertimeRequestStatus.APPROVED, approved_hours=3)
         entry.budget_line = self.budget_line
         entry.save(update_fields=["budget_line"])
-
-        ShiftTemplate.objects.create(
-            company=self.company,
-            company_group=self.group,
-            code="DAY",
-            name="Day Shift",
-            start_time=date(2025, 10, 1).replace(hour=8, minute=0).time(),
-            end_time=date(2025, 10, 1).replace(hour=16, minute=0).time(),
-            created_by=self.user,
-        )
 
         run = PayrollService.generate_payroll_run(
             company=self.company,
