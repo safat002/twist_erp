@@ -7,6 +7,7 @@ from .models import (
     BudgetLine,
     BudgetOverrideRequest,
     CostCenter,
+    BudgetItemCode,
 )
 
 
@@ -112,3 +113,11 @@ class BudgetConsumptionSnapshotAdmin(admin.ModelAdmin):
     list_display = ["budget", "snapshot_date", "total_limit", "total_consumed", "total_remaining"]
     list_filter = ["snapshot_date", "budget__company"]
     search_fields = ["budget__name", "budget__cost_center__name"]
+
+
+@admin.register(BudgetItemCode)
+class BudgetItemCodeAdmin(admin.ModelAdmin):
+    list_display = ["code", "name", "category", "uom", "standard_price", "is_active", "company"]
+    list_filter = ["company", "category", "is_active"]
+    search_fields = ["code", "name", "category"]
+    ordering = ["code"]

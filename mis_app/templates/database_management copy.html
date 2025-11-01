@@ -1,0 +1,565 @@
+{% extends "base.html" %} 
+{% block title %}Database Connection Management{% endblock %} 
+
+{% block content %}
+<div class="container-fluid">
+  <div class="row">
+    <div class="col-md-4">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0">Connections</h4>
+        <button class="btn btn-primary" id="addNewConnectionBtn">
+          <i class="bi bi-plus-lg me-2"></i> Add New
+        </button>
+        <button class="btn btn-secondary ms-2" onclick="window.location.reload()">
+    <i class="bi bi-arrow-clockwise me-2"></i> Refresh
+</button>
+
+<!-- Add this debug div somewhere visible -->
+<div id="debug-info" class="mt-3 p-2 bg-light border rounded" style="display: none;">
+    <h6>Debug Information</h6>
+    <div id="debug-content"></div>
+</div>
+      </div>
+      <div class="list-group" id="connectionsList">
+        <div class="list-group-item text-muted">Loading connections...</div>
+      </div>
+    </div>
+
+    <div class="col-md-8">
+      <div class="card" id="connectionFormCard" style="display: none">
+        <div class="card-header">
+          <h5 class="card-title mb-0" id="formTitle">Connection Details</h5>
+        </div>
+        <div class="card-body">
+          <form id="connectionForm">
+            {% csrf_token %} <input type="hidden" id="connectionId" />
+
+            <div class="row">
+              <div class="col-md-6 mb-3">
+                <label for="nickname" class="form-label">Connection Nickname</label>
+                <input type="text" class="form-control" id="nickname" required placeholder="e.g., Production Postgres" />
+              </div>
+              <div class="col-md-6 mb-3">
+                <label for="db_type" class="form-label">Database Type</label>
+                <select class="form-select" id="db_type">
+                  <option value="postgresql">PostgreSQL</option>
+                  <option value="mysql">MySQL</option>
+                  <option value="sqlite">SQLite</option>
+                </select>
+              </div>
+            </div>
+
+            <div id="server-fields">
+              <div class="row">
+                <div class="col-md-8 mb-3">
+                  <label for="host" class="form-label">Host</label>
+                  <input type="text" class="form-control" id="host" />
+                </div>
+                <div class="col-md-4 mb-3">
+                  <label for="port" class="form-label">Port</label>
+                  <input type="text" class="form-control" id="port" />
+                </div>
+              </div>
+              <div class="row">
+                <div class="col-md-6 mb-3">
+                  <label for="username" class="form-label">Username</label>
+                  <input type="text" class="form-control" id="username" />
+                </div>
+                <div class="col-md-6 mb-3">
+                  <label for="password" class="form-label">Password</label>
+                  <input type="password" class="form-control" id="password" />
+                </div>
+              </div>
+              <div class="row">
+                <div class="col-md-6 mb-3">
+                  <label for="db_name" class="form-label">Database Name</label>
+                  <input type="text" class="form-control" id="db_name" />
+                </div>
+                <div class="col-md-6 mb-3" id="schema-container">
+                  <label for="schema" class="form-label">Schema (Optional)</label>
+                  <input type="text" class="form-control" id="schema" placeholder="public" />
+                </div>
+              </div>
+            </div>
+
+            <div id="sqlite-fields" style="display: none">
+              <div class="mb-3">
+                <label for="filepath" class="form-label">File Path</label>
+                <input type="text" class="form-control" id="filepath" placeholder="e.g., data/my_data.db" />
+              </div>
+            </div>
+          </form>
+          <div id="status-alert" class="alert mt-3" style="display: none"></div>
+
+          <div id="tablesVisibilitySection" style="display: none">
+            <hr />
+            <h6>Table Visibility</h6>
+            <p class="text-muted small">Uncheck tables to hide them from the application.</p>
+            <div id="tablesVisibilityContainer" class="border rounded p-3" style="max-height: 250px; overflow-y: auto"></div>
+          </div>
+        </div>
+        <div class="card-footer d-flex justify-content-between">
+          <button type="button" class="btn btn-outline-danger" id="deleteBtn" style="display: none">Delete</button>
+          <div>
+            <button type="button" class="btn btn-info" id="testConnectionBtn">Test Connection</button>
+            <button type="button" class="btn btn-primary" id="saveConnectionBtn">Save Connection</button>
+          </div>
+        </div>
+      </div>
+      <div id="selectConnectionPrompt" class="text-center p-5 bg-light rounded">
+        <p class="text-muted">Select a connection on the left to edit, or add a new one.</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Global error handler
+window.addEventListener('error', function(e) {
+    console.error('Global error:', e.error);
+    console.error('Error in file:', e.filename);
+    console.error('Line number:', e.lineno);
+});
+
+// Promise rejection handler
+window.addEventListener('unhandledrejection', function(e) {
+    console.error('Unhandled promise rejection:', e.reason);
+});
+
+  function debugButtonClick() {
+    console.log('Add New button clicked');
+    console.log('resetForm function exists:', typeof resetForm === 'function');
+    
+    // Test if the button exists and can be found
+    const button = document.getElementById('addNewConnectionBtn');
+    console.log('Button found:', button !== null);
+    if (button) {
+        console.log('Button text:', button.textContent);
+    }
+}
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('Database management page loaded');
+    
+    let currentConnectionId = null;
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    
+    // Debug info
+    console.log('CSRF Token found:', csrfToken !== null);
+    
+    // --- UI State Management ---
+    function toggleDbFields() {
+        const dbType = document.getElementById('db_type').value;
+        document.getElementById('sqlite-fields').style.display = (dbType === 'sqlite') ? 'block' : 'none';
+        document.getElementById('server-fields').style.display = (dbType !== 'sqlite') ? 'block' : 'none';
+        document.getElementById('schema-container').style.display = (dbType === 'postgresql') ? 'block' : 'none';
+    }
+    
+    function resetForm() {
+        console.log('Resetting form...');
+        document.getElementById('connectionForm').reset();
+        document.getElementById('connectionId').value = '';
+        currentConnectionId = null;
+        document.getElementById('formTitle').textContent = 'Add New Connection';
+        document.getElementById('deleteBtn').style.display = 'none';
+        document.getElementById('status-alert').style.display = 'none';
+        document.getElementById('tablesVisibilitySection').style.display = 'none';
+        document.getElementById('selectConnectionPrompt').style.display = 'none';
+        document.getElementById('connectionFormCard').style.display = 'block';
+        document.querySelectorAll('.list-group-item').forEach(el => el.classList.remove('active'));
+        toggleDbFields();
+        console.log('Form reset complete');
+    }
+    
+    function showAlert(message, isSuccess) {
+        const alertEl = document.getElementById('status-alert');
+        alertEl.textContent = message;
+        alertEl.classList.remove('alert-success', 'alert-danger', 'alert-info');
+        alertEl.classList.add(isSuccess ? 'alert-success' : 'alert-danger');
+        alertEl.style.display = 'block';
+    }
+    
+    // --- Data Loading and Rendering ---
+    async function loadConnections() {
+        try {
+            const response = await fetch('{% url "mis_app:api_connections" %}');
+            if (!response.ok) {
+                throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+            }
+            const connections = await response.json();
+            const listEl = document.getElementById('connectionsList');
+            
+            listEl.innerHTML = '';
+            if (connections.length === 0) {
+                listEl.innerHTML = '<div class="list-group-item">No connections found. Click "Add New" to begin.</div>';
+            } else {
+                connections.forEach(conn => {
+                    const item = document.createElement('a');
+                    item.href = '#';
+                    item.className = 'list-group-item list-group-item-action';
+                    item.dataset.id = conn.id;
+                    item.innerHTML = `
+                        ${conn.nickname}
+                        <span class="badge bg-secondary float-end">${conn.db_type || 'unknown'}</span>
+                    `;
+                    listEl.appendChild(item);
+                });
+            }
+        } catch (error) {
+            console.error('Error loading connections:', error);
+            const listEl = document.getElementById('connectionsList');
+            listEl.innerHTML = '<div class="list-group-item text-danger">Error loading connections. Please refresh the page.</div>';
+        }
+    }
+    
+    async function loadConnectionDetails(connId) {
+        try {
+            const url = `{% url "mis_app:api_connection_detail" "00000000-0000-0000-0000-000000000000" %}`.replace('00000000-0000-0000-0000-000000000000', connId);
+            const response = await fetch(url);
+            
+            if (!response.ok) {
+                throw new Error('Failed to fetch connection details.');
+            }
+            
+            const data = await response.json();
+            
+            resetForm();
+            currentConnectionId = data.id;
+            
+            // Populate form - FIXED FIELD NAMES
+            document.getElementById('connectionId').value = data.id;
+            document.getElementById('nickname').value = data.nickname;
+            document.getElementById('db_type').value = data.db_type;
+            document.getElementById('host').value = data.host || '';
+            document.getElementById('port').value = data.port || '';
+            document.getElementById('username').value = data.username || '';
+            document.getElementById('password').value = ''; // Don't populate password for security
+            document.getElementById('db_name').value = data.db_name || '';
+            document.getElementById('schema').value = data.schema || '';
+            document.getElementById('filepath').value = data.filepath || ''; // FIXED: filepath not file_path
+            
+            document.getElementById('formTitle').textContent = `Editing: ${data.nickname}`;
+            document.getElementById('deleteBtn').style.display = 'block';
+            document.querySelector(`[data-id="${connId}"]`).classList.add('active');
+            
+            toggleDbFields();
+            loadTablesVisibility(connId, (data.hidden_tables || '').split(','));
+            
+        } catch (error) {
+            showAlert(error.message, false);
+        }
+    }
+    
+    async function loadTablesVisibility(connId, hiddenTables) {
+        const container = document.getElementById('tablesVisibilityContainer');
+        const section = document.getElementById('tablesVisibilitySection');
+        
+        container.innerHTML = '<em>Loading tables...</em>';
+        section.style.display = 'block';
+        
+        try {
+            const url = `{% url "mis_app:api_get_connection_tables" "00000000-0000-0000-0000-000000000000" %}`.replace('00000000-0000-0000-0000-000000000000', connId);
+            const response = await fetch(url);
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error);
+            }
+            
+            container.innerHTML = '';
+            if (result.tables.length === 0) {
+                container.innerHTML = '<p class="text-muted">No tables found in this database.</p>';
+            } else {
+                result.tables.forEach(table => {
+                    const isChecked = !hiddenTables.includes(table);
+                    container.innerHTML += `
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="checkbox" value="${table}" id="table_${table}" ${isChecked ? 'checked' : ''}>
+                            <label class="form-check-label" for="table_${table}">${table}</label>
+                        </div>
+                    `;
+                });
+            }
+        } catch (error) {
+            container.innerHTML = `<p class="text-danger">Error loading tables: ${error.message}</p>`;
+        }
+    }
+    
+    // --- Event Handlers ---
+    document.getElementById('db_type').addEventListener('change', toggleDbFields);
+    
+    document.getElementById('addNewConnectionBtn').addEventListener('click', function(e) {
+        console.log('Add New button clicked - event captured');
+        try {
+            resetForm();
+        } catch (error) {
+            console.error('Error in resetForm:', error);
+            // Fallback: manually show the form
+            document.getElementById('connectionForm').reset();
+            document.getElementById('connectionId').value = '';
+            currentConnectionId = null;
+            document.getElementById('formTitle').textContent = 'Add New Connection';
+            document.getElementById('deleteBtn').style.display = 'none';
+            document.getElementById('status-alert').style.display = 'none';
+            document.getElementById('tablesVisibilitySection').style.display = 'none';
+            document.getElementById('selectConnectionPrompt').style.display = 'none';
+            document.getElementById('connectionFormCard').style.display = 'block';
+            toggleDbFields();
+        }
+    });
+
+    // Also add a click handler to the document to see if events are bubbling
+    document.addEventListener('click', function(e) {
+        if (e.target.id === 'addNewConnectionBtn' || e.target.closest('#addNewConnectionBtn')) {
+            console.log('Add New button clicked - event bubbling captured');
+        }
+    });
+
+    document.getElementById('connectionsList').addEventListener('click', function(e) {
+        const listItem = e.target.closest('.list-group-item');
+        if (listItem && listItem.dataset.id) {
+            e.preventDefault();
+            loadConnectionDetails(listItem.dataset.id);
+        }
+    });
+    
+    document.getElementById('saveConnectionBtn').addEventListener('click', async function() {
+        const hiddenTables = Array.from(document.querySelectorAll('#tablesVisibilityContainer input[type="checkbox"]:not(:checked)'))
+                                  .map(el => el.value).join(',');
+        
+        const isUpdate = !!currentConnectionId;
+        let url = isUpdate ? 
+            `{% url "mis_app:api_connection_detail" "00000000-0000-0000-0000-000000000000" %}`.replace('00000000-0000-0000-0000-000000000000', currentConnectionId) :
+            `{% url "mis_app:api_connections" %}`;
+        
+        const method = isUpdate ? 'PUT' : 'POST';
+        
+        // FIXED: Use correct field names (filepath not file_path)
+        const payload = {
+            nickname: document.getElementById('nickname').value,
+            db_type: document.getElementById('db_type').value,
+            host: document.getElementById('host').value,
+            port: document.getElementById('port').value,
+            username: document.getElementById('username').value,
+            password: document.getElementById('password').value,
+            db_name: document.getElementById('db_name').value,
+            schema: document.getElementById('schema').value,
+            filepath: document.getElementById('filepath').value,
+            hidden_tables: hiddenTables,
+        };
+        
+        try {
+            const response = await fetch(url, {
+                method: method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken,
+                },
+                body: JSON.stringify(payload),
+            });
+            
+            const result = await response.json();
+            if (!response.ok) {
+                throw new Error(result.error || 'An unknown error occurred.');
+            }
+            
+            showAlert('Connection saved!', true);
+            await loadConnections();
+            
+            if (!isUpdate) {
+                loadConnectionDetails(result.id);
+            } else {
+                document.querySelector(`[data-id="${currentConnectionId}"]`).textContent = payload.nickname;
+            }
+        } catch (error) {
+            showAlert(error.message, false);
+        }
+    });
+    
+    document.getElementById('testConnectionBtn').addEventListener('click', async function() {
+        if (!currentConnectionId) {
+            showAlert('Please save the connection before testing.', false);
+            return;
+        }
+        
+        try {
+            const url = `{% url "mis_app:api_test_connection" "00000000-0000-0000-0000-000000000000" %}`.replace('00000000-0000-0000-0000-000000000000', currentConnectionId);
+            
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': csrfToken,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            const result = await response.json();
+            showAlert(result.success ? result.message : result.error, result.success);
+            
+        } catch (error) {
+            console.error('Error testing connection:', error);
+            showAlert('An error occurred. See console for details.', false);
+        }
+    });
+    
+    document.getElementById('deleteBtn').addEventListener('click', async function() {
+        if (!currentConnectionId || !confirm('Are you sure you want to delete this connection?')) {
+            return;
+        }
+        
+        try {
+            const url = `{% url "mis_app:api_connection_detail" "00000000-0000-0000-0000-000000000000" %}`.replace('00000000-0000-0000-0000-000000000000', currentConnectionId);
+            const response = await fetch(url, {
+                method: 'DELETE',
+                headers: {
+                    'X-CSRFToken': csrfToken
+                }
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                alert(result.message);
+                currentConnectionId = null;
+                document.getElementById('connectionFormCard').style.display = 'none';
+                document.getElementById('selectConnectionPrompt').style.display = 'block';
+                await loadConnections();
+            } else {
+                const result = await response.json();
+                showAlert(result.error, false);
+            }
+        } catch (error) {
+            showAlert('Error deleting connection', false);
+        }
+    });
+
+    // Add this function to help with debugging
+async function debugConnections() {
+    try {
+        console.log('Testing API endpoints...');
+        
+        // Test the connections API
+        const response = await fetch('{% url "mis_app:api_connections" %}');
+        console.log('Connections API status:', response.status);
+        
+        if (response.ok) {
+            const connections = await response.json();
+            console.log('Connections found:', connections);
+        } else {
+            console.error('Connections API failed:', response.status, response.statusText);
+        }
+        
+        // Test the debug API
+        const debugResponse = await fetch('{% url "mis_app:api_debug_connections" %}');
+        console.log('Debug API status:', debugResponse.status);
+        
+    } catch (error) {
+        console.error('Debug error:', error);
+    }
+}
+
+async function testAllEndpoints() {
+    console.log('Testing all API endpoints...');
+    
+    const endpoints = [
+        '{% url "mis_app:api_connections" %}',
+        '{% url "mis_app:api_test" %}',
+        '{% url "mis_app:api_debug_connections" %}'
+    ];
+    
+    for (const endpoint of endpoints) {
+        try {
+            const response = await fetch(endpoint);
+            console.log(`${endpoint}: ${response.status} ${response.statusText}`);
+            
+            if (response.ok) {
+                const data = await response.json();
+                console.log('Response:', data);
+            }
+        } catch (error) {
+            console.error(`Error with ${endpoint}:`, error);
+        }
+    }
+}
+
+// Call this function when the page loads
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('Database management page loaded');
+    debugConnections(); // Test the APIs
+    
+    // ... rest of your existing code ...
+});
+
+const addButton = document.getElementById('addNewConnectionBtn');
+    if (addButton) {
+        addButton.addEventListener('click', function(e) {
+            console.log('Add New button clicked');
+            e.preventDefault();
+            e.stopPropagation();
+            resetForm();
+        });
+    } else {
+        console.error('Add New button not found!');
+    }
+    
+    // Test if other elements exist
+    console.log('Save button found:', document.getElementById('saveConnectionBtn') !== null);
+    console.log('Test button found:', document.getElementById('testConnectionBtn') !== null);
+    console.log('DB type select found:', document.getElementById('db_type') !== null);
+    
+    // --- Initial Load ---
+    async function init() {
+        console.log('Initializing page...');
+        try {
+            await loadConnections();
+            document.getElementById('connectionFormCard').style.display = 'none';
+            document.getElementById('selectConnectionPrompt').style.display = 'block';
+            toggleDbFields();
+            console.log('Page initialization complete');
+        } catch (error) {
+            console.error('Initialization error:', error);
+        }
+    }
+    
+    init();
+    testAllEndpoints();
+});
+
+// Update these fetch URLs to match your URL patterns:
+
+// For bulk testing (line ~580 in the template):
+const response = await fetch('{% url "mis_app:api_bulk_test_connections" %}', {
+    method: 'POST',
+    headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+    },
+    body: JSON.stringify({ connection_ids: Array.from(selectedConnections) })
+});
+
+// For bulk deleting (line ~620 in the template):
+const response = await fetch('{% url "mis_app:api_bulk_delete_connections" %}', {
+    method: 'POST',
+    headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+    },
+    body: JSON.stringify({ connection_ids: Array.from(selectedConnections) })
+});
+
+// For connection stats (add this function):
+async function loadConnectionStats() {
+    try {
+        const response = await fetch('{% url "mis_app:api_connection_stats" %}');
+        if (response.ok) {
+            const stats = await response.json();
+            updateConnectionStats(connections); // This function already exists
+        }
+    } catch (error) {
+        console.error('Error loading connection stats:', error);
+    }
+}
+
+</script>
+
+{% endblock %}

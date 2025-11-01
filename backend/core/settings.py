@@ -56,8 +56,8 @@ if APPS_DIR.is_dir():
                     # Handle potential errors in reading or parsing the json file
                     print(f"Warning: Could not load module from {app_dir.name}. Error: {e}")
 
-# Base and third-party apps
-THIRD_PARTY_APPS = [
+INSTALLED_APPS = [
+    'jazzmin',
     'shared',  # Shared app for common utilities (placed early to override commands like runserver)
     'django.contrib.admin',
     'django.contrib.auth',
@@ -73,7 +73,7 @@ THIRD_PARTY_APPS = [
 ]
 
 # Combine third-party apps with dynamically discovered modules
-INSTALLED_APPS = THIRD_PARTY_APPS # + DYNAMIC_APPS
+# INSTALLED_APPS = THIRD_PARTY_APPS # + DYNAMIC_APPS
 
 # Statically defined apps that are not part of the dynamic module system (if any)
 # For full modularity, aim to move all 'apps.*' into the dynamic loading system.
@@ -99,11 +99,221 @@ STATIC_APPS = [
     'apps.procurement',
     'apps.quality',
     'apps.metadata',
+    'apps.security',
     'apps.audit',
+    'apps.report_builder',
+    'apps.tasks',
+    'apps.notifications',
 ]
 
 INSTALLED_APPS += STATIC_APPS
 
+JAZZMIN_SETTINGS = {
+    # title of the window (Will default to current_admin_site.site_title if absent or None)
+    "site_title": "Twist Erp administration Control Centre",
+
+    # Title on the login screen (19 chars max) (defaults to current_admin_site.site_header if absent or None)
+    "site_header": "Twist Erp administration Control Centre",
+
+    # Brand & logos
+    "site_brand": "TWIST ERP",
+    "site_logo": "brand/twist-logo.svg",
+    "login_logo": "brand/twist-logo.svg",
+    "login_logo_dark": "brand/twist-logo-white.svg",
+
+    # Welcome text on the login screen
+    "welcome_sign": "Welcome to Twist ERP",
+
+    # Copyright on the footer
+    "copyright": "Twist ERP Ltd",
+
+    # The model admin to search from the search bar, search bar will not be displayed if the list is empty
+    "search_model": ["users.User", "auth.Group"],
+
+    # Field name on user model that contains name of the user for the admin panel
+    "user_avatar": None,
+
+    ############
+    # Top Menu #
+    ############
+
+    # Links to put along the top menu
+    "topmenu_links": [
+        # Url that gets reversed (Permissions can be added)
+        {"name": "Home",  "url": "admin:index", "permissions": ["auth.view_user"]},
+
+        # external url that gets opened in a new window (Permissions can be added)
+        {"name": "Support", "url": "https://github.com/farridav/django-jazzmin/issues", "new_window": True},
+
+        # model admin to link to (Permissions can be added)
+        {"model": "users.User"},
+
+        # App with dropdown menu to all its models pages (Permissions can be added)
+        {"app": "companies"},
+    ],
+
+    #############
+    # User Menu #
+    #############
+
+    # Additional links to include in the user menu on the top right ("app" url names) 
+    "usermenu_links": [
+        {"name": "Support", "url": "https://github.com/farridav/django-jazzmin/issues", "new_window": True},
+        {"model": "users.User"},
+        {"name": "Theme", "url": "admin-appearance"}
+    ],
+
+    #############
+    # Side Menu #
+    #############
+
+    # Whether to display the search bar in the sidebar
+    "sidebar_show_search": True,
+
+    # Start with navigation collapsed
+    "navigation_expanded": False,
+
+    # Whether to display the self or the user's groups first in the sidebar
+    "sidebar_show_app_list": True,
+
+    # Whether to enable the sidebar
+    "sidebar_fixed": True,
+
+    # Add a custom icon to the admin app list
+    "icons": {
+        "auth": "fas fa-users-cog",
+        # Use the custom user model
+        "users.user": "fas fa-user",
+        "auth.Group": "fas fa-users",
+        "admin": "fas fa-tools",
+        "companies": "fas fa-building",
+        "companies.company": "fas fa-building",
+        "companies.companygroup": "fas fa-layer-group",
+        "finance": "fas fa-dollar-sign",
+        "finance.account": "fas fa-money-check-alt",
+        "finance.journalvoucher": "fas fa-book",
+        "inventory": "fas fa-boxes",
+        "inventory.product": "fas fa-box",
+        "inventory.warehouse": "fas fa-warehouse",
+        "sales": "fas fa-chart-line",
+        "sales.customer": "fas fa-user-tie",
+        "sales.salesorder": "fas fa-shopping-cart",
+        "procurement": "fas fa-truck-loading",
+        "procurement.supplier": "fas fa-truck",
+        "procurement.purchaseorder": "fas fa-file-invoice",
+        "assets": "fas fa-tools",
+        "assets.asset": "fas fa-wrench",
+        "budgeting": "fas fa-calculator",
+        "budgeting.budgetline": "fas fa-money-bill-wave",
+        "production": "fas fa-industry",
+        "production.bom": "fas fa-clipboard-list",
+        "production.workorder": "fas fa-cogs",
+        "hr": "fas fa-users",
+        "hr.employee": "fas fa-user-friends",
+        "hr.leaverequest": "fas fa-calendar-times",
+        "projects": "fas fa-project-diagram",
+        "projects.project": "fas fa-tasks",
+        "ai_companion": "fas fa-robot",
+        "ai_companion.aitrainingexample": "fas fa-brain",
+        "security": "fas fa-shield-alt",
+        "security.secpermission": "fas fa-key",
+        "security.secrole": "fas fa-user-tag",
+        "security.secuserrole": "fas fa-user-shield",
+        "security.secscope": "fas fa-globe",
+        "security.secsoDRule": "fas fa-handshake-slash",
+    },
+
+    # Custom links for sidebar app list
+    "order_with_respect_to": [
+        "companies",
+        "security",
+        "finance",
+        "inventory",
+        "sales",
+        "procurement",
+        "assets",
+        "budgeting",
+        "production",
+        "hr",
+        "projects",
+        "ai_companion",
+        "auth",
+    ],
+
+    # Custom links to include, there are 3 places where you can add links
+    "custom_links": {
+        "administration_security": [
+            {"name": "Companies", "url": "admin:companies_company_changelist", "icon": "fas fa-building"},
+            {"name": "Company Groups", "url": "admin:companies_companygroup_changelist", "icon": "fas fa-layer-group"},
+            {"name": "Permissions", "url": "admin:security_secpermission_changelist", "icon": "fas fa-key"},
+            {"name": "Roles", "url": "admin:security_secrole_changelist", "icon": "fas fa-user-tag"},
+            {"name": "Users", "url": "admin:users_user_changelist", "icon": "fas fa-user"},
+            {"name": "Groups", "url": "admin:auth_group_changelist", "icon": "fas fa-users"},
+        ],
+        "finance_accounting": [
+            {"name": "Accounts", "url": "admin:finance_account_changelist", "icon": "fas fa-money-check-alt"},
+            {"name": "Journal Vouchers", "url": "admin:finance_journalvoucher_changelist", "icon": "fas fa-book"},
+            {"name": "Invoices", "url": "admin:finance_invoice_changelist", "icon": "fas fa-file-invoice"},
+            {"name": "Payments", "url": "admin:finance_payment_changelist", "icon": "fas fa-dollar-sign"},
+            {"name": "Budget Lines", "url": "admin:budgeting_budgetline_changelist", "icon": "fas fa-money-bill-wave"},
+        ],
+        "operations_supply_chain": [
+            {"name": "Products", "url": "admin:inventory_product_changelist", "icon": "fas fa-box"},
+            {"name": "Warehouses", "url": "admin:inventory_warehouse_changelist", "icon": "fas fa-warehouse"},
+            {"name": "Purchase Orders", "url": "admin:procurement_purchaseorder_changelist", "icon": "fas fa-truck-loading"},
+            {"name": "Work Orders", "url": "admin:production_workorder_changelist", "icon": "fas fa-cogs"},
+            {"name": "Assets", "url": "admin:assets_asset_changelist", "icon": "fas fa-wrench"},
+        ],
+        "sales_crm": [
+            {"name": "Customers", "url": "admin:sales_customer_changelist", "icon": "fas fa-user-tie"},
+            {"name": "Sales Orders", "url": "admin:sales_salesorder_changelist", "icon": "fas fa-shopping-cart"},
+        ],
+        "human_resources_people": [
+            {"name": "Employees", "url": "admin:hr_employee_changelist", "icon": "fas fa-user-friends"},
+            {"name": "Leave Requests", "url": "admin:hr_leaverequest_changelist", "icon": "fas fa-calendar-times"},
+            {"name": "Payroll Runs", "url": "admin:hr_payrollrun_changelist", "icon": "fas fa-file-invoice-dollar"},
+            {"name": "Projects", "url": "admin:projects_project_changelist", "icon": "fas fa-tasks"},
+        ],
+        "ai_development_tools": [
+            {"name": "AI Training Examples", "url": "admin:ai_companion_aitrainingexample_changelist", "icon": "fas fa-brain"},
+            {"name": "Form Templates", "url": "admin:form_builder_formtemplate_changelist", "icon": "fas fa-file-alt"},
+            {"name": "Workflow Templates", "url": "admin:workflows_workflowtemplate_changelist", "icon": "fas fa-project-diagram"},
+            {"name": "Migration Jobs", "url": "admin:data_migration_migrationjob_changelist", "icon": "fas fa-database"},
+            {"name": "Reports", "url": "admin:report_builder_reportdefinition_changelist", "icon": "fas fa-file-chart-pie"},
+            {"name": "Audit Logs", "url": "admin:audit_auditlog_changelist", "icon": "fas fa-history"},
+            {"name": "Tasks", "url": "admin:tasks_taskitem_changelist", "icon": "fas fa-tasks"},
+            {"name": "Notifications", "url": "admin:notifications_notification_changelist", "icon": "fas fa-bell"}
+        ]
+    }
+}
+
+JAZZMIN_UI_TWEAKS = {
+    "navbar_small_text": False,
+    "footer_small_text": False,
+    "body_small_text": False,
+    "brand_small_text": False,
+    "brand_colour": False,
+    "accent": "accent-primary",
+    "navbar": "navbar-white navbar-light",
+    "no_navbar_border": False,
+    "navbar_fixed": True,
+    "layout_boxed": False,
+    "footer_fixed": False,
+    "sidebar_fixed": True,
+    "sidebar": "sidebar-light-primary",
+    "sidebar_nav_small_text": False,
+    "sidebar_disable_expand": False,
+    "sidebar_nav_child_indent": False,
+    "sidebar_nav_compact_style": False,
+    "sidebar_nav_legacy_style": False,
+    "sidebar_nav_flat_style": False,
+    "theme": "default",
+    "dark_mode_theme": None,
+    "button_classes": {
+        "primary": "btn-outline-primary",
+        "secondary": "btn-outline-secondary",
+    }
+}
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -115,6 +325,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'shared.middleware.company_context.CompanyContextMiddleware',
+    'apps.security.middleware.permission_context_middleware.PermissionContextMiddleware',
 ]
 
 ROOT_URLCONF = 'core.urls'
@@ -122,7 +333,7 @@ ROOT_URLCONF = 'core.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -130,6 +341,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'shared.context_processors.admin_theme',
             ],
         },
     },
@@ -207,6 +419,11 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+# Serve project-level static and pre-collected vendor assets in development
+STATICFILES_DIRS = [
+    BASE_DIR / 'static',
+]
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
@@ -251,6 +468,10 @@ AI_CONFIG = {
     'RASA_SERVER': os.getenv('AI_RASA_SERVER', 'http://localhost:5005'),
 }
 
+# Google Gemini API Configuration (Free LLM for Document Processing)
+# Get your free API key from: https://makersuite.google.com/app/apikey
+GOOGLE_GEMINI_API_KEY = os.getenv('GOOGLE_GEMINI_API_KEY', None)
+
 # Celery Beat Schedule (for periodic tasks)
 from celery.schedules import crontab
 
@@ -282,6 +503,23 @@ CELERY_BEAT_SCHEDULE = {
     'ai-monitor-budget-health': {
         'task': 'apps.ai_companion.tasks.monitor_budget_health',
         'schedule': crontab(minute=15, hour='*'),  # hourly at :15
+    },
+    'tasks-check-overdue': {
+        'task': 'apps.tasks.check_overdue_tasks',
+        'schedule': crontab(minute='*/30'),  # every 30 minutes
+    },
+    # AI API Key Management
+    'ai-reset-daily-counters': {
+        'task': 'apps.ai_companion.tasks.reset_api_key_daily_counters',
+        'schedule': crontab(hour=0, minute=0),  # Daily at midnight
+    },
+    'ai-reset-minute-counters': {
+        'task': 'apps.ai_companion.tasks.reset_api_key_minute_counters',
+        'schedule': crontab(minute='*/1'),  # Every minute
+    },
+    'ai-cleanup-old-logs': {
+        'task': 'apps.ai_companion.tasks.cleanup_old_api_logs',
+        'schedule': crontab(hour=3, minute=0),  # Daily at 3 AM
     },
 }
 

@@ -33,6 +33,7 @@ class User(AbstractUser):
     phone = models.CharField(max_length=20, blank=True)
     avatar = models.ImageField(upload_to='avatars/', null=True, blank=True)
     is_system_admin = models.BooleanField(default=False)
+    admin_theme = models.CharField(max_length=20, default='default')
 
     class Meta:
         db_table = 'users'
@@ -56,4 +57,3 @@ class UserCompanyRole(models.Model):
     class Meta:
         unique_together = [['user', 'company', 'role']]
         db_table = 'user_company_roles'
-

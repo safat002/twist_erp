@@ -355,12 +355,12 @@ const WorkOrders = () => {
           <Space size="large" style={{ width: '100%' }}>
             <Form.Item name="priority" label="Priority" style={{ flex: 1 }}>
               <Select
-                options=[
+                options={[
                   { label: 'Low', value: 'LOW' },
                   { label: 'Normal', value: 'NORMAL' },
                   { label: 'High', value: 'HIGH' },
                   { label: 'Critical', value: 'CRITICAL' },
-                ]
+                ]}
               />
             </Form.Item>
             <Form.Item name="warehouse" label="Production Warehouse" style={{ flex: 1 }}>

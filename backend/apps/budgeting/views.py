@@ -22,6 +22,7 @@ from .models import (
     BudgetOverrideRequest,
     BudgetUsage,
     CostCenter,
+    BudgetItemCode,
 )
 from .serializers import (
     BudgetLineSerializer,
@@ -30,7 +31,10 @@ from .serializers import (
     BudgetSnapshotSerializer,
     BudgetUsageSerializer,
     CostCenterSerializer,
+    BudgetItemCodeSerializer,
+    BudgetUnitOfMeasureSerializer,
 )
+from apps.inventory.models import UnitOfMeasure
 
 
 class CostCenterViewSet(viewsets.ModelViewSet):
@@ -416,3 +420,33 @@ class BudgetSnapshotViewSet(mixins.ListModelMixin, mixins.CreateModelMixin, view
             entity_id=str(instance.id),
             description=f"Snapshot captured for {budget.name}",
         )
+
+
+class BudgetItemCodeViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
+    serializer_class = BudgetItemCodeSerializer
+
+    def get_queryset(self):
+        company = getattr(self.request, "company", None)
+        qs = BudgetItemCode.objects.select_related("company", "uom")
+        if company:
+            qs = qs.filter(company=company)
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save()
+
+
+class BudgetUnitOfMeasureViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
+    serializer_class = BudgetUnitOfMeasureSerializer
+
+    def get_queryset(self):
+        company = getattr(self.request, "company", None)
+        qs = UnitOfMeasure.objects.all()
+        if company:
+            qs = qs.filter(company=company)
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save()

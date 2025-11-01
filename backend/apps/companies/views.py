@@ -17,7 +17,10 @@ class CompanyViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return self.request.user.companies.filter(is_active=True)
+        user = self.request.user
+        if getattr(user, "is_system_admin", False) or getattr(user, "is_staff", False):
+            return Company.objects.filter(is_active=True)
+        return user.companies.filter(is_active=True)
 
     @action(detail=False, methods=["get"], url_path="active")
     def active(self, request):
@@ -50,47 +53,6 @@ class CompanyViewSet(viewsets.ReadOnlyModelViewSet):
 
         request.session["active_company_id"] = str(company.id)
         serializer = self.get_serializer(company)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
-
-class ActiveCompanyView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get(self, request):
-        queryset = request.user.companies.filter(is_active=True)
-        company_id = request.session.get("active_company_id")
-        company = queryset.filter(id=company_id).first() if company_id else None
-
-        if not company:
-            company = queryset.first()
-            if company:
-                request.session["active_company_id"] = str(company.id)
-
-        if not company:
-            return Response(
-                {"detail": "No companies available for this user."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        serializer = CompanySerializer(company)
-        return Response(serializer.data)
-
-
-class ActivateCompanyView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def post(self, request, pk):
-        queryset = request.user.companies.filter(is_active=True)
-        company = queryset.filter(id=pk).first()
-
-        if not company:
-            return Response(
-                {"detail": "Company not found or not assigned to this user."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        request.session["active_company_id"] = str(company.id)
-        serializer = CompanySerializer(company)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 

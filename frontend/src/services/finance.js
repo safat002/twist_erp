@@ -27,6 +27,13 @@ export const deleteJournalVoucher = (id) =>
 export const postJournalVoucher = (id) =>
   api.post(`/api/v1/finance/journal-vouchers/${id}/post/`);
 
+export const processJournalVoucherDocument = (formData) =>
+  api.post('/api/v1/finance/journal-vouchers/process-document/', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+
 export const fetchInvoices = (params = {}) =>
   api.get('/api/v1/finance/invoices/', { params });
 

@@ -6,6 +6,7 @@ class TwistAdminSite(AdminSite):
     site_header = "Twist Administration"
     site_title = "Twist Administration"
     index_title = "Control Centre"
+    enable_nav_sidebar = True
 
 
 # Export a module-level admin_site that urls.py expects

@@ -135,6 +135,7 @@ const Dashboard = () => {
   const [scopeType, setScopeType] = useState('COMPANY');
   const [publishNow, setPublishNow] = useState(true);
   const [currency, setCurrency] = useState('BDT');
+  const [myTasks, setMyTasks] = useState([]);
 
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
@@ -159,6 +160,19 @@ const Dashboard = () => {
   useEffect(() => {
     fetchDashboard();
   }, [fetchDashboard]);
+
+  useEffect(() => {
+    const loadTasks = async () => {
+      try {
+        const tasksRes = await api.get('/api/v1/tasks/my/');
+        const tasks = Array.isArray(tasksRes.data) ? tasksRes.data : tasksRes.data?.results || [];
+        setMyTasks(tasks.slice(0, 5));
+      } catch (e) {
+        setMyTasks([]);
+      }
+    };
+    loadTasks();
+  }, []);
 
   const handleLayoutChange = (_layout, allLayouts) => {
     setLayouts(allLayouts);
@@ -284,22 +298,45 @@ const handleSaveLayout = async () => {
         }
       />
 
-      {loading ? (
-        <Spin tip="Loading dashboard" />
-      ) : (
-        <ResponsiveGridLayout
-          className="draggable-dashboard"
-          layouts={currentLayouts}
-          breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
-          cols={{ lg: 12, md: 12, sm: 12, xs: 6, xxs: 4 }}
-          rowHeight={90}
-          margin={[16, 16]}
-          onLayoutChange={handleLayoutChange}
-          draggableHandle=".drag-handle"
-        >
-          {widgetCards}
-        </ResponsiveGridLayout>
-      )}
+      <Row gutter={[16, 16]}>
+        <Col xs={24} lg={18}>
+          {loading ? (
+            <Spin tip="Loading dashboard" />
+          ) : (
+            <ResponsiveGridLayout
+              className="draggable-dashboard"
+              layouts={currentLayouts}
+              breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
+              cols={{ lg: 12, md: 12, sm: 12, xs: 6, xxs: 4 }}
+              rowHeight={90}
+              margin={[16, 16]}
+              onLayoutChange={handleLayoutChange}
+              draggableHandle=".drag-handle"
+            >
+              {widgetCards}
+            </ResponsiveGridLayout>
+          )}
+        </Col>
+        <Col xs={24} lg={6}>
+          <Card title="My Tasks" bodyStyle={{ paddingTop: 8 }}>
+            <List
+              dataSource={myTasks}
+              renderItem={(task) => (
+                <List.Item key={task.id}>
+                  <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                    <Text strong ellipsis>
+                      {task.title}
+                    </Text>
+                    <Text type="secondary">
+                      {(task.status || '').replace('_', ' ')}{task.due_date ? ` · due ${new Date(task.due_date).toLocaleString()}` : ''}
+                    </Text>
+                  </Space>
+                </List.Item>
+              )}
+            />
+          </Card>
+        </Col>
+      </Row>
     </div>
   );
 };

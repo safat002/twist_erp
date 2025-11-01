@@ -20,7 +20,11 @@ from .context_builder import ContextBuilder
 from .memory import MemoryService
 from .telemetry import TelemetryService
 from .skills.base import BaseSkill, SkillContext, SkillResponse
+from .skills.action_execution import ActionExecutionSkill
+from .skills.conversation import ConversationSkill
 from .skills.data_migration import DataMigrationSkill
+from .skills.data_query import DataQuerySkill
+from .skills.document_extraction import DocumentExtractionSkill
 from .skills.plan import PlanSkill
 from .skills.policy import PolicySkill
 from .skills.reporting import ReportingSkill
@@ -57,11 +61,20 @@ class AIOrchestrator:
         self._skills[skill.name] = skill
 
     def _register_default_skills(self):
+        # High-priority skills (specific actions)
+        self.register_skill(ActionExecutionSkill(self.memory))  # Priority: 15
+        self.register_skill(DataQuerySkill(self.memory))  # Priority: 20
+
+        # Medium-priority skills (domain-specific)
         self.register_skill(DataMigrationSkill(self.memory))
+        self.register_skill(DocumentExtractionSkill(self.memory))
         self.register_skill(ReportingSkill(self.memory))
         self.register_skill(PolicySkill(self.memory))
         self.register_skill(PlanSkill(self.memory))
-        self.register_skill(SystemFallbackSkill(self.memory))
+
+        # Low-priority skills (general conversation and fallback)
+        self.register_skill(ConversationSkill(self.memory))  # Priority: 50
+        self.register_skill(SystemFallbackSkill(self.memory))  # Priority: 999 (last resort)
 
     # ------------------------------------------------------------------ #
     # Conversation helpers                                               #
@@ -247,7 +260,7 @@ class AIOrchestrator:
         # Persist proactive suggestions if provided
         if result.proactive_suggestions:
             for suggestion in result.proactive_suggestions:
-                AIProactiveSuggestion.objects.create(
+                suggestion = AIProactiveSuggestion.objects.create(
                     user=user,
                     company=company,
                     title=suggestion.title,
@@ -255,6 +268,29 @@ class AIOrchestrator:
                     metadata=suggestion.metadata,
                     source_skill=skill.name,
                 )
+                # Mirror to Notification Center
+                try:
+                    from apps.notifications.models import Notification, NotificationSeverity
+                    sev = (suggestion.severity or "info").lower()
+                    notif_sev = NotificationSeverity.INFO
+                    if sev == "warning":
+                        notif_sev = NotificationSeverity.WARNING
+                    elif sev == "critical":
+                        notif_sev = NotificationSeverity.CRITICAL
+                    Notification.objects.create(
+                        company=company,
+                        company_group=company.company_group,
+                        created_by=None,
+                        user=user,
+                        title=suggestion.title,
+                        body=suggestion.body,
+                        severity=notif_sev,
+                        group_key="ai.suggestion",
+                        entity_type="AI_SUGGESTION",
+                        entity_id=str(suggestion.id),
+                    )
+                except Exception:
+                    logger.exception("Failed to mirror AI suggestion to Notification Center")
                 self.telemetry.record_event(
                     event_type="proactive.created",
                     user=user,

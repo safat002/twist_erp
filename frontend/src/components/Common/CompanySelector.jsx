@@ -97,7 +97,7 @@ const CompanySelector = () => {
       return;
     }
     if (key === 'manage') {
-      navigate('/admin/companies');
+      navigate('/company-management');
       return;
     }
     switchCompany(key);

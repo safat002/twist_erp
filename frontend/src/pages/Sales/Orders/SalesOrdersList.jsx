@@ -145,9 +145,9 @@ const SalesOrdersList = () => {
   }, [filteredOrders]);
 
   const bookingsConfig = useMemo(() => {
-    const safeData = (Array.isArray(bookings) ? bookings : []).map((item) => ({
-      ...item,
-      amount: Number(item?.amount) || 0,
+    const safeData = (Array.isArray(bookings) ? bookings : []).map((order) => ({
+      ...order,
+      amount: Number(order?.amount) || 0,
     }));
     return {
       data: safeData,

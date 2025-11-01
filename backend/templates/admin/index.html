@@ -1,0 +1,81 @@
+{% extends "admin/base_site.html" %} {% block extrastyle %} {{ block.super }}
+<style>
+	/* Responsive card grid for dashboard */
+	.admin-cards {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+		gap: 16px;
+		margin-top: 12px;
+		width: 100%;
+	}
+	@media (min-width: 576px) {
+		.admin-cards {
+			grid-template-columns: repeat(2, 1fr);
+		}
+	}
+	@media (min-width: 768px) {
+		.admin-cards {
+			grid-template-columns: repeat(3, 1fr);
+		}
+	}
+	@media (min-width: 992px) {
+		.admin-cards {
+			grid-template-columns: repeat(4, 1fr);
+		}
+	}
+	@media (min-width: 1200px) {
+		.admin-cards {
+			grid-template-columns: repeat(5, 1fr);
+		}
+	}
+	.admin-card {
+		border: 1px solid #e5e5e5;
+		border-radius: 8px;
+		padding: 16px;
+		background: #fff;
+		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+	}
+	.admin-card h3 {
+		margin: 0 0 8px 0;
+		font-size: 16px;
+	}
+	.admin-card ul {
+		margin: 0;
+		padding-left: 18px;
+	}
+	.admin-card .meta {
+		color: #999;
+		font-size: 12px;
+		margin-top: 8px;
+	}
+</style>
+{% endblock %} {% block content_title %}
+<h1>{{ site_header|default:'Twist ERP' }}</h1>
+<p class="help">{{ index_title|default:'' }}</p>
+{% endblock %} {% block content %}
+<div id="content-main">
+	{% if app_list %}
+	<div class="admin-cards">
+		{% for app in app_list %}
+		<div class="admin-card">
+			<h3>{{ app.name }}</h3>
+			<ul>
+				{% for model in app.models %}
+				<li>
+					{% if model.admin_url %}
+					<a href="{{ model.admin_url }}">{{ model.name }}</a>
+					{% else %} {{ model.name }} {% endif %} {% if model.add_url %}
+					&nbsp;·&nbsp;<a href="{{ model.add_url }}">Add</a>
+					{% endif %}
+				</li>
+				{% endfor %}
+			</ul>
+			<div class="meta">{{ app.app_label }}</div>
+		</div>
+		{% endfor %}
+	</div>
+	{% else %}
+	<p>No apps are registered.</p>
+	{% endif %}
+</div>
+{% endblock %}

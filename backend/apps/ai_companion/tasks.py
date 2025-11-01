@@ -677,3 +677,71 @@ def execute_lora_training_run(run_pk: int):
         run.save(update_fields=["status", "error", "finished_at", "updated_at"])
         logger.exception("AI LoRA run %s failed: %s", run.run_id, exc)
         return {"status": "error", "error": str(exc), "run_id": str(run.run_id)}
+
+
+@shared_task(name="apps.ai_companion.tasks.reset_api_key_daily_counters")
+def reset_api_key_daily_counters():
+    """
+    Reset daily request counters for all Gemini API keys.
+    Should run once per day at midnight.
+    """
+    try:
+        from .models import GeminiAPIKey
+
+        keys = GeminiAPIKey.objects.all()
+        reset_count = 0
+
+        for key in keys:
+            key.reset_daily_counter()
+            reset_count += 1
+
+        logger.info(f"AI Companion: Reset daily counters for {reset_count} API key(s)")
+        return {"status": "ok", "keys_reset": reset_count}
+
+    except Exception as exc:
+        logger.exception("AI Companion: Failed to reset daily counters: %s", exc)
+        return {"status": "error", "error": str(exc)}
+
+
+@shared_task(name="apps.ai_companion.tasks.reset_api_key_minute_counters")
+def reset_api_key_minute_counters():
+    """
+    Reset per-minute request counters for all Gemini API keys.
+    Should run every minute.
+    """
+    try:
+        from .models import GeminiAPIKey
+
+        keys = GeminiAPIKey.objects.all()
+        reset_count = 0
+
+        for key in keys:
+            key.reset_minute_counter()
+            reset_count += 1
+
+        logger.debug(f"AI Companion: Reset minute counters for {reset_count} API key(s)")
+        return {"status": "ok", "keys_reset": reset_count}
+
+    except Exception as exc:
+        logger.exception("AI Companion: Failed to reset minute counters: %s", exc)
+        return {"status": "error", "error": str(exc)}
+
+
+@shared_task(name="apps.ai_companion.tasks.cleanup_old_api_logs")
+def cleanup_old_api_logs(days_to_keep=30):
+    """
+    Clean up old API key usage logs to prevent database bloat.
+    Keeps only the last N days of logs.
+    """
+    try:
+        from .models import APIKeyUsageLog
+
+        cutoff_date = timezone.now() - timedelta(days=days_to_keep)
+        deleted_count, _ = APIKeyUsageLog.objects.filter(created_at__lt=cutoff_date).delete()
+
+        logger.info(f"AI Companion: Deleted {deleted_count} old API usage log(s)")
+        return {"status": "ok", "deleted": deleted_count}
+
+    except Exception as exc:
+        logger.exception("AI Companion: Failed to cleanup old API logs: %s", exc)
+        return {"status": "error", "error": str(exc)}

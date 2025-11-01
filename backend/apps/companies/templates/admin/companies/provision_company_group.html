@@ -1,0 +1,66 @@
+{% extends "admin/base_site.html" %}
+
+{% block content_title %}
+  <h1>Provision New Company Group</h1>
+{% endblock %}
+
+{% block content %}
+  <div id="content-main" class="module">
+    {% if messages %}
+      <ul class="messagelist">
+        {% for message in messages %}
+          <li class="{{ message.tags }}">{{ message }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    <form method="post" novalidate>
+      {% csrf_token %}
+      <fieldset class="module aligned">
+        <h2>Group</h2>
+        <div class="form-row">
+          {{ form.group_name.errors }}
+          <div><label for="id_group_name">{{ form.group_name.label }}:</label></div>
+          <div>{{ form.group_name }}</div>
+        </div>
+        <div class="form-row">
+          {{ form.industry_pack_type.errors }}
+          <div><label for="id_industry_pack_type">{{ form.industry_pack_type.label }}:</label></div>
+          <div>{{ form.industry_pack_type }}</div>
+        </div>
+        <div class="form-row">
+          {{ form.supports_intercompany.errors }}
+          <div><label for="id_supports_intercompany">{{ form.supports_intercompany.label }}:</label></div>
+          <div>{{ form.supports_intercompany }}</div>
+        </div>
+
+        <h2>Default Company</h2>
+        <div class="form-row">
+          {{ form.company_name.errors }}
+          <div><label for="id_company_name">{{ form.company_name.label }}:</label></div>
+          <div>{{ form.company_name }}</div>
+        </div>
+        <div class="form-row">
+          {{ form.company_code.errors }}
+          <div><label for="id_company_code">{{ form.company_code.label }}:</label></div>
+          <div>{{ form.company_code }}</div>
+        </div>
+        <div class="form-row">
+          {{ form.currency_code.errors }}
+          <div><label for="id_currency_code">{{ form.currency_code.label }}:</label></div>
+          <div>{{ form.currency_code }}</div>
+        </div>
+        <div class="form-row">
+          {{ form.fiscal_year_start.errors }}
+          <div><label for="id_fiscal_year_start">{{ form.fiscal_year_start.label }}:</label></div>
+          <div>{{ form.fiscal_year_start }}</div>
+        </div>
+      </fieldset>
+
+      <div class="submit-row">
+        <input type="submit" class="default" value="Provision" />
+      </div>
+    </form>
+  </div>
+{% endblock %}
+

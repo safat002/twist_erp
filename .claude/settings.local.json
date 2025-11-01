@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python manage.py makemigrations:*)",
+      "Bash(dir:*)",
+      "Bash(pip install:*)",
+      "Bash(python -m pip:*)",
+      "Bash(pip uninstall:*)",
+      "Bash(python:*)",
+      "Bash(findstr:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

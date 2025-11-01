@@ -16,6 +16,7 @@ from apps.inventory.models import StockLevel
 from apps.users.models import UserCompanyRole
 
 from ..models import AIProactiveSuggestion
+from apps.notifications.models import Notification, NotificationSeverity
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -254,9 +255,25 @@ class AlertEngine:
                 existing.alert_type = alert_type
                 existing.metadata = metadata
                 existing.save(update_fields=["title", "body", "severity", "alert_type", "metadata", "updated_at"])
+                # Mirror to Notification Center (upsert latest unread notification)
+                notif_sev = NotificationSeverity.CRITICAL if severity == AIProactiveSuggestion.AlertSeverity.CRITICAL else (
+                    NotificationSeverity.WARNING if severity == AIProactiveSuggestion.AlertSeverity.WARNING else NotificationSeverity.INFO
+                )
+                Notification.objects.create(
+                    company=company,
+                    company_group=company.company_group,
+                    created_by=None,
+                    user=user,
+                    title=title,
+                    body=body,
+                    severity=notif_sev,
+                    group_key=rule_code,
+                    entity_type="AI_SUGGESTION",
+                    entity_id=str(existing.id),
+                )
                 continue
 
-            AIProactiveSuggestion.objects.create(
+            suggestion = AIProactiveSuggestion.objects.create(
                 user=user,
                 company=company,
                 title=title,
@@ -265,6 +282,21 @@ class AlertEngine:
                 alert_type=alert_type,
                 severity=severity,
                 source_skill="alert_engine",
+            )
+            notif_sev = NotificationSeverity.CRITICAL if severity == AIProactiveSuggestion.AlertSeverity.CRITICAL else (
+                NotificationSeverity.WARNING if severity == AIProactiveSuggestion.AlertSeverity.WARNING else NotificationSeverity.INFO
+            )
+            Notification.objects.create(
+                company=company,
+                company_group=company.company_group,
+                created_by=None,
+                user=user,
+                title=title,
+                body=body,
+                severity=notif_sev,
+                group_key=rule_code,
+                entity_type="AI_SUGGESTION",
+                entity_id=str(suggestion.id),
             )
             created += 1
         return created

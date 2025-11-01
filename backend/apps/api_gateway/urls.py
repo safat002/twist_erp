@@ -10,6 +10,8 @@ urlpatterns = [
     path('v1/analytics/', include('apps.analytics.urls')),
     path('v1/dashboard/', include('apps.dashboard.urls')),
     path('v1/metadata/', include('apps.metadata.urls')),
+    path('v1/tasks/', include('apps.tasks.urls')),
+    path('v1/notifications/', include('apps.notifications.urls')),
     # Phase 4-6 modules
     path('v1/forms/', include('apps.form_builder.urls')),
     path('v1/workflows/', include('apps.workflows.urls')),
@@ -19,6 +21,7 @@ urlpatterns = [
     path('v1/data-migration/', include('apps.data_migration.urls')),
     path('v1/hr/', include('apps.hr.urls')),
     path('v1/projects/', include('apps.projects.urls')),
+    path('v1/report-builder/', include('apps.report_builder.urls')),
     path('v1/procurement/', include('apps.procurement.urls')),
     path('v1/inventory/', include('apps.inventory.urls')),
     path('v1/production/', include('apps.production.urls')),

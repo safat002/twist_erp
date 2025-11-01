@@ -13,6 +13,8 @@ import {
   Statistic,
   Table,
   Tag,
+  Upload,
+  Spin,
   message,
 } from 'antd';
 import {
@@ -22,6 +24,9 @@ import {
   FileTextOutlined,
   PlusOutlined,
   ThunderboltOutlined,
+  UploadOutlined,
+  FileImageOutlined,
+  FilePdfOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useCompany } from '../../../contexts/CompanyContext';
@@ -33,6 +38,7 @@ import {
   fetchJournals,
   postJournalVoucher,
   updateJournalVoucher,
+  processJournalVoucherDocument,
 } from '../../../services/finance';
 
 const JournalVouchersList = () => {
@@ -46,6 +52,8 @@ const JournalVouchersList = () => {
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [selectedVoucher, setSelectedVoucher] = useState(null);
   const [editingVoucher, setEditingVoucher] = useState(null);
+  const [uploadedFile, setUploadedFile] = useState(null);
+  const [processingDocument, setProcessingDocument] = useState(false);
   const [form] = Form.useForm();
 
   const loadLookups = async () => {
@@ -96,6 +104,7 @@ const JournalVouchersList = () => {
 
   const handleCreate = () => {
     setEditingVoucher(null);
+    setUploadedFile(null);
     form.resetFields();
     form.setFieldsValue({
       entry_date: dayjs(),
@@ -106,6 +115,43 @@ const JournalVouchersList = () => {
       ],
     });
     setModalVisible(true);
+  };
+
+  const handleFileUpload = async (file) => {
+    setProcessingDocument(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const { data } = await processJournalVoucherDocument(formData);
+
+      // Populate form with AI-extracted data
+      const formValues = {
+        entry_date: data.entry_date ? dayjs(data.entry_date) : dayjs(),
+        status: 'DRAFT',
+        reference: data.reference || '',
+        description: data.description || '',
+        entries: (data.entries || []).map((entry) => ({
+          account: entry.account_id || undefined,
+          debit_amount: entry.debit_amount || 0,
+          credit_amount: entry.credit_amount || 0,
+          description: entry.description || '',
+        })),
+      };
+
+      if (data.journal_id) {
+        formValues.journal = data.journal_id;
+      }
+
+      form.setFieldsValue(formValues);
+      setUploadedFile(file);
+      message.success('Document processed successfully! Please verify the extracted data.');
+    } catch (error) {
+      message.error(error?.response?.data?.detail || 'Failed to process document.');
+    } finally {
+      setProcessingDocument(false);
+    }
+    return false; // Prevent default upload behavior
   };
 
   const handleEdit = (voucher) => {
@@ -343,10 +389,30 @@ const JournalVouchersList = () => {
         open={modalVisible}
         onCancel={() => setModalVisible(false)}
         destroyOnClose
-        width={720}
+        width={1400}
         onOk={() => form.submit()}
       >
-        <Form layout="vertical" form={form} onFinish={handleSubmit}>
+        <Spin spinning={processingDocument} tip="Processing document with AI...">
+          {!editingVoucher && (
+            <div style={{ marginBottom: 16 }}>
+              <Upload
+                accept=".pdf,.jpg,.jpeg,.png"
+                beforeUpload={handleFileUpload}
+                showUploadList={false}
+                maxCount={1}
+              >
+                <Button icon={<UploadOutlined />} type="dashed" block>
+                  <FileImageOutlined /> <FilePdfOutlined /> Upload PDF/Image to Auto-Fill
+                </Button>
+              </Upload>
+              {uploadedFile && (
+                <div style={{ marginTop: 8, color: '#52c41a' }}>
+                  <CheckCircleOutlined /> File uploaded: {uploadedFile.name}
+                </div>
+              )}
+            </div>
+          )}
+          <Form layout="vertical" form={form} onFinish={handleSubmit}>
           <Form.Item
             name="journal"
             label="Journal"
@@ -388,45 +454,63 @@ const JournalVouchersList = () => {
             {(fields, { add, remove }) => (
               <>
                 {fields.map(({ key, name, ...field }) => (
-                  <Space
+                  <div
                     key={key}
-                    align="baseline"
-                    style={{ display: 'flex', marginBottom: 12 }}
-                    wrap
+                    style={{
+                      display: 'flex',
+                      gap: '8px',
+                      marginBottom: 12,
+                      alignItems: 'baseline',
+                      flexWrap: 'nowrap'
+                    }}
                   >
                     <Form.Item
                       {...field}
                       name={[name, 'account']}
                       rules={[{ required: true, message: 'Select account' }]}
+                      style={{ flex: '0 0 450px', marginBottom: 0 }}
                     >
                       <Select
                         showSearch
-                        placeholder="Account"
+                        placeholder="Select Account"
                         optionFilterProp="label"
                         options={accountOptions}
-                        style={{ width: 220 }}
                       />
                     </Form.Item>
-                    <Form.Item {...field} name={[name, 'debit_amount']} initialValue={0}>
-                      <Input placeholder="Debit" type="number" step="0.01" style={{ width: 120 }} />
+                    <Form.Item
+                      {...field}
+                      name={[name, 'debit_amount']}
+                      initialValue={0}
+                      style={{ flex: '0 0 140px', marginBottom: 0 }}
+                    >
+                      <Input placeholder="Debit" type="number" step="0.01" />
                     </Form.Item>
-                    <Form.Item {...field} name={[name, 'credit_amount']} initialValue={0}>
-                      <Input
-                        placeholder="Credit"
-                        type="number"
-                        step="0.01"
-                        style={{ width: 120 }}
-                      />
+                    <Form.Item
+                      {...field}
+                      name={[name, 'credit_amount']}
+                      initialValue={0}
+                      style={{ flex: '0 0 140px', marginBottom: 0 }}
+                    >
+                      <Input placeholder="Credit" type="number" step="0.01" />
                     </Form.Item>
-                    <Form.Item {...field} name={[name, 'description']} style={{ width: 200 }}>
+                    <Form.Item
+                      {...field}
+                      name={[name, 'description']}
+                      style={{ flex: '1', marginBottom: 0 }}
+                    >
                       <Input placeholder="Line description" />
                     </Form.Item>
-                    {fields.length > 1 ? (
-                      <Button type="text" danger onClick={() => remove(name)}>
+                    {fields.length > 1 && (
+                      <Button
+                        type="text"
+                        danger
+                        onClick={() => remove(name)}
+                        style={{ flex: '0 0 auto' }}
+                      >
                         Remove
                       </Button>
-                    ) : null}
-                  </Space>
+                    )}
+                  </div>
                 ))}
                 <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined />}>
                   Add Line
@@ -435,6 +519,7 @@ const JournalVouchersList = () => {
             )}
           </Form.List>
         </Form>
+        </Spin>
       </Modal>
     </div>
   );

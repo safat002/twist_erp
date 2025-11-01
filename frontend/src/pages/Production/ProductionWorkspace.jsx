@@ -139,10 +139,9 @@ const ProductionWorkspace = () => {
                       <Text strong>{item.number}</Text>
                       <Tag color={item.status === 'IN_PROGRESS' ? 'blue' : 'default'}>{item.status}</Tag>
                     </Space>
-                    <Text type="secondary">
-                      Planned Qty: {item.quantity} - {item.start} -> {item.end}
-                    </Text>
-                  </Space>
+                                          <Text type="secondary">
+                                            {`Planned Qty: ${item.quantity} - ${item.start} -> ${item.end}`}
+                                          </Text>                  </Space>
                 </List.Item>
               )}
             />

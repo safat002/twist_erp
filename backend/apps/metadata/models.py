@@ -17,6 +17,7 @@ class MetadataDefinition(models.Model):
         ("WORKFLOW", "Workflow Definition"),
         ("DASHBOARD", "Dashboard Definition"),
         ("WIDGET", "Dashboard Widget Definition"),
+        ("REPORT", "Report Definition"),
     ]
 
     LAYER_CHOICES = [
@@ -38,7 +39,7 @@ class MetadataDefinition(models.Model):
         ("archived", "Archived"),
     ]
 
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # Use default BigAutoField primary key from app config
     key = models.CharField(
         max_length=255,
         help_text="Stable identifier (e.g., 'entity.customer', 'form.purchase_order').",

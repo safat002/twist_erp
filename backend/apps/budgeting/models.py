@@ -456,3 +456,26 @@ class BudgetConsumptionSnapshot(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["budget", "snapshot_date"], name="unique_budget_snapshot_per_day"),
         ]
+
+
+class BudgetItemCode(models.Model):
+    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name='budget_item_codes')
+    code = models.CharField(max_length=64)
+    name = models.CharField(max_length=255)
+    category = models.CharField(max_length=120, blank=True)
+    uom = models.ForeignKey('inventory.UnitOfMeasure', on_delete=models.PROTECT, related_name='budget_item_codes')
+    standard_price = models.DecimalField(max_digits=20, decimal_places=2, default=Decimal("0.00"))
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("company", "code")
+        ordering = ["code"]
+        indexes = [
+            models.Index(fields=["company", "code"]),
+            models.Index(fields=["company", "is_active"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.code} - {self.name}"

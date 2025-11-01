@@ -185,7 +185,7 @@ class PurchaseRequisitionLine(models.Model):
         null=True,
         blank=True,
     )
-    item = models.ForeignKey(
+    product = models.ForeignKey(
         "inventory.Product",
         on_delete=models.PROTECT,
         related_name="purchase_requisition_lines",
@@ -462,7 +462,7 @@ class PurchaseOrderLine(models.Model):
         blank=True,
         related_name="purchase_order_lines",
     )
-    item = models.ForeignKey(
+    product = models.ForeignKey(
         "inventory.Product",
         on_delete=models.PROTECT,
         related_name="purchase_order_lines",

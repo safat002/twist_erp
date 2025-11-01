@@ -122,8 +122,12 @@ export const AuthProvider = ({ children }) => {
 
     if (isValid && activeAccessToken) {
       setAuthToken({ access: activeAccessToken, refresh: refreshToken });
-      setIsAuthenticated(true);
-      await fetchUserProfile();
+      const fetchedUser = await fetchUserProfile();
+      if (fetchedUser) {
+        setIsAuthenticated(true);
+      } else {
+        clearStoredTokens();
+      }
     } else {
       clearStoredTokens();
     }
@@ -142,8 +146,12 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem('accessToken', access);
       localStorage.setItem('refreshToken', refresh);
       setAuthToken({ access, refresh });
+      const fetchedUser = await fetchUserProfile();
+      if (!fetchedUser) {
+        clearStoredTokens();
+        return false;
+      }
       setIsAuthenticated(true);
-      await fetchUserProfile();
       return true;
     } catch (error) {
       console.error('Login failed:', error);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, Menu, Avatar, Dropdown, Badge, Space } from 'antd';
+import { Layout, Menu, Avatar, Dropdown, Badge, Space, List, Typography, Modal, Form, Input, DatePicker, Button, Select } from 'antd';
 import {
   DashboardOutlined,
   DollarOutlined,
@@ -12,6 +12,7 @@ import {
   LogoutOutlined,
   SwapOutlined,
   AppstoreOutlined,
+  ApartmentOutlined,
   FormOutlined,
   BranchesOutlined,
   ProjectOutlined,
@@ -19,8 +20,10 @@ import {
   PieChartOutlined,
   SolutionOutlined,
   RobotOutlined,
+  PlusOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
+import api from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useCompany } from '../contexts/CompanyContext';
 import CompanySelector from '../components/Common/CompanySelector';
@@ -35,8 +38,14 @@ const MainLayout = ({ children }) => {
   const [openKeys, setOpenKeys] = useState([]);
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, logout } = useAuth();
+  const { user, logout, isAuthenticated } = useAuth();
   const { currentCompany } = useCompany();
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [createVisible, setCreateVisible] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [form] = Form.useForm();
 
   useEffect(() => {
     const segments = location.pathname.split('/').filter(Boolean);
@@ -47,11 +56,44 @@ const MainLayout = ({ children }) => {
     }
   }, [location.pathname]);
 
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      if (!isAuthenticated) return;
+      try {
+        const { data } = await api.get('/api/v1/notifications/');
+        if (!mounted) return;
+        const list = Array.isArray(data) ? data : data?.results || [];
+        setNotifications(list);
+        const unread = list.filter((n) => (n.status || 'unread') === 'unread').length;
+        setUnreadCount(unread);
+      } catch (err) {
+        // silent fail
+      }
+    };
+    load();
+    const id = setInterval(load, 60000);
+    return () => {
+      mounted = false;
+      clearInterval(id);
+    };
+  }, [currentCompany?.id, isAuthenticated]);
+
   const menuItems = [
     {
       key: '/',
       icon: <DashboardOutlined />,
       label: 'Dashboard',
+    },
+    {
+      key: 'workboard',
+      icon: <SolutionOutlined />,
+      label: 'Workboard',
+      children: [
+        { key: '/tasks', label: 'My Tasks' },
+        { key: '/tasks/team', label: 'Team Tasks' },
+        { key: '/notifications', label: 'Notification Center' },
+      ],
     },
     {
       key: 'finance',
@@ -103,66 +145,76 @@ const MainLayout = ({ children }) => {
       label: 'No-Code Tools',
       children: [
         { key: '/forms', label: 'Form Builder' },
+        { key: '/reports', label: 'Report Builder' },
         { key: '/workflows', label: 'Workflows' },
         { key: '/migration', label: 'Data Migration' },
       ],
     },
     {
-      key: 'advanced',
-      icon: <ProjectOutlined />,
-      label: 'Advanced Modules',
+      key: 'company',
+      icon: <ApartmentOutlined />,
+      label: 'Company',
       children: [
-        {
-          key: 'assets',
-          icon: <ToolOutlined />,
-          label: 'Asset Management',
-          children: [
-            { key: '/assets', label: 'Asset Command Center' },
-            { key: '/assets/list', label: 'Asset Register' },
-            { key: '/assets/maintenance', label: 'Maintenance Planner' },
-          ],
-        },
-        {
-          key: 'budgets',
-          icon: <PieChartOutlined />,
-          label: 'Budgeting',
-          children: [
-            { key: '/budgets', label: 'Budgeting Hub' },
-            { key: '/budgets/list', label: 'Budget Registry' },
-            { key: '/budgets/monitor', label: 'Budget Monitor' },
-          ],
-        },
-        {
-          key: 'production',
-          icon: <ApartmentOutlined />,
-          label: 'Production',
-          children: [
-            { key: '/production', label: 'Production Control Tower' },
-            { key: '/production/boms', label: 'Bills of Materials' },
-            { key: '/production/work-orders', label: 'Work Orders' },
-          ],
-        },
-        {
-          key: 'hr',
-          icon: <SolutionOutlined />,
-          label: 'HR & Payroll',
-          children: [
-            { key: '/hr', label: 'People Operations Hub' },
-            { key: '/hr/employees', label: 'Employees' },
-            { key: '/hr/attendance', label: 'Attendance' },
-            { key: '/hr/payroll', label: 'Payroll Runs' },
-          ],
-        },
-        {
-          key: 'projects',
-          icon: <ProjectOutlined />,
-          label: 'Projects',
-          children: [
-            { key: '/projects', label: 'Projects Command Center' },
-            { key: '/projects/list', label: 'Projects List' },
-            { key: '/projects/gantt', label: 'Gantt Planner' },
-          ],
-        },
+        { key: '/company-management', label: 'Company Management' },
+      ],
+    },
+    {
+      key: 'assets',
+      icon: <ToolOutlined />,
+      label: 'Asset Management',
+      children: [
+        { key: '/assets', label: 'Asset Command Center' },
+        { key: '/assets/list', label: 'Asset Register' },
+        { key: '/assets/maintenance', label: 'Maintenance Planner' },
+      ],
+    },
+    {
+      key: 'budgets',
+      icon: <PieChartOutlined />,
+      label: 'Cost Centers & Budgeting',
+      children: [
+        { key: '/budgets', label: 'Budgeting Hub' },
+        { key: '/budgets/cost-centers', label: 'Cost Centers' },
+        { key: '/budgets/item-codes', label: 'Item Codes' },
+        { key: '/budgets/uoms', label: 'Units of Measure' },
+        { key: '/budgets/list', label: 'Budget Registry' },
+        { key: '/budgets/monitor', label: 'Budget Monitor' },
+      ],
+    },
+    {
+      key: 'production',
+      icon: <ApartmentOutlined />,
+      label: 'Production',
+      children: [
+        { key: '/production', label: 'Production Control Tower' },
+        { key: '/production/boms', label: 'Bills of Materials' },
+        { key: '/production/work-orders', label: 'Work Orders' },
+      ],
+    },
+    {
+      key: 'hr',
+      icon: <SolutionOutlined />,
+      label: 'HR & Payroll',
+      children: [
+        { key: '/hr', label: 'People Operations Hub' },
+        { key: '/hr/leave', label: 'Leave Management' },
+        { key: '/hr/advances-loans', label: 'Advances & Loans' },
+        { key: '/hr/recruitment', label: 'Recruitment' },
+        { key: '/hr/onboarding', label: 'Onboarding' },
+        { key: '/hr/performance', label: 'Performance' },
+        { key: '/hr/exit-management', label: 'Exit Management' },
+        { key: '/hr/policies', label: 'Policy Management' },
+        { key: '/hr/attendance', label: 'Attendance' },
+      ],
+    },
+    {
+      key: 'projects',
+      icon: <ProjectOutlined />,
+      label: 'Projects',
+      children: [
+        { key: '/projects', label: 'Projects Command Center' },
+        { key: '/projects/list', label: 'Projects List' },
+        { key: '/projects/gantt', label: 'Gantt Planner' },
       ],
     },
   ];
@@ -208,6 +260,60 @@ const MainLayout = ({ children }) => {
 
   const handleMenuClick = ({ key }) => {
     navigate(key);
+  };
+
+  const notifItems = (notifications || []).slice(0, 10).map((n) => ({
+    key: String(n.id),
+    label: (
+      <div style={{ maxWidth: 360 }}>
+        <Space direction="vertical" size={0} style={{ width: '100%' }}>
+          <Typography.Text strong ellipsis>{n.title}</Typography.Text>
+          {n.body ? (
+            <Typography.Text type="secondary" ellipsis>
+              {n.body}
+            </Typography.Text>
+          ) : null}
+          {(n.status || 'unread') === 'unread' ? (
+            <Button type="link" size="small" style={{ padding: 0 }} onClick={(e) => { e.domEvent?.stopPropagation?.(); }}>
+              {/* placeholder to prevent collapse on click */}
+            </Button>
+          ) : null}
+        </Space>
+      </div>
+    ),
+  }));
+  const notifMenu = {
+    items: [
+      ...notifItems,
+      { type: 'divider' },
+      { key: '__mark_all', label: 'Mark all read' },
+      { key: '__view_all', label: 'View all notifications' },
+    ],
+    onClick: async ({ key }) => {
+      if (key === '__view_all') {
+        setNotifOpen(false);
+        navigate('/notifications');
+        return;
+      }
+      if (key === '__mark_all') {
+        try {
+          await Promise.all((notifications || []).filter((n) => (n.status || 'unread') === 'unread').map((n) => api.patch(`/api/v1/notifications/${n.id}/mark/`, { status: 'read' })));
+          setNotifications((prev) => prev.map((n) => ({ ...n, status: 'read' })));
+          setUnreadCount(0);
+        } catch (e) {}
+        return;
+      }
+      // item click marks read
+      const id = Number(key);
+      if (!Number.isNaN(id)) {
+        try {
+          await api.patch(`/api/v1/notifications/${id}/mark/`, { status: 'read' });
+          setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, status: 'read' } : n)));
+          const unread = notifications.filter((n) => n.id !== id && (n.status || 'unread') === 'unread').length;
+          setUnreadCount(unread);
+        } catch (e) {}
+      }
+    },
   };
 
   return (
@@ -257,9 +363,20 @@ const MainLayout = ({ children }) => {
             <CompanySelector />
           </div>
           <Space size="large">
-            <Badge count={5}>
-              <BellOutlined style={{ fontSize: 20 }} />
-            </Badge>
+            <Dropdown
+              menu={notifMenu}
+              placement="bottomRight"
+              trigger={["click"]}
+              onOpenChange={setNotifOpen}
+              open={notifOpen}
+            >
+              <Badge count={unreadCount} overflowCount={99} offset={[0, 4]}>
+                <BellOutlined style={{ fontSize: 20, cursor: 'pointer' }} onClick={() => setNotifOpen((v) => !v)} />
+              </Badge>
+            </Dropdown>
+            <Button size="small" icon={<PlusOutlined />} onClick={() => setCreateVisible(true)} disabled={!user}>
+              New Task
+            </Button>
             <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
               <Space style={{ cursor: 'pointer' }}>
                 <Avatar icon={<UserOutlined />} />
@@ -275,6 +392,70 @@ const MainLayout = ({ children }) => {
           TWIST ERP ©2025 Transform, Integrate, Simplify, Track
         </Footer>
         <AIWidget />
+        <Modal
+          title="Create Task"
+          open={createVisible}
+          onCancel={() => setCreateVisible(false)}
+          onOk={async () => {
+            try {
+              const values = await form.validateFields();
+              setCreating(true);
+              await api.post('/api/v1/tasks/', {
+                task_type: 'personal',
+                title: values.title,
+                description: values.description || '',
+                due_date: values.due_date ? values.due_date.toISOString() : null,
+                assigned_to: user?.id,
+                priority: values.priority || 'normal',
+                visibility_scope: 'private',
+                recurrence: values.recurrence || 'none',
+                recurrence_until: values.recurrence_until ? values.recurrence_until.toISOString() : null,
+              });
+              setCreateVisible(false);
+              form.resetFields();
+            } catch (e) {
+              // noop
+            } finally {
+              setCreating(false);
+            }
+          }}
+          confirmLoading={creating}
+        >
+          <Form layout="vertical" form={form}>
+            <Form.Item name="title" label="Title" rules={[{ required: true, message: 'Please input a title' }]}>
+              <Input placeholder="Task title" />
+            </Form.Item>
+            <Form.Item name="description" label="Description">
+              <Input.TextArea rows={3} placeholder="Optional details" />
+            </Form.Item>
+            <Form.Item name="due_date" label="Due Date">
+              <DatePicker showTime style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name="priority" label="Priority" initialValue="normal">
+              <Select
+                options={[
+                  { value: 'low', label: 'Low' },
+                  { value: 'normal', label: 'Normal' },
+                  { value: 'high', label: 'High' },
+                  { value: 'critical', label: 'Critical' },
+                ]}
+              />
+            </Form.Item>
+            <Form.Item name="recurrence" label="Repeat" initialValue="none">
+              <Select
+                options={[
+                  { value: 'none', label: 'Does not repeat' },
+                  { value: 'daily', label: 'Daily' },
+                  { value: 'weekly', label: 'Weekly' },
+                  { value: 'monthly', label: 'Monthly' },
+                ]}
+              />
+            </Form.Item>
+            <Form.Item name="recurrence_until" label="Repeat Until">
+              <DatePicker showTime style={{ width: '100%' }} />
+            </Form.Item>
+          </Form>
+        </Modal>
       </Layout>
     </Layout>
   );

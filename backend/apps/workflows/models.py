@@ -34,13 +34,6 @@ class WorkflowTemplate(models.Model):
     scope_type = models.CharField(max_length=15, choices=SCOPE_CHOICES, default="COMPANY")
     status = models.CharField(max_length=15, choices=STATUS_CHOICES, default="draft")
     version = models.PositiveIntegerField(default=1)
-    metadata = models.ForeignKey(
-        MetadataDefinition,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="workflow_versions",
-    )
     company_group = models.ForeignKey(
         CompanyGroup,
         on_delete=models.PROTECT,
@@ -91,8 +84,6 @@ class WorkflowTemplate(models.Model):
                 counter += 1
                 slug_candidate = f"{base_slug}-{counter}"
             self.slug = slug_candidate
-        if self.metadata and self.metadata.version != self.version:
-            self.version = self.metadata.version
         super().save(*args, **kwargs)
 
 

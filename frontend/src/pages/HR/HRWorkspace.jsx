@@ -145,7 +145,9 @@ const INITIAL_OVERTIME_DASHBOARD = {
   approvedAmount: 0,
   pendingApprovals: 0,
   recent: [],
-};\n\nconst INITIAL_PAYROLL_RUNS = [
+};
+
+const INITIAL_PAYROLL_RUNS = [
   {
     id: 'pay-1',
     period: 'Sep 2025',
@@ -718,7 +720,7 @@ const HRWorkspace = () => {
                       <Tag>{plan.scenario}</Tag>
                     </Space>
                     <Text type="secondary">
-                      Need {formatNumber(plan.requiredHeadcount)} · Actual {formatNumber(plan.actualHeadcount ?? 0)}
+                      Need {formatNumber(plan.requiredHeadcount)} ï¿½ Actual {formatNumber(plan.actualHeadcount ?? 0)}
                     </Text>
                     {plan.notes ? <Text>{plan.notes}</Text> : null}
                   </Space>
@@ -792,7 +794,7 @@ const HRWorkspace = () => {
                         <Tag color={entry.status === 'Approved' ? 'green' : 'blue'}>{entry.status}</Tag>
                       </Space>
                       <Text type="secondary">
-                        {entry.date ? new Date(entry.date).toLocaleDateString() : ''} · {formatAmount(entry.amount)}
+                        {entry.date ? new Date(entry.date).toLocaleDateString() : ''} ï¿½ {formatAmount(entry.amount)}
                       </Text>
                     </Space>
                   </List.Item>
@@ -811,7 +813,7 @@ const HRWorkspace = () => {
                   <Space direction="vertical" size={0} style={{ width: '100%' }}>
                     <Text strong>{item.shiftCode || item.scenario}</Text>
                     <Text type="secondary">
-                      Required {formatNumber(item.requiredHeadcount || 0)} · Actual {formatNumber(item.actualHeadcount || 0)}
+                      Required {formatNumber(item.requiredHeadcount || 0)} ï¿½ Actual {formatNumber(item.actualHeadcount || 0)}
                     </Text>
                     {item.notes ? <Text>{item.notes}</Text> : null}
                   </Space>

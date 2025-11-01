@@ -57,13 +57,6 @@ class DashboardDefinition(models.Model):
     layer = models.CharField(max_length=20, choices=MetadataDefinition.LAYER_CHOICES, default="COMPANY_OVERRIDE")
     status = models.CharField(max_length=15, choices=STATUS_CHOICES, default="draft")
     version = models.PositiveIntegerField(default=1)
-    metadata = models.ForeignKey(
-        MetadataDefinition,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="dashboard_versions",
-    )
     company_group = models.ForeignKey(
         CompanyGroup,
         on_delete=models.PROTECT,
@@ -128,8 +121,6 @@ class DashboardDefinition(models.Model):
                 counter += 1
                 slug_candidate = f"{base_slug}-{counter}"
             self.slug = slug_candidate
-        if self.metadata and self.metadata.version != self.version:
-            self.version = self.metadata.version
         super().save(*args, **kwargs)
 
 

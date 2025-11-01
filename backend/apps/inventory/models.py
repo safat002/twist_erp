@@ -267,7 +267,7 @@ class StockLevel(models.Model):
 
 class GoodsReceiptLine(models.Model):
     goods_receipt = models.ForeignKey(GoodsReceipt, on_delete=models.CASCADE, related_name='lines')
-    item = models.ForeignKey(Product, on_delete=models.PROTECT, related_name='receipt_lines')
+    product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name='receipt_lines')
     purchase_order_line = models.ForeignKey('procurement.PurchaseOrderLine', on_delete=models.PROTECT, related_name='receipt_lines')
     quantity_received = models.DecimalField(max_digits=15, decimal_places=3)
 
@@ -276,7 +276,7 @@ class GoodsReceiptLine(models.Model):
 
 class DeliveryOrderLine(models.Model):
     delivery_order = models.ForeignKey(DeliveryOrder, on_delete=models.CASCADE, related_name='lines')
-    item = models.ForeignKey(Product, on_delete=models.PROTECT, related_name='delivery_lines')
+    product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name='delivery_lines')
     sales_order_line = models.ForeignKey('sales.SalesOrderLine', on_delete=models.PROTECT, related_name='delivery_lines')
     quantity_shipped = models.DecimalField(max_digits=15, decimal_places=3)
 

@@ -13,6 +13,7 @@ import {
   Progress,
   Typography,
 } from 'antd';
+import { message } from 'antd';
 import {
   ToolOutlined,
   AlertOutlined,
@@ -282,6 +283,24 @@ const AssetsWorkspace = () => {
     fetchOverview();
   }, [currentCompany?.id]);
 
+  const handleAutoPostDepreciation = async () => {
+    try {
+      setLoading(true);
+      const now = new Date();
+      await api.post('/api/v1/assets/depreciation/', { year: now.getFullYear(), month: now.getMonth() + 1 });
+      message.success('Depreciation batch posted');
+      // refresh overview to reflect any value changes
+      const response = await api.get('/api/v1/assets/overview/');
+      const payload = response.data || {};
+      setKpis(Array.isArray(payload.kpis) && payload.kpis.length ? payload.kpis : INITIAL_KPIS);
+    } catch (error) {
+      console.error('Failed to post depreciation batch', error);
+      message.error('Failed to post depreciation');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const depreciationConfig = useMemo(() => {
     const data = Array.isArray(depreciationTrend)
       ? depreciationTrend.reduce((acc, item) => {
@@ -445,7 +464,7 @@ const AssetsWorkspace = () => {
             title="Depreciation vs Opening Value"
             extra={
               <Space>
-                <Button size="small" icon={<ThunderboltOutlined />}>
+                <Button size="small" icon={<ThunderboltOutlined />} onClick={handleAutoPostDepreciation}>
                   Auto-post batch
                 </Button>
                 <Button size="small" icon={<PlusOutlined />} type="primary">

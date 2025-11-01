@@ -532,3 +532,274 @@ class AIActionExecution(models.Model):
 
     def __str__(self) -> str:
         return f"{self.action_name} ({self.status})"
+
+
+class AIConfiguration(models.Model):
+    """
+    Global AI assistant configuration settings.
+    Allows admins to enable/disable AI features system-wide.
+    """
+
+    name = models.CharField(max_length=100, unique=True, default="default")
+
+    # Feature Toggles
+    ai_assistant_enabled = models.BooleanField(
+        default=True,
+        help_text="Enable or disable AI assistant globally"
+    )
+    document_processing_enabled = models.BooleanField(
+        default=True,
+        help_text="Enable or disable AI document processing (PDF/image extraction)"
+    )
+    proactive_suggestions_enabled = models.BooleanField(
+        default=True,
+        help_text="Enable or disable proactive AI suggestions"
+    )
+
+    # API Key Management
+    auto_key_rotation = models.BooleanField(
+        default=True,
+        help_text="Automatically switch to next API key when rate limit is reached"
+    )
+    max_retries = models.PositiveIntegerField(
+        default=3,
+        help_text="Maximum retries when all API keys are rate limited"
+    )
+    rate_limit_cooldown_minutes = models.PositiveIntegerField(
+        default=60,
+        help_text="Minutes to wait before retrying a rate-limited key"
+    )
+
+    # Model Settings
+    gemini_model = models.CharField(
+        max_length=100,
+        default="gemini-2.0-flash-exp",
+        help_text="Gemini model to use (e.g., gemini-2.0-flash-exp, gemini-pro-vision)"
+    )
+    max_tokens = models.PositiveIntegerField(
+        default=2048,
+        help_text="Maximum tokens in AI response"
+    )
+    temperature = models.FloatField(
+        default=0.7,
+        help_text="Temperature for AI responses (0.0-1.0). Higher = more creative"
+    )
+
+    # Performance Settings
+    request_timeout_seconds = models.PositiveIntegerField(
+        default=30,
+        help_text="Timeout for AI API requests in seconds"
+    )
+    enable_caching = models.BooleanField(
+        default=True,
+        help_text="Cache AI responses for identical requests"
+    )
+    cache_ttl_minutes = models.PositiveIntegerField(
+        default=60,
+        help_text="How long to cache responses in minutes"
+    )
+
+    # Safety Settings
+    enable_content_filtering = models.BooleanField(
+        default=True,
+        help_text="Enable content filtering for AI responses"
+    )
+    log_all_requests = models.BooleanField(
+        default=True,
+        help_text="Log all AI requests for audit purposes"
+    )
+
+    # Notifications
+    notify_on_key_exhaustion = models.BooleanField(
+        default=True,
+        help_text="Send notification when all API keys are rate limited"
+    )
+    notification_email = models.EmailField(
+        blank=True,
+        help_text="Email to notify about AI system issues"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "AI Configuration"
+        verbose_name_plural = "AI Configuration"
+
+    def __str__(self):
+        status = "Enabled" if self.ai_assistant_enabled else "Disabled"
+        return f"AI Configuration ({status})"
+
+    @classmethod
+    def get_config(cls):
+        """Get or create the default configuration."""
+        config, created = cls.objects.get_or_create(name="default")
+        return config
+
+
+class GeminiAPIKey(models.Model):
+    """
+    Stores multiple Gemini API keys for automatic rotation.
+    When one key hits rate limit, system automatically switches to another.
+    """
+
+    STATUS_CHOICES = [
+        ("active", "Active"),
+        ("rate_limited", "Rate Limited"),
+        ("disabled", "Disabled"),
+        ("invalid", "Invalid"),
+    ]
+
+    name = models.CharField(
+        max_length=100,
+        help_text="Friendly name for this API key (e.g., 'Production Key 1')"
+    )
+    api_key = models.CharField(
+        max_length=200,
+        unique=True,
+        help_text="Google Gemini API key"
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="active"
+    )
+    priority = models.PositiveIntegerField(
+        default=0,
+        help_text="Lower number = higher priority. Keys are used in priority order."
+    )
+    daily_limit = models.PositiveIntegerField(
+        default=1500,
+        help_text="Daily request limit for free tier (default: 1500)"
+    )
+    minute_limit = models.PositiveIntegerField(
+        default=15,
+        help_text="Per-minute request limit for free tier (default: 15)"
+    )
+    requests_today = models.PositiveIntegerField(default=0)
+    requests_this_minute = models.PositiveIntegerField(default=0)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    rate_limited_until = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Temporarily disabled until this time"
+    )
+    last_error = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["priority", "-created_at"]
+        verbose_name = "Gemini API Key"
+        verbose_name_plural = "Gemini API Keys"
+
+    def __str__(self):
+        masked_key = f"{self.api_key[:8]}...{self.api_key[-4:]}" if len(self.api_key) > 12 else "***"
+        return f"{self.name} ({masked_key}) - {self.get_status_display()}"
+
+    def is_available(self):
+        """Check if this key is available for use."""
+        from django.utils import timezone
+
+        if self.status == "disabled" or self.status == "invalid":
+            return False
+
+        # Check if rate limit cooldown has expired
+        if self.rate_limited_until and self.rate_limited_until > timezone.now():
+            return False
+
+        # If was rate limited but cooldown expired, reset status
+        if self.status == "rate_limited" and (
+            not self.rate_limited_until or self.rate_limited_until <= timezone.now()
+        ):
+            self.status = "active"
+            self.save(update_fields=["status"])
+
+        return self.status == "active"
+
+    def mark_rate_limited(self, minutes=60):
+        """Mark this key as rate limited for the specified duration."""
+        from django.utils import timezone
+
+        self.status = "rate_limited"
+        self.rate_limited_until = timezone.now() + timezone.timedelta(minutes=minutes)
+        self.save(update_fields=["status", "rate_limited_until", "updated_at"])
+
+    def mark_invalid(self, error_message=""):
+        """Mark this key as invalid (bad credentials, etc.)."""
+        self.status = "invalid"
+        self.last_error = error_message
+        self.save(update_fields=["status", "last_error", "updated_at"])
+
+    def increment_usage(self):
+        """Increment usage counters."""
+        from django.utils import timezone
+
+        self.requests_today += 1
+        self.requests_this_minute += 1
+        self.last_used_at = timezone.now()
+        self.save(update_fields=["requests_today", "requests_this_minute", "last_used_at", "updated_at"])
+
+    def reset_daily_counter(self):
+        """Reset daily request counter (called by scheduled task)."""
+        self.requests_today = 0
+        self.save(update_fields=["requests_today", "updated_at"])
+
+    def reset_minute_counter(self):
+        """Reset per-minute request counter."""
+        self.requests_this_minute = 0
+        self.save(update_fields=["requests_this_minute", "updated_at"])
+
+
+class APIKeyUsageLog(models.Model):
+    """
+    Logs API key usage for monitoring and debugging.
+    Helps track which keys are being used and why they fail.
+    """
+
+    api_key = models.ForeignKey(
+        GeminiAPIKey,
+        on_delete=models.CASCADE,
+        related_name="usage_logs"
+    )
+    operation = models.CharField(
+        max_length=100,
+        help_text="Operation type (e.g., 'document_processing', 'chat')"
+    )
+    success = models.BooleanField(default=True)
+    error_message = models.TextField(blank=True)
+    response_time_ms = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Response time in milliseconds"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="api_usage_logs"
+    )
+    company = models.ForeignKey(
+        "companies.Company",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="api_usage_logs"
+    )
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "API Key Usage Log"
+        verbose_name_plural = "API Key Usage Logs"
+        indexes = [
+            models.Index(fields=["api_key", "created_at"]),
+            models.Index(fields=["success", "created_at"]),
+            models.Index(fields=["operation", "created_at"]),
+        ]
+
+    def __str__(self):
+        status = "Success" if self.success else "Failed"
+        return f"{self.operation} - {status} ({self.created_at})"

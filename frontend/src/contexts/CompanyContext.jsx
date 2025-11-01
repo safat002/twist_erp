@@ -90,8 +90,8 @@ export const CompanyProvider = ({ children }) => {
       const response = await api.get('/api/v1/companies/');
       const payload = response.data?.results || response.data || [];
       const hasBackendCompanies = Array.isArray(payload) && payload.length > 0;
-      const list = hasBackendCompanies ? payload : fallbackCompanies;
-      setCompanies(list);
+      const list = hasBackendCompanies ? payload : [];
+      setCompanies(list.length ? list : []);
       let matched = null;
 
       if (hasBackendCompanies) {
@@ -112,15 +112,17 @@ export const CompanyProvider = ({ children }) => {
       if (!matched) {
         const storedId = loadFromStorage();
         matched =
-          list.find((company) => String(company.id) === String(storedId)) || list[0] || null;
+          list.find((company) => String(company.id) === String(storedId)) || null;
       }
 
-      setCurrentCompany(matched);
-      persistActiveCompany(matched?.id);
+      setCurrentCompany(matched || null);
+      persistActiveCompany((matched || {}).id);
     } catch (err) {
-      console.warn('Failed to load companies, using fallback list:', err?.message);
+      console.warn('Failed to load companies:', err?.message);
       setError(err);
-      applyFallbackCompanies();
+      // Do not use demo fallback for authenticated users; show empty to avoid confusion
+      setCompanies([]);
+      setCurrentCompany(null);
     } finally {
       setLoading(false);
     }

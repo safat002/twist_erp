@@ -103,6 +103,7 @@ def home(_request):
         a:hover { text-decoration: underline; }
         code { background: #f6f8fa; padding: .1rem .3rem; border-radius: 4px; }
       </style>
+      <link rel="icon" type="image/svg+xml" href="/static/brand/twist-favicon.svg">
       <link rel="icon" href="/favicon.ico">
     </head>
     <body>

@@ -98,11 +98,11 @@ const normalizePurchaseOrders = (records = []) =>
     const lines = Array.isArray(po.lines) ? po.lines : [];
     const firstLine = lines[0] || {};
     const category =
-      po.request_type_display || firstLine.item_name || firstLine.budget_line_name || po.category || '—';
+      po.request_type_display || firstLine.item_name || firstLine.budget_line_name || po.category || 'ï¿½';
     const amount = Number(po.total_amount ?? po.amount ?? 0);
     const currency = po.currency || 'USD';
     const statusKeyRaw = (po.status || po.status_key || '').toString().toLowerCase();
-    const statusDisplay = po.status_display || po.status || po.statusLabel || '—';
+    const statusDisplay = po.status_display || po.status || po.statusLabel || 'ï¿½';
     const status_key = statusKeyRaw || statusDisplay.toString().toLowerCase();
     const expectedDate = po.expected_delivery_date || po.order_date || po.expected_date || null;
 
@@ -116,7 +116,7 @@ const normalizePurchaseOrders = (records = []) =>
       status: statusDisplay,
       status_key: status_key || 'unknown',
       expected_date: expectedDate,
-      requester: po.cost_center_name || po.requester || '—',
+      requester: po.cost_center_name || po.requester || 'ï¿½',
     };
   });
 
@@ -137,7 +137,7 @@ const getStatusTagProps = (status) => {
     case 'cancelled':
       return { color: 'red', label: 'Cancelled' };
     default:
-      return { color: 'default', label: status || '—' };
+      return { color: 'default', label: status || 'ï¿½' };
   }
 };
 
@@ -206,9 +206,9 @@ const PurchaseOrdersList = () => {
   }, [filteredOrders]);
 
   const spendConfig = useMemo(() => {
-    const safeData = (Array.isArray(spendTrend) ? spendTrend : []).map((item) => ({
-      ...item,
-      amount: Number(item?.amount) || 0,
+    const safeData = (Array.isArray(spendTrend) ? spendTrend : []).map((order) => ({
+      ...order,
+      amount: Number(order?.amount) || 0,
     }));
     return {
       data: safeData,
@@ -242,13 +242,13 @@ const PurchaseOrdersList = () => {
       dataIndex: 'category',
       key: 'category',
       render: (value) =>
-        value && value !== '—' ? <Tag color="blue">{value}</Tag> : <Text type="secondary">—</Text>,
+        value && value !== 'ï¿½' ? <Tag color="blue">{value}</Tag> : <Text type="secondary">ï¿½</Text>,
     },
     {
       title: 'Requester',
       dataIndex: 'requester',
       key: 'requester',
-      render: (value) => value || '—',
+      render: (value) => value || 'ï¿½',
     },
     {
       title: 'Amount',
@@ -261,7 +261,7 @@ const PurchaseOrdersList = () => {
       title: 'Expected Delivery',
       dataIndex: 'expected_date',
       key: 'expected_date',
-      render: (value) => (value ? dayjs(value).format('MMM D, YYYY') : '—'),
+      render: (value) => (value ? dayjs(value).format('MMM D, YYYY') : 'ï¿½'),
     },
     {
       title: 'Status',

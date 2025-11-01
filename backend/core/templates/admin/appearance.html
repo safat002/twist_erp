@@ -1,0 +1,25 @@
+{% extends "admin/base_site.html" %}
+
+{% block content_title %}
+  <h1>Theme & Appearance</h1>
+{% endblock %}
+
+{% block content %}
+  <div id="content-main" class="module">
+    <p>Select a theme. Your choice applies to your session.</p>
+    <div class="admin-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:12px;">
+      {% for t in available_themes %}
+      <div class="admin-card" style="border:1px solid #e5e5e5;border-radius:8px;padding:16px;background:#fff;">
+        <h3 style="margin:0 0 8px 0;">
+          {{ t.name }}
+          {% if t.id == current_theme %}<span class="tag" style="font-size:12px;color:#666;">(current)</span>{% endif %}
+        </h3>
+        <div>
+          <a class="button" href="{% url 'set-admin-theme' t.id %}?next={{ request.get_full_path|urlencode }}">Activate</a>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+{% endblock %}
+

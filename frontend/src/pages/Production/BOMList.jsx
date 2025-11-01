@@ -258,11 +258,11 @@ const BOMList = () => {
             </Form.Item>
             <Form.Item name="status" label="Status" style={{ flex: 1 }}>
               <Select
-                options=[
+                options={[
                   { label: 'Draft', value: 'DRAFT' },
                   { label: 'Active', value: 'ACTIVE' },
                   { label: 'Archived', value: 'ARCHIVED' },
-                ]
+                ]}
               />
             </Form.Item>
             <Form.Item name="is_primary" label="Primary" style={{ flex: 1 }}>

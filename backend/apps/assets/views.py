@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from django.utils import timezone
 
 from django.db.models import Count, Q, Sum
 from rest_framework import generics, status
@@ -7,11 +8,15 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.companies.models import Company
-from .models import Asset, AssetMaintenancePlan
+from .models import Asset, AssetMaintenancePlan, DepreciationRun, DowntimeLog, AssetDisposal
 from .serializers import (
     AssetRegisterSerializer,
     AssetSerializer,
     MaintenanceTaskSerializer,
+    DepreciationRunSerializer,
+    DowntimeLogSerializer,
+    AssetDisposalSerializer,
+    EmployeeAssetAssignmentSerializer,
 )
 
 
@@ -285,3 +290,104 @@ class MaintenanceSummaryView(APIView):
             "total": qs.count(),
         }
         return Response(summary)
+
+
+class DepreciationRunListCreateView(generics.ListCreateAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = DepreciationRunSerializer
+
+    def get_queryset(self):
+        company = _resolve_company(self.request)
+        qs = DepreciationRun.objects.all()
+        if company:
+            qs = qs.filter(company=company)
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        company = _resolve_company(request)
+        if not company:
+            return Response({"detail": "Active company context required."}, status=400)
+        year = int(request.data.get("year") or timezone.now().year)
+        month = int(request.data.get("month") or timezone.now().month)
+        run = DepreciationRun.run_for_month(company=company, year=year, month=month, user=request.user)
+        serializer = self.get_serializer(run)
+        return Response(serializer.data, status=status.HTTP_201_CREATED if run.total_amount else status.HTTP_200_OK)
+
+
+class DowntimeLogListCreateView(generics.ListCreateAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = DowntimeLogSerializer
+
+    def get_queryset(self):
+        company = _resolve_company(self.request)
+        qs = DowntimeLog.objects.select_related("asset").all()
+        if company:
+            qs = qs.filter(company=company)
+        asset_id = self.request.query_params.get("asset")
+        if asset_id:
+            qs = qs.filter(asset_id=asset_id)
+        return qs
+
+    def perform_create(self, serializer):
+        company = _resolve_company(self.request)
+        if not company:
+            raise ValueError("Active company context is required")
+        serializer.save(company=company)
+
+
+class AssetDisposalListCreateView(generics.ListCreateAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = AssetDisposalSerializer
+
+    def get_queryset(self):
+        company = _resolve_company(self.request)
+        qs = AssetDisposal.objects.select_related("asset", "company", "voucher").all()
+        if company:
+            qs = qs.filter(company=company)
+        return qs
+
+
+class AssetDisposalDetailView(generics.RetrieveAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = AssetDisposalSerializer
+
+    def get_queryset(self):
+        company = _resolve_company(self.request)
+        qs = AssetDisposal.objects.select_related("asset", "company", "voucher")
+        if company:
+            qs = qs.filter(company=company)
+        return qs
+
+
+class AssetDisposalApproveView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        company = _resolve_company(request)
+        disposal = AssetDisposal.objects.select_related("asset", "company").get(pk=pk)
+        if company and disposal.company_id != company.id:
+            return Response({"detail": "Disposal not in active company."}, status=403)
+        try:
+            voucher = disposal.post_to_finance(user=request.user)
+            return Response({"status": disposal.status, "voucher_id": voucher.id})
+        except Exception as exc:
+            return Response({"detail": str(exc)}, status=400)
+
+
+class EmployeeAssetAssignmentListView(generics.ListAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = EmployeeAssetAssignmentSerializer
+
+    def get_queryset(self):
+        from apps.hr.models import EmployeeAssetAssignment
+        company = _resolve_company(self.request)
+        qs = EmployeeAssetAssignment.objects.select_related("employee")
+        if company:
+            qs = qs.filter(company=company)
+        status_filter = self.request.query_params.get("status")
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        employee_id = self.request.query_params.get("employee")
+        if employee_id:
+            qs = qs.filter(employee_id=employee_id)
+        return qs.order_by("-assignment_date")

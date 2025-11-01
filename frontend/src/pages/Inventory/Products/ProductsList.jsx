@@ -193,9 +193,9 @@ const ProductsList = () => {
 
   const metrics = useMemo(() => {
     const totalSkus = filteredProducts.length;
-    const lowStock = filteredProducts.filter((item) => item.status === 'Low Stock').length;
-    const critical = filteredProducts.filter((item) => item.status === 'Critical').length;
-    const blocked = filteredProducts.filter((item) => item.status === 'Blocked').length;
+    const lowStock = filteredProducts.filter((product) => product.status === 'Low Stock').length;
+    const critical = filteredProducts.filter((product) => product.status === 'Critical').length;
+    const blocked = filteredProducts.filter((product) => product.status === 'Blocked').length;
     return {
       totalSkus,
       lowStock,
@@ -205,9 +205,9 @@ const ProductsList = () => {
   }, [filteredProducts]);
 
   const turnoverConfig = useMemo(() => {
-    const safeData = (Array.isArray(turnoverTrend) ? turnoverTrend : []).map((item) => ({
-      ...item,
-      turnover: Number(item?.turnover) || 0,
+    const safeData = (Array.isArray(turnoverTrend) ? turnoverTrend : []).map((product) => ({
+      ...product,
+      turnover: Number(product?.turnover) || 0,
     }));
     return {
       data: safeData,
@@ -231,9 +231,9 @@ const ProductsList = () => {
 
   const categoryConfig = useMemo(() => {
     const safeData = (Array.isArray(categoryDistribution) ? categoryDistribution : []).map(
-      (item) => ({
-        ...item,
-        value: Number(item?.value) || 0,
+      (product) => ({
+        ...product,
+        value: Number(product?.value) || 0,
       }),
     );
     return {
@@ -417,14 +417,14 @@ const ProductsList = () => {
           <Card title="Fast Movers">
             <List
               dataSource={filteredProducts.slice(0, 5)}
-              renderItem={(item) => (
-                <List.Item key={item.id}>
+              renderItem={(product) => (
+                <List.Item key={product.id}>
                   <Space>
-                    <Badge color={segmentColorMap[item.segment]} />
+                    <Badge color={segmentColorMap[product.segment]} />
                     <Space direction="vertical" size={0}>
-                      <Text strong>{item.name}</Text>
+                      <Text strong>{product.name}</Text>
                       <Text type="secondary">
-                        {item.sku} · {item.segment ? `Class ${item.segment}` : 'Unclassified'}
+                        {product.sku} · {product.segment ? `Class ${product.segment}` : 'Unclassified'}
                       </Text>
                     </Space>
                   </Space>

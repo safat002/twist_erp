@@ -47,7 +47,7 @@ class SupplierSerializer(serializers.ModelSerializer):
 
 class PurchaseRequisitionLineSerializer(serializers.ModelSerializer):
     procurement_class = serializers.CharField(source="procurement_class", read_only=True)
-    budget_line_name = serializers.CharField(source="budget_line.item_name", read_only=True)
+    budget_line_name = serializers.CharField(source="budget_line.product_name", read_only=True)
     budget_line_available_value = serializers.SerializerMethodField()
 
     class Meta:
@@ -60,7 +60,7 @@ class PurchaseRequisitionLineSerializer(serializers.ModelSerializer):
             "budget_line_name",
             "budget_line_available_value",
             "cost_center",
-            "item",
+            "product",
             "description",
             "quantity",
             "uom",
@@ -153,7 +153,7 @@ class PurchaseRequisitionSerializer(serializers.ModelSerializer):
             line_number=line_data.get("line_number") or line_number,
             budget_line=budget_line,
             cost_center=line_data.get("cost_center") or requisition.cost_center,
-            item=line_data.get("item"),
+            product=line_data.get("product"),
             description=line_data.get("description", ""),
             quantity=quantity,
             uom=line_data.get("uom"),
@@ -204,8 +204,8 @@ class PurchaseRequisitionSerializer(serializers.ModelSerializer):
 class PurchaseOrderLineSerializer(serializers.ModelSerializer):
     procurement_class = serializers.CharField(source="procurement_class", read_only=True)
     quantity_ordered = serializers.DecimalField(max_digits=15, decimal_places=3, source="quantity")
-    item_name = serializers.CharField(source="item.name", read_only=True, default=None)
-    budget_line_name = serializers.CharField(source="budget_line.item_name", read_only=True, default=None)
+    product_name = serializers.CharField(source="product.name", read_only=True, default=None)
+    budget_line_name = serializers.CharField(source="budget_line.product_name", read_only=True, default=None)
     remaining_quantity = serializers.SerializerMethodField()
     within_tolerance = serializers.BooleanField(read_only=True)
 
@@ -218,8 +218,8 @@ class PurchaseOrderLineSerializer(serializers.ModelSerializer):
             "requisition_line",
             "budget_line",
             "budget_commitment",
-            "item",
-            "item_name",
+            "product",
+            "product_name",
             "description",
             "quantity_ordered",
             "expected_delivery_date",
@@ -246,7 +246,7 @@ class PurchaseOrderLineSerializer(serializers.ModelSerializer):
             "status",
             "remaining_quantity",
             "procurement_class",
-            "item_name",
+            "product_name",
             "budget_line_name",
         ]
 

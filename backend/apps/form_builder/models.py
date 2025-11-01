@@ -32,13 +32,6 @@ class FormTemplate(models.Model):
     scope_type = models.CharField(max_length=15, choices=SCOPE_CHOICES, default="COMPANY")
     version = models.PositiveIntegerField(default=1)
     status = models.CharField(max_length=15, choices=STATUS_CHOICES, default="draft")
-    metadata = models.ForeignKey(
-        MetadataDefinition,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="form_versions",
-    )
     company_group = models.ForeignKey(
         CompanyGroup,
         on_delete=models.PROTECT,
@@ -102,8 +95,6 @@ class FormTemplate(models.Model):
                 counter += 1
                 slug_candidate = f"{base_slug}-{counter}"
             self.slug = slug_candidate
-        if self.metadata and self.metadata.version != self.version:
-            self.version = self.metadata.version
         if self.scope_type == "COMPANY" and self.company and not self.company_group:
             self.company_group = self.company.company_group
         super().save(*args, **kwargs)
@@ -155,13 +146,6 @@ class DynamicEntity(models.Model):
     table_name = models.CharField(max_length=255)
     api_path = models.CharField(max_length=255)
     is_active = models.BooleanField(default=True)
-    metadata = models.ForeignKey(
-        MetadataDefinition,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="dynamic_entities",
-    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

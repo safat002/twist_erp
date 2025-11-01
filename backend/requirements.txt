@@ -1,93 +1,11 @@
-# Django and Core
-Django==4.2.7
+Django==4.2.13
 djangorestframework==3.14.0
-django-cors-headers==4.3.1
-django-filter==23.5
-drf-spectacular==0.27.0
-
-# Database
-psycopg[binary]==3.1.18
-dj-database-url==2.1.0
-
-# Authentication & Security
-djangorestframework-simplejwt==5.3.1
-django-oauth-toolkit==2.3.0
-cryptography==41.0.7
-
-# Task Queue
-celery==5.3.4
-redis==5.0.1
-django-redis==5.4.0
-django-celery-beat==2.5.0
-apscheduler==3.9.1
-
-# Data Processing
-pandas
-openpyxl==3.1.2
-python-dateutil==2.8.2
-xlrd==2.0.1
-fuzzywuzzy==0.18.0
-Levenshtein
-
-# API & Validation
-pydantic<2
-marshmallow==3.20.1
-jsonschema>=4.7,<4.18
-attrs==22.1.0
-
-# Utilities
-python-dotenv==1.0.0
-pytz==2023.3.post1
-pillow
-
-# Monitoring & Logging
-sentry-sdk==1.39.2
-python-json-logger==2.0.7
-
-# Development
-black
-flake8==7.0.0
-pytest==7.4.3
-pytest-django==4.7.0
-pytest-cov==4.1.0
-factory-boy==3.3.0
-
-# AI & Machine Learning
-langchain==0.1.0
-transformers==4.36.2
-torch==2.1.2
-sentence-transformers==2.2.2
-chromadb==0.4.22
-spacy==3.7.2
-qdrant-client==1.7.0
-faiss-cpu==1.7.4
-SQLAlchemy==1.4.49
-
-# NLP
-nltk==3.8.1
-textblob==0.17.1
-
-# No-Code Form Builder
-django-jsonfield==1.4.1
-
-# Workflow Engine
-python-statemachine==2.5.0
-
-# Web Server
-fastapi==0.108.0
-uvicorn==0.25.0
-
-# Advanced Modules
-holidays==0.38
-
-# Data Science for Anomaly Detection
-scikit-learn<1.3
-numpy==1.23.5
-scipy==1.11.4
-
-# Biometric Integration (HR Module)
-pyfingerprint==1.5
-
-# Reporting
-reportlab==4.0.8
-xlsxwriter==3.1.9
+djangorestframework-simplejwt==5.3.0
+django-cors-headers==4.0.0
+drf-spectacular==0.26.5
+psycopg2-binary==2.9.9
+django-filter==23.1
+django-jazzmin==2.6.0
+google-generativeai==0.8.3
+pdf2image==1.17.0
+Pillow==10.2.0

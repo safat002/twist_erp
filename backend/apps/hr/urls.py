@@ -1,41 +1,64 @@
-from django.urls import include, path
+from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-
 from .views import (
-    AttendanceViewSet,
-    DepartmentViewSet,
-    EmployeeLeaveBalanceViewSet,
-    EmployeeViewSet,
-    EmploymentGradeViewSet,
-    HROverviewView,
-    LeaveRequestViewSet,
     LeaveTypeViewSet,
-    OvertimeEntryViewSet,
-    OvertimePolicyViewSet,
-    PayrollRunViewSet,
-    SalaryStructureViewSet,
-    ShiftAssignmentViewSet,
+    HolidayViewSet,
+    LeaveRequestViewSet,
+    EmployeeLeaveBalanceViewSet,
+    AdvanceSalaryViewSet,
+    EmployeeLoanViewSet,
+    JobRequisitionViewSet,
+    CandidateViewSet,
+    InterviewViewSet,
+    OnboardingChecklistItemViewSet,
+    EmployeeOnboardingViewSet,
+    OnboardingTaskViewSet,
+    PerformanceReviewCycleViewSet,
+    PerformanceGoalViewSet,
+    CompetencyViewSet,
+    CompetencyRatingViewSet,
+    PerformanceReviewViewSet,
+    DisciplinaryActionViewSet,
+    ClearanceChecklistViewSet,
+    EmployeeClearanceViewSet,
+    ExitInterviewViewSet,
+    FinalSettlementViewSet,
+    EmployeeExitViewSet,
+    PolicyDocumentViewSet,
+    PolicyAcknowledgmentViewSet,
     ShiftTemplateViewSet,
-    WorkforceCapacityPlanViewSet,
+    AttendanceViewSet
 )
 
 router = DefaultRouter()
-router.register(r"departments", DepartmentViewSet, basename="hr-department")
-router.register(r"shift-templates", ShiftTemplateViewSet, basename="hr-shift-template")
-router.register(r"shift-assignments", ShiftAssignmentViewSet, basename="hr-shift-assignment")
-router.register(r"overtime-policies", OvertimePolicyViewSet, basename="hr-overtime-policy")
-router.register(r"overtime-entries", OvertimeEntryViewSet, basename="hr-overtime-entry")
-router.register(r"capacity-plans", WorkforceCapacityPlanViewSet, basename="hr-capacity-plan")
-router.register(r"grades", EmploymentGradeViewSet, basename="hr-grade")
-router.register(r"salary-structures", SalaryStructureViewSet, basename="hr-salary-structure")
-router.register(r"employees", EmployeeViewSet, basename="hr-employee")
-router.register(r"attendance", AttendanceViewSet, basename="hr-attendance")
-router.register(r"leave-types", LeaveTypeViewSet, basename="hr-leave-type")
-router.register(r"leave-balances", EmployeeLeaveBalanceViewSet, basename="hr-leave-balance")
-router.register(r"leave-requests", LeaveRequestViewSet, basename="hr-leave-request")
-router.register(r"payroll-runs", PayrollRunViewSet, basename="hr-payroll-run")
+router.register(r'leave-types', LeaveTypeViewSet)
+router.register(r'holidays', HolidayViewSet)
+router.register(r'leave-requests', LeaveRequestViewSet)
+router.register(r'leave-balances', EmployeeLeaveBalanceViewSet)
+router.register(r'salary-advances', AdvanceSalaryViewSet)
+router.register(r'employee-loans', EmployeeLoanViewSet)
+router.register(r'job-requisitions', JobRequisitionViewSet)
+router.register(r'candidates', CandidateViewSet)
+router.register(r'interviews', InterviewViewSet)
+router.register(r'onboarding-checklist-items', OnboardingChecklistItemViewSet)
+router.register(r'employee-onboarding', EmployeeOnboardingViewSet)
+router.register(r'onboarding-tasks', OnboardingTaskViewSet)
+router.register(r'performance-review-cycles', PerformanceReviewCycleViewSet)
+router.register(r'performance-goals', PerformanceGoalViewSet)
+router.register(r'competencies', CompetencyViewSet)
+router.register(r'competency-ratings', CompetencyRatingViewSet)
+router.register(r'performance-reviews', PerformanceReviewViewSet)
+router.register(r'disciplinary-actions', DisciplinaryActionViewSet)
+router.register(r'clearance-checklists', ClearanceChecklistViewSet)
+router.register(r'employee-clearances', EmployeeClearanceViewSet)
+router.register(r'exit-interviews', ExitInterviewViewSet)
+router.register(r'final-settlements', FinalSettlementViewSet)
+router.register(r'employee-exits', EmployeeExitViewSet)
+router.register(r'policy-documents', PolicyDocumentViewSet)
+router.register(r'policy-acknowledgments', PolicyAcknowledgmentViewSet)
+router.register(r'shift-templates', ShiftTemplateViewSet)
+router.register(r'attendance', AttendanceViewSet)
 
 urlpatterns = [
-    path("overview/", HROverviewView.as_view(), name="hr-overview"),
-    path("", include(router.urls)),
+    path('', include(router.urls)),
 ]

@@ -146,12 +146,12 @@ class PurchaseRequisitionViewSet(CompanyScopedQuerysetMixin, viewsets.ModelViewS
 
         if "lines" not in payload or not payload["lines"]:
             payload["lines"] = []
-            for idx, line in enumerate(requisition.lines.select_related("budget_line", "item"), start=1):
+            for idx, line in enumerate(requisition.lines.select_related("budget_line", "product"), start=1):
                 payload["lines"].append(
                     {
                         "requisition_line": line.id,
                         "budget_line": line.budget_line_id,
-                        "item": line.item_id,
+                        "product": line.product_id,
                         "description": line.description,
                         "quantity_ordered": line.quantity,
                         "unit_price": line.estimated_unit_cost,
@@ -183,7 +183,7 @@ class PurchaseOrderViewSet(CompanyScopedQuerysetMixin, viewsets.ModelViewSet):
         company = self.get_company()
         qs = (
             PurchaseOrder.objects.select_related("supplier", "requisition", "cost_center", "created_by")
-            .prefetch_related("lines__budget_line", "lines__item")
+            .prefetch_related("lines__budget_line", "lines__product")
             .order_by("-order_date", "-created_at")
         )
         if company:
@@ -289,7 +289,7 @@ class PurchaseOrderLineViewSet(CompanyScopedQuerysetMixin, viewsets.ReadOnlyMode
 
     def get_queryset(self):
         company = self.get_company()
-        qs = PurchaseOrderLine.objects.select_related("purchase_order", "budget_line", "item")
+        qs = PurchaseOrderLine.objects.select_related("purchase_order", "budget_line", "product")
         if company:
             qs = qs.filter(purchase_order__company=company)
         return qs

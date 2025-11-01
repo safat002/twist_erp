@@ -1,6 +1,8 @@
-from django.urls import path
-from .views import dashboard_summary
+from django.urls import path, include
 
 urlpatterns = [
-    path('dashboard/summary/', dashboard_summary, name='dashboard-summary'),
+    path('auth/', include('apps.authentication.urls')),
+    path('users/', include('apps.users.urls')),
+    path('companies/', include('apps.companies.urls')),
+    path('hr/', include('apps.hr.urls')),
 ]

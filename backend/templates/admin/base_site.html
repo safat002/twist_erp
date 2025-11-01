@@ -1,0 +1,107 @@
+{% extends "admin/base.html" %}
+{% load static %}
+
+{% block title %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block extrahead %}
+  {{ block.super }}
+  {# Ensure Jazzmin CSS is present even with custom overrides #}
+  <link rel="stylesheet" href="{% static 'jazzmin/css/main.css' %}">
+  <link rel="icon" type="image/svg+xml" href="{% static 'brand/twist-favicon.svg' %}">
+  {% if admin_theme and admin_theme != 'default' %}
+  {% get_static_prefix as static_prefix %}
+  <link rel="stylesheet" href="{{ static_prefix }}vendor/bootswatch/{{ admin_theme }}/bootstrap.min.css">
+  <script>
+    (function(){
+      var darkThemes = ['cyborg','darkly','slate','solar'];
+      var t = '{{ admin_theme|escapejs }}';
+      if (darkThemes.indexOf(t) !== -1) {
+        document.addEventListener('DOMContentLoaded', function(){
+          document.body.classList.add('dark-mode');
+        });
+      }
+    })();
+  </script>
+  {% endif %}
+{% endblock %}
+
+{% block branding %}
+  <h1 id="site-name">
+    <a href="{% url 'admin:index' %}">
+      <img src="{% static 'brand/twist-logo.svg' %}" alt="TWIST ERP" height="28" style="vertical-align:middle;margin-right:8px;"/>
+      {{ site_header|default:'Twist Administration' }}
+    </a>
+  </h1>
+{% endblock %}
+
+{% block footer %}
+  {{ block.super }}
+  <script>
+    (function() {
+      try {
+        // Collapse default Django sidebar (non-Jazzmin)
+        function collapseDjangoSidebar() {
+          var container = document.getElementById('nav-sidebar');
+          if (!container) return;
+          var details = container.querySelectorAll('details');
+          details.forEach(function(d){ d.removeAttribute('open'); });
+        }
+
+        // Collapse Jazzmin/AdminLTE sidebar submenus by default, but allow user interaction afterwards
+        function collapseJazzminSidebarOnce() {
+          var sidebar = document.querySelector('.nav-sidebar');
+          if (!sidebar) return;
+
+          // mark initial collapse phase
+          if (!sidebar.hasAttribute('data-initial-collapse')) {
+            sidebar.setAttribute('data-initial-collapse', '1');
+          }
+
+          // Close any opened menu groups
+          sidebar.querySelectorAll('li.menu-open').forEach(function(li){
+            li.classList.remove('menu-open');
+          });
+          // Hide treeview submenus
+          sidebar.querySelectorAll('ul.nav-treeview').forEach(function(ul){
+            ul.style.display = 'none';
+          });
+          // Reset aria-expanded
+          sidebar.querySelectorAll('a[aria-expanded="true"]').forEach(function(a){
+            a.setAttribute('aria-expanded', 'false');
+          });
+
+          // One-shot observer to catch late initializations by AdminLTE and re-collapse once
+          var observer = new MutationObserver(function(mutations, obs){
+            if (!sidebar.hasAttribute('data-initial-collapse')) { obs.disconnect(); return; }
+            var reopened = sidebar.querySelector('li.menu-open');
+            if (reopened) {
+              sidebar.querySelectorAll('li.menu-open').forEach(function(li){ li.classList.remove('menu-open'); });
+              sidebar.querySelectorAll('ul.nav-treeview').forEach(function(ul){ ul.style.display = 'none'; });
+              sidebar.querySelectorAll('a[aria-expanded="true"]').forEach(function(a){ a.setAttribute('aria-expanded', 'false'); });
+              // stop observing after first re-collapse
+              obs.disconnect();
+            }
+          });
+          observer.observe(sidebar, { attributes: true, attributeFilter: ['class'], subtree: true });
+
+          // After first user click in sidebar, stop forcing collapse
+          sidebar.addEventListener('click', function(){
+            sidebar.removeAttribute('data-initial-collapse');
+          }, { once: true });
+        }
+
+        function scheduleCollapses() {
+          // Run after admin/Jazzmin init toggles; include 'load' to ensure AdminLTE finished
+          setTimeout(collapseDjangoSidebar, 0);
+          setTimeout(collapseJazzminSidebarOnce, 0);
+          setTimeout(collapseDjangoSidebar, 250);
+          setTimeout(collapseJazzminSidebarOnce, 250);
+          setTimeout(collapseJazzminSidebarOnce, 600);
+        }
+
+        document.addEventListener('DOMContentLoaded', scheduleCollapses);
+        window.addEventListener('load', scheduleCollapses);
+      } catch (e) { /* noop */ }
+    })();
+  </script>
+{% endblock %}

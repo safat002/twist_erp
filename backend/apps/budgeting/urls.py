@@ -10,6 +10,8 @@ from .views import (
     BudgetViewSet,
     BudgetWorkspaceSummaryView,
     CostCenterViewSet,
+    BudgetItemCodeViewSet,
+    BudgetUnitOfMeasureViewSet,
 )
 
 router = DefaultRouter()
@@ -19,6 +21,8 @@ router.register(r'lines', BudgetLineViewSet, basename='budget-lines')
 router.register(r'usage', BudgetUsageViewSet, basename='budget-usage')
 router.register(r'overrides', BudgetOverrideRequestViewSet, basename='budget-overrides')
 router.register(r'snapshots', BudgetSnapshotViewSet, basename='budget-snapshots')
+router.register(r'item-codes', BudgetItemCodeViewSet, basename='budget-item-codes')
+router.register(r'uoms', BudgetUnitOfMeasureViewSet, basename='budget-uoms')
 
 urlpatterns = [
     path('', include(router.urls)),

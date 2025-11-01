@@ -12,7 +12,9 @@ from .models import (
     BudgetOverrideRequest,
     BudgetUsage,
     CostCenter,
+    BudgetItemCode,
 )
+from apps.inventory.models import UnitOfMeasure
 
 
 class CostCenterSerializer(serializers.ModelSerializer):
@@ -287,3 +289,50 @@ class BudgetSnapshotSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = ["created_at"]
+
+
+class BudgetItemCodeSerializer(serializers.ModelSerializer):
+    uom_name = serializers.ReadOnlyField(source="uom.name")
+
+    class Meta:
+        model = BudgetItemCode
+        fields = [
+            "id",
+            "company",
+            "code",
+            "name",
+            "category",
+            "uom",
+            "uom_name",
+            "standard_price",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["company", "created_at", "updated_at"]
+
+    def create(self, validated_data):
+        request = self.context.get("request")
+        company = getattr(request, "company", None)
+        return BudgetItemCode.objects.create(company=company, **validated_data)
+
+
+class BudgetUnitOfMeasureSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UnitOfMeasure
+        fields = [
+            "id",
+            "company",
+            "code",
+            "name",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["company", "created_at", "updated_at"]
+
+    def create(self, validated_data):
+        request = self.context.get("request")
+        company = getattr(request, "company", None)
+        user = getattr(request, "user", None)
+        return UnitOfMeasure.objects.create(company=company, created_by=user, **validated_data)

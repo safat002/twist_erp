@@ -1,816 +1,508 @@
-
-from __future__ import annotations
-
-from collections import defaultdict
-from datetime import date, timedelta
-from decimal import Decimal
-
-from django.db.models import Avg, Count, F, Q, Sum, Case, When, DecimalField
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from django.utils.dateparse import parse_date
-from rest_framework import status, viewsets
+from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
-from rest_framework.views import APIView
-
-from apps.budgeting.models import BudgetUsage
 
 from .models import (
+    AdvanceSalary,
     Attendance,
-    AttendanceStatus,
-    CapacityPlanScenario,
-    Department,
+    Candidate,
+    ClearanceChecklist,
+    Competency,
+    CompetencyRating,
+    DisciplinaryAction,
     Employee,
+    EmployeeClearance,
+    EmployeeExit,
+    EmployeeLoan,
+    EmployeeOnboarding,
     EmployeeLeaveBalance,
-    EmployeeStatus,
-    EmploymentGrade,
+    ExitInterview,
+    FinalSettlement,
+    Holiday,
+    Interview,
+    JobRequisition,
     LeaveRequest,
-    LeaveRequestStatus,
     LeaveType,
-    OvertimeEntry,
-    OvertimePolicy,
-    OvertimeRequestStatus,
-    PayrollRun,
-    PayrollRunStatus,
-    SalaryStructure,
-    ShiftAssignment,
+    OnboardingChecklistItem,
+    OnboardingTask,
+    PerformanceGoal,
+    PerformanceReview,
+    PerformanceReviewCycle,
+    PolicyAcknowledgment,
+    PolicyDocument,
     ShiftTemplate,
-    WorkforceCapacityPlan,
 )
 from .serializers import (
+    AdvanceSalarySerializer,
     AttendanceSerializer,
-    DepartmentSerializer,
+    CandidateSerializer,
+    ClearanceChecklistSerializer,
+    CompetencyRatingSerializer,
+    CompetencySerializer,
+    DisciplinaryActionSerializer,
+    EmployeeClearanceSerializer,
+    EmployeeExitSerializer,
     EmployeeLeaveBalanceSerializer,
-    EmployeeSerializer,
-    EmploymentGradeSerializer,
+    EmployeeLoanSerializer,
+    EmployeeOnboardingSerializer,
+    ExitInterviewSerializer,
+    FinalSettlementSerializer,
+    HolidaySerializer,
+    InterviewSerializer,
+    JobRequisitionSerializer,
     LeaveRequestSerializer,
     LeaveTypeSerializer,
-    OvertimeApproveSerializer,
-    OvertimeEntrySerializer,
-    OvertimePolicySerializer,
-    OvertimeRejectSerializer,
-    PayrollFinalizeSerializer,
-    PayrollRunSerializer,
-    SalaryStructureSerializer,
-    ShiftAssignmentSerializer,
+    OnboardingChecklistItemSerializer,
+    OnboardingTaskSerializer,
+    PerformanceGoalSerializer,
+    PerformanceReviewCycleSerializer,
+    PerformanceReviewSerializer,
+    PolicyAcknowledgmentSerializer,
+    PolicyDocumentSerializer,
     ShiftTemplateSerializer,
-    WorkforceCapacityPlanSerializer,
 )
-from .services.payroll import PayrollService
 
 
-def _ensure_company(request):
-    company = getattr(request, "company", None)
-    if not company:
-        raise ValidationError("Active company context is required for HR operations.")
-    return company
+from apps.security.permissions import HasERPPermission
 
 
-class CompanyScopedModelViewSet(viewsets.ModelViewSet):
-    """Base viewset scoping all queries to the active company."""
+class LeaveTypeViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing Leave Types. (Admin only)"""
 
-    def get_queryset(self):
-        company = getattr(self.request, "company", None)
-        queryset = super().get_queryset()
-        if company is None:
-            return queryset.none()
-        return queryset.filter(company=company)
-
-    def perform_create(self, serializer):
-        _ensure_company(self.request)
-        serializer.save()
-
-    def perform_update(self, serializer):
-        _ensure_company(self.request)
-        serializer.save()
-
-
-class DepartmentViewSet(CompanyScopedModelViewSet):
-    queryset = Department.objects.select_related("head")
-    serializer_class = DepartmentSerializer
-
-
-class EmploymentGradeViewSet(CompanyScopedModelViewSet):
-    queryset = EmploymentGrade.objects.all()
-    serializer_class = EmploymentGradeSerializer
-
-
-class SalaryStructureViewSet(CompanyScopedModelViewSet):
-    queryset = SalaryStructure.objects.all()
-    serializer_class = SalaryStructureSerializer
-
-
-class ShiftTemplateViewSet(CompanyScopedModelViewSet):
-    queryset = ShiftTemplate.objects.select_related("default_overtime_policy")
-    serializer_class = ShiftTemplateSerializer
-
-    def get_queryset(self):
-        queryset = super().get_queryset()
-        include_inactive = self.request.query_params.get("include_inactive")
-        if not include_inactive:
-            queryset = queryset.filter(is_active=True)
-        return queryset.order_by("start_time")
-
-
-class ShiftAssignmentViewSet(CompanyScopedModelViewSet):
-    queryset = ShiftAssignment.objects.select_related(
-        "employee",
-        "shift",
-        "overtime_policy",
-        "cost_center",
-    )
-    serializer_class = ShiftAssignmentSerializer
-
-    def get_queryset(self):
-        queryset = super().get_queryset()
-        params = self.request.query_params
-        employee_id = params.get("employee")
-        shift_id = params.get("shift")
-        raw_date = params.get("date")
-        target_date = parse_date(raw_date) if raw_date else None
-        if employee_id:
-            queryset = queryset.filter(employee_id=employee_id)
-        if shift_id:
-            queryset = queryset.filter(shift_id=shift_id)
-        if target_date:
-            queryset = queryset.filter(
-                effective_from__lte=target_date,
-            ).filter(Q(effective_to__isnull=True) | Q(effective_to__gte=target_date))
-        return queryset.order_by("-effective_from")
-
-    @action(detail=False, methods=["get"], url_path="active")
-    def list_active(self, request):
-        company = _ensure_company(request)
-        raw_date = request.query_params.get("date")
-        target_date = parse_date(raw_date) if raw_date else timezone.localdate()
-        if target_date is None:
-            target_date = timezone.localdate()
-        assignments = (
-            self.get_queryset()
-            .filter(
-                company=company,
-                effective_from__lte=target_date,
-            )
-            .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=target_date))
-        )
-        page = self.paginate_queryset(assignments)
-        serializer = self.get_serializer(page or assignments, many=True)
-        if page is not None:
-            return self.get_paginated_response(serializer.data)
-        return Response(serializer.data)
-
-
-class EmployeeViewSet(CompanyScopedModelViewSet):
-    queryset = (
-        Employee.objects.select_related(
-            "department",
-            "grade",
-            "manager",
-            "salary_structure",
-            "cost_center",
-        )
-    )
-    serializer_class = EmployeeSerializer
-
-    def get_queryset(self):
-        queryset = super().get_queryset()
-        params = self.request.query_params
-        status_param = params.get("status")
-        department = params.get("department")
-        search = params.get("search")
-        if status_param:
-            queryset = queryset.filter(status=status_param)
-        if department:
-            queryset = queryset.filter(department_id=department)
-        if search:
-            queryset = queryset.filter(
-                Q(employee_id__icontains=search)
-                | Q(first_name__icontains=search)
-                | Q(last_name__icontains=search)
-                | Q(email__icontains=search)
-            )
-        return queryset.order_by("employee_id")
-
-
-class AttendanceViewSet(CompanyScopedModelViewSet):
-    queryset = Attendance.objects.select_related("employee", "shift")
-    serializer_class = AttendanceSerializer
-
-    def get_queryset(self):
-        queryset = super().get_queryset()
-        params = self.request.query_params
-        start_date = parse_date(params.get("start_date")) if params.get("start_date") else None
-        end_date = parse_date(params.get("end_date")) if params.get("end_date") else None
-        employee = params.get("employee")
-        status_param = params.get("status")
-        if start_date:
-            queryset = queryset.filter(date__gte=start_date)
-        if end_date:
-            queryset = queryset.filter(date__lte=end_date)
-        if employee:
-            queryset = queryset.filter(employee_id=employee)
-        if status_param:
-            queryset = queryset.filter(status=status_param)
-        return queryset.order_by("-date", "employee__employee_id")
-
-
-class LeaveTypeViewSet(CompanyScopedModelViewSet):
     queryset = LeaveType.objects.all()
     serializer_class = LeaveTypeSerializer
+    permission_classes = [HasERPPermission('hr_manage_leave_types')]
+
+    def get_queryset(self):
+        return LeaveType.objects.filter(company=self.request.user.employee_profile.company)
 
 
-class EmployeeLeaveBalanceViewSet(CompanyScopedModelViewSet):
-    queryset = EmployeeLeaveBalance.objects.select_related("employee", "leave_type")
-    serializer_class = EmployeeLeaveBalanceSerializer
+class HolidayViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing Holidays. (Admin only)"""
+
+    queryset = Holiday.objects.all()
+    serializer_class = HolidaySerializer
+    permission_classes = [HasERPPermission('hr_manage_holidays')]
+
+    def get_queryset(self):
+        return Holiday.objects.filter(company=self.request.user.employee_profile.company)
 
 
-class LeaveRequestViewSet(CompanyScopedModelViewSet):
-    queryset = LeaveRequest.objects.select_related("employee", "leave_type", "approved_by")
+class LeaveRequestViewSet(viewsets.ModelViewSet):
+    """ViewSet for employees to request leave and managers to approve them."""
+
+    queryset = LeaveRequest.objects.all()
     serializer_class = LeaveRequestSerializer
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        queryset = super().get_queryset()
-        params = self.request.query_params
-        status_param = params.get("status")
-        employee = params.get("employee")
-        if status_param:
-            queryset = queryset.filter(status=status_param)
-        if employee:
-            queryset = queryset.filter(employee_id=employee)
-        return queryset.order_by("-created_at")
+        employee = get_object_or_404(Employee, user=self.request.user)
+        if self.action == "team_requests":
+            return LeaveRequest.objects.filter(employee__manager=employee)
+        return LeaveRequest.objects.filter(employee=employee)
 
-    @action(detail=True, methods=["post"], url_path="approve")
-    def approve(self, request, pk=None):
-        record = self.get_object()
-        if record.status != LeaveRequestStatus.SUBMITTED:
-            raise ValidationError("Only submitted leave requests can be approved.")
-        record.status = LeaveRequestStatus.APPROVED
-        record.approved_by = getattr(request, "user", None)
-        record.approved_at = timezone.now()
-        record.save(update_fields=["status", "approved_by", "approved_at", "updated_at"])
-        return Response(self.get_serializer(record).data, status=status.HTTP_200_OK)
+    def perform_create(self, serializer):
+        employee = get_object_or_404(Employee, user=self.request.user)
+        serializer.save(employee=employee)
 
-    @action(detail=True, methods=["post"], url_path="reject")
-    def reject(self, request, pk=None):
-        record = self.get_object()
-        if record.status != LeaveRequestStatus.SUBMITTED:
-            raise ValidationError("Only submitted leave requests can be rejected.")
-        record.status = LeaveRequestStatus.REJECTED
-        record.approved_by = getattr(request, "user", None)
-        record.approved_at = timezone.now()
-        record.save(update_fields=["status", "approved_by", "approved_at", "updated_at"])
-        return Response(self.get_serializer(record).data, status=status.HTTP_200_OK)
-
-class OvertimePolicyViewSet(CompanyScopedModelViewSet):
-    queryset = OvertimePolicy.objects.select_related("department", "grade", "default_budget_line")
-    serializer_class = OvertimePolicySerializer
-
-    def get_queryset(self):
-        queryset = super().get_queryset()
-        params = self.request.query_params
-        active_only = params.get("active", "true").lower() in {"true", "1", "yes"}
-        department = params.get("department")
-        grade = params.get("grade")
-        if active_only:
-            queryset = queryset.filter(is_active=True)
-        if department:
-            queryset = queryset.filter(department_id=department)
-        if grade:
-            queryset = queryset.filter(grade_id=grade)
-        return queryset.order_by("name")
-
-
-class OvertimeEntryViewSet(CompanyScopedModelViewSet):
-    queryset = OvertimeEntry.objects.select_related(
-        "employee",
-        "employee__department",
-        "shift",
-        "policy",
-        "cost_center",
-        "budget_line",
-        "approved_by",
-        "payroll_run",
-    )
-    serializer_class = OvertimeEntrySerializer
-
-    def get_queryset(self):
-        queryset = super().get_queryset()
-        params = self.request.query_params
-        status_param = params.get("status")
-        employee = params.get("employee")
-        start_raw = params.get("start")
-        end_raw = params.get("end")
-        posted = params.get("posted")
-        if status_param:
-            queryset = queryset.filter(status=status_param)
-        if employee:
-            queryset = queryset.filter(employee_id=employee)
-        if start_raw:
-            start_date = parse_date(start_raw)
-            if start_date:
-                queryset = queryset.filter(date__gte=start_date)
-        if end_raw:
-            end_date = parse_date(end_raw)
-            if end_date:
-                queryset = queryset.filter(date__lte=end_date)
-        if posted is not None:
-            if posted.lower() in {"true", "1", "yes"}:
-                queryset = queryset.filter(posted_to_payroll=True)
-            else:
-                queryset = queryset.filter(posted_to_payroll=False)
-        return queryset.order_by("-date", "-created_at")
-
-    def update(self, request, *args, **kwargs):
-        entry = self.get_object()
-        if entry.posted_to_payroll:
-            raise ValidationError("Posted overtime entries cannot be modified.")
-        return super().update(request, *args, **kwargs)
-
-    def destroy(self, request, *args, **kwargs):
-        entry = self.get_object()
-        if entry.posted_to_payroll:
-            raise ValidationError("Posted overtime entries cannot be deleted.")
-        return super().destroy(request, *args, **kwargs)
+    @action(detail=False, methods=["get"])
+    def team_requests(self, request):
+        """Returns leave requests for the current user's team."""
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
 
     @action(detail=True, methods=["post"])
-    def submit(self, request, pk=None):
-        entry = self.get_object()
-        if entry.status not in {OvertimeRequestStatus.DRAFT, OvertimeRequestStatus.REJECTED}:
-            raise ValidationError("Only draft or rejected entries can be submitted.")
-        entry.status = OvertimeRequestStatus.SUBMITTED
-        entry.save(update_fields=["status", "updated_at"])
-        return Response(self.get_serializer(entry).data)
+    def approve(self, request, pk=None):
+        """Approve a leave request."""
+        leave_request = self.get_object()
+        leave_request.status = "APPROVED"
+        leave_request.approved_by = request.user
+        leave_request.save()
+        return Response({"status": "approved"}, status=status.HTTP_200_OK)
 
-    @action(detail=True, methods=["post"], url_path="approve")
-    def approve_entry(self, request, pk=None):
-        entry = self.get_object()
-        if entry.posted_to_payroll:
-            raise ValidationError("Posted overtime entries cannot be re-approved.")
-        if entry.status not in {OvertimeRequestStatus.SUBMITTED, OvertimeRequestStatus.DRAFT}:
-            raise ValidationError("Only draft or submitted entries can be approved.")
+    @action(detail=True, methods=["post"])
+    def reject(self, request, pk=None):
+        """Reject a leave request."""
+        leave_request = self.get_object()
+        leave_request.status = "REJECTED"
+        leave_request.approved_by = request.user
+        leave_request.comments = request.data.get("comments", "")
+        leave_request.save()
+        return Response({"status": "rejected"}, status=status.HTTP_200_OK)
 
-        serializer = OvertimeApproveSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-        approved_hours = data.get("approved_hours") or entry.requested_hours
-        budget_line = data.get("budget_line") or entry.budget_line
 
-        if not budget_line and entry.policy and entry.policy.auto_apply_budget and entry.policy.default_budget_line:
-            budget_line = entry.policy.default_budget_line
+class JobRequisitionViewSet(viewsets.ModelViewSet):
+    """API endpoint for job requisitions."""
 
-        entry.approved_hours = approved_hours
-        entry.budget_line = budget_line
-        entry.qa_flagged = data.get("qa_flagged", entry.qa_flagged)
-        if "qa_notes" in data:
-            entry.qa_notes = data.get("qa_notes") or ""
-        entry.approved_by = getattr(request, "user", None)
-        entry.approved_at = timezone.now()
-        entry.status = OvertimeRequestStatus.APPROVED
-        entry.full_clean()
-        entry.save()
-
-        self._record_budget_usage(entry)
-        return Response(self.get_serializer(entry).data, status=status.HTTP_200_OK)
-
-    @action(detail=True, methods=["post"], url_path="reject")
-    def reject_entry(self, request, pk=None):
-        entry = self.get_object()
-        if entry.posted_to_payroll:
-            raise ValidationError("Posted overtime entries cannot be rejected.")
-        if entry.status == OvertimeRequestStatus.CANCELLED:
-            raise ValidationError("Cancelled entries cannot be rejected.")
-
-        serializer = OvertimeRejectSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        entry.status = OvertimeRequestStatus.REJECTED
-        entry.approved_by = getattr(request, "user", None)
-        entry.approved_at = timezone.now()
-        entry.qa_flagged = False
-        if "qa_notes" in serializer.validated_data:
-            entry.qa_notes = serializer.validated_data.get("qa_notes") or ""
-        entry.save(update_fields=["status", "approved_by", "approved_at", "qa_flagged", "qa_notes", "updated_at"])
-        return Response(self.get_serializer(entry).data)
-
-    @action(detail=True, methods=["post"], url_path="cancel")
-    def cancel_entry(self, request, pk=None):
-        entry = self.get_object()
-        if entry.posted_to_payroll:
-            raise ValidationError("Posted overtime entries cannot be cancelled.")
-        if entry.status == OvertimeRequestStatus.CANCELLED:
-            return Response(self.get_serializer(entry).data)
-        entry.status = OvertimeRequestStatus.CANCELLED
-        entry.save(update_fields=["status", "updated_at"])
-        return Response(self.get_serializer(entry).data)
-
-    def _record_budget_usage(self, entry: OvertimeEntry) -> None:
-        if not entry.budget_line_id or entry.amount <= 0:
-            return
-        exists = BudgetUsage.objects.filter(
-            reference_type="hr.OvertimeEntry",
-            reference_id=str(entry.id),
-        ).exists()
-        if exists:
-            return
-        BudgetUsage.objects.create(
-            budget_line=entry.budget_line,
-            usage_date=entry.date,
-            usage_type="overtime",
-            quantity=entry.effective_hours,
-            amount=entry.amount,
-            reference_type="hr.OvertimeEntry",
-            reference_id=str(entry.id),
-            description=f"Overtime for {entry.employee.full_name} on {entry.date:%Y-%m-%d}",
-            created_by=getattr(self.request, "user", None),
-        )
-
-class WorkforceCapacityPlanViewSet(CompanyScopedModelViewSet):
-    queryset = WorkforceCapacityPlan.objects.select_related("shift", "cost_center", "qa_cost_center")
-    serializer_class = WorkforceCapacityPlanSerializer
+    queryset = JobRequisition.objects.all()
+    serializer_class = JobRequisitionSerializer
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        queryset = super().get_queryset()
-        params = self.request.query_params
-        scenario = params.get("scenario")
-        cost_center = params.get("cost_center")
-        start_raw = params.get("start")
-        end_raw = params.get("end")
-        if scenario:
-            queryset = queryset.filter(scenario=scenario)
-        if cost_center:
-            queryset = queryset.filter(cost_center_id=cost_center)
-        if start_raw:
-            start_date = parse_date(start_raw)
-            if start_date:
-                queryset = queryset.filter(date__gte=start_date)
-        if end_raw:
-            end_date = parse_date(end_raw)
-            if end_date:
-                queryset = queryset.filter(date__lte=end_date)
-        return queryset.order_by("date", "shift__start_time")
+        return JobRequisition.objects.filter(company=self.request.user.employee_profile.company)
 
-    @action(detail=False, methods=["get"], url_path="summary")
-    def summary(self, request):
-        company = _ensure_company(request)
-        today = timezone.localdate()
-        start_param = request.query_params.get("start")
-        end_param = request.query_params.get("end")
-        start = parse_date(start_param) if start_param else today
-        end = parse_date(end_param) if end_param else start + timedelta(days=13)
-        queryset = self.get_queryset().filter(company=company, date__gte=start, date__lte=end)
-
-        plans = [plan.to_dashboard() for plan in queryset]
-        totals = {
-            "requiredHeadcount": sum(plan["requiredHeadcount"] for plan in plans),
-            "actualHeadcount": sum(plan["actualHeadcount"] for plan in plans),
-            "plannedOvertimeHours": float(sum(plan["plannedOvertimeHours"] for plan in plans)),
-            "actualOvertimeHours": float(sum(plan["actualOvertimeHours"] for plan in plans)),
-        }
-        qa_required = [plan["qaRequiredHeadcount"] or 0 for plan in plans]
-        qa_actual = [plan["qaActualHeadcount"] or 0 for plan in plans]
-        totals["qaRequiredHeadcount"] = sum(qa_required)
-        totals["qaActualHeadcount"] = sum(qa_actual)
-
-        return Response(
-            {
-                "window": {
-                    "start": start,
-                    "end": end,
-                    "days": (end - start).days + 1,
-                },
-                "plans": plans,
-                "totals": totals,
-            }
+    def perform_create(self, serializer):
+        serializer.save(
+            company=self.request.user.employee_profile.company,
+            requested_by=self.request.user.employee_profile,
         )
 
 
-class PayrollRunViewSet(CompanyScopedModelViewSet):
-    queryset = PayrollRun.objects.select_related("expense_account", "liability_account")
-    serializer_class = PayrollRunSerializer
+class CandidateViewSet(viewsets.ModelViewSet):
+    """API endpoint for candidates."""
+
+    queryset = Candidate.objects.all()
+    serializer_class = CandidateSerializer
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        queryset = super().get_queryset()
-        params = self.request.query_params
-        status_param = params.get("status")
-        if status_param:
-            queryset = queryset.filter(status=status_param)
-        return queryset.order_by("-period_start")
+        return Candidate.objects.filter(company=self.request.user.employee_profile.company)
 
-    def create(self, request, *args, **kwargs):
-        _ensure_company(request)
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        run = serializer.save()
-        headers = self.get_success_headers(serializer.data)
-        return Response(self.get_serializer(run).data, status=status.HTTP_201_CREATED, headers=headers)
-
-    @action(detail=True, methods=["post"], url_path="finalize")
-    def finalize(self, request, pk=None):
-        run = self.get_object()
-        serializer = PayrollFinalizeSerializer(data=request.data, context={"run": run})
-        serializer.is_valid(raise_exception=True)
-        validated = serializer.validated_data
-        final_run = PayrollService.finalize_run(
-            run=run,
-            posted_by=getattr(request, "user", None),
-            expense_account=validated.get("expense_account"),
-            liability_account=validated.get("liability_account"),
-            post_to_finance=validated.get("post_to_finance", True),
-        )
-        return Response(self.get_serializer(final_run).data)
+    def perform_create(self, serializer):
+        serializer.save(company=self.request.user.employee_profile.company)
 
 
-class PayrollRunCancelView(APIView):
-    def delete(self, request, *args, **kwargs):
-        run_id = kwargs.get("pk")
-        run = PayrollRun.objects.filter(pk=run_id, company=_ensure_company(request)).first()
-        if not run:
-            raise ValidationError("Payroll run not found.")
-        if run.status == PayrollRunStatus.POSTED:
-            raise ValidationError("Posted payroll runs cannot be cancelled.")
-        run.status = PayrollRunStatus.CANCELLED
-        run.save(update_fields=["status", "updated_at"])
-        return Response(status=status.HTTP_204_NO_CONTENT)
+class InterviewViewSet(viewsets.ModelViewSet):
+    """API endpoint for interviews."""
 
-class HROverviewView(APIView):
-    def get(self, request):
-        company = _ensure_company(request)
-        today = timezone.localdate()
-        thirty_days_ago = today - timedelta(days=30)
+    queryset = Interview.objects.all()
+    serializer_class = InterviewSerializer
+    permission_classes = [permissions.IsAuthenticated]
 
-        kpis = {
-            "totalHeadcount": Employee.objects.filter(company=company, is_active=True).count(),
-            "openLeaveRequests": LeaveRequest.objects.filter(company=company, status=LeaveRequestStatus.SUBMITTED).count(),
-            "payrollRuns": PayrollRun.objects.filter(company=company).count(),
-            "pendingOnboarding": Employee.objects.filter(
-                company=company,
-                status__in=[EmployeeStatus.ONBOARDING, EmployeeStatus.PROBATION],
-            ).count(),
-        }
+    def get_queryset(self):
+        return Interview.objects.filter(company=self.request.user.employee_profile.company)
 
-        headcount_trend = (
-            Employee.objects.filter(company=company, is_active=True, date_of_joining__gte=thirty_days_ago)
-            .extra(select={"join_day": "date(date_of_joining)"})
-            .values("join_day")
-            .annotate(count=Count("id"))
-            .order_by("join_day")
+    def perform_create(self, serializer):
+        serializer.save(company=self.request.user.employee_profile.company)
+
+
+class OnboardingChecklistItemViewSet(viewsets.ModelViewSet):
+    """API endpoint for onboarding checklist items."""
+
+    queryset = OnboardingChecklistItem.objects.all()
+    serializer_class = OnboardingChecklistItemSerializer
+    permission_classes = [permissions.IsAdminUser]
+
+    def get_queryset(self):
+        return OnboardingChecklistItem.objects.filter(company=self.request.user.employee_profile.company)
+
+
+class EmployeeOnboardingViewSet(viewsets.ModelViewSet):
+    """API endpoint for employee onboarding tracking."""
+
+    queryset = EmployeeOnboarding.objects.all()
+    serializer_class = EmployeeOnboardingSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        employee = get_object_or_404(Employee, user=self.request.user)
+        return EmployeeOnboarding.objects.filter(
+            employee__in=Employee.objects.filter(manager=employee) | Employee.objects.filter(pk=employee.pk)
         )
 
-        pulse_results = [
-            {"question": "How was your week?", "trend": [4, 4.2, 4.1, 4.4]},
-            {"question": "Do you have the tools to perform?", "trend": [3.5, 3.7, 3.8, 3.9]},
-        ]
+    def perform_create(self, serializer):
+        employee = get_object_or_404(Employee, user=self.request.user)
+        serializer.save(company=employee.company)
 
-        recent_hires = Employee.objects.filter(
-            company=company,
-            date_of_joining__gte=thirty_days_ago,
-        ).order_by("-date_of_joining")
-        pending_leave = LeaveRequest.objects.filter(company=company, status=LeaveRequestStatus.SUBMITTED).count()
-        watchlist = Employee.objects.filter(company=company, status=EmployeeStatus.LEAVE)
-        pending_reviews = Employee.objects.filter(
-            company=company,
-            status__in=[EmployeeStatus.PROBATION, EmployeeStatus.ONBOARDING],
+
+class PolicyDocumentViewSet(viewsets.ModelViewSet):
+    """API endpoint for HR policy documents."""
+
+    queryset = PolicyDocument.objects.all()
+    serializer_class = PolicyDocumentSerializer
+    permission_classes = [permissions.IsAdminUser]
+
+    def get_queryset(self):
+        return PolicyDocument.objects.filter(company=self.request.user.employee_profile.company)
+
+
+class PolicyAcknowledgmentViewSet(viewsets.ModelViewSet):
+    """API endpoint for employee policy acknowledgments."""
+
+    queryset = PolicyAcknowledgment.objects.all()
+    serializer_class = PolicyAcknowledgmentSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        employee = get_object_or_404(Employee, user=self.request.user)
+        return PolicyAcknowledgment.objects.filter(
+            employee__in=Employee.objects.filter(manager=employee) | Employee.objects.filter(pk=employee.pk)
         )
 
-        people_board = {
-            "columns": {
-                "pipeline": {
-                    "id": "pipeline",
-                    "title": "Pending Leave Requests",
-                    "description": "Awaiting manager approval",
-                    "itemIds": [f"leave-{leave.id}" for leave in LeaveRequest.objects.filter(company=company, status=LeaveRequestStatus.SUBMITTED)[:6]],
-                },
-                "onboarding": {
-                    "id": "onboarding",
-                    "title": "New Joiners",
-                    "description": "Rolling 30 days",
-                    "itemIds": [f"hire-{emp.id}" for emp in recent_hires[:6]],
-                },
-                "performance": {
-                    "id": "performance",
-                    "title": "Probation Reviews",
-                    "description": "Upcoming confirmations",
-                    "itemIds": [f"review-{emp.id}" for emp in pending_reviews[:6]],
-                },
-                "retention": {
-                    "id": "retention",
-                    "title": "Leave Watchlist",
-                    "description": "Currently on extended leave",
-                    "itemIds": [f"watch-{emp.id}" for emp in watchlist[:6]],
-                },
-            },
-            "items": {},
-        }
+    def perform_create(self, serializer):
+        employee = get_object_or_404(Employee, user=self.request.user)
+        serializer.save(employee=employee, company=employee.company)
 
-        for leave in LeaveRequest.objects.filter(company=company, status=LeaveRequestStatus.SUBMITTED)[:6]:
-            people_board["items"][f"leave-{leave.id}"] = {
-                "id": f"leave-{leave.id}",
-                "name": f"{leave.employee.full_name}",
-                "stage": f"{leave.leave_type.name} {leave.start_date:%d %b}",
-                "owner": leave.employee.manager.full_name if leave.employee.manager else "HR",
-            }
-        for emp in recent_hires[:6]:
-            people_board["items"][f"hire-{emp.id}"] = {
-                "id": f"hire-{emp.id}",
-                "name": emp.full_name,
-                "stage": emp.date_of_joining.strftime("Joined %d %b"),
-                "owner": emp.department.name if emp.department else "",
-            }
-        for emp in pending_reviews[:6]:
-            people_board["items"][f"review-{emp.id}"] = {
-                "id": f"review-{emp.id}",
-                "name": emp.full_name,
-                "stage": "Probation review",
-                "owner": emp.manager.full_name if emp.manager else "HRBP",
-            }
-        for emp in watchlist[:6]:
-            people_board["items"][f"watch-{emp.id}"] = {
-                "id": f"watch-{emp.id}",
-                "name": emp.full_name,
-                "stage": "On leave",
-                "owner": emp.manager.full_name if emp.manager else "HR Services",
-            }
 
-        payroll_runs = [
-            {
-                "id": run.id,
-                "period": run.label,
-                "processedOn": run.updated_at.strftime("%d %b %Y  -  %H:%M") if run.updated_at else "",
-                "amount": f"{run.net_total:,.2f}",
-                "status": run.status.title(),
-            }
-            for run in PayrollRun.objects.filter(company=company).order_by("-period_start")[:5]
-        ]
+class ShiftTemplateViewSet(viewsets.ModelViewSet):
+    """API endpoint for managing shift templates."""
 
-        alerts = []
-        if pending_leave > 0:
-            alerts.append(
-                {
-                    "id": "alert-pending-leave",
-                    "title": "Pending leave approvals",
-                    "level": "warning",
-                    "detail": f"{pending_leave} request(s) awaiting action.",
-                }
-            )
-        upcoming_payroll = PayrollRun.objects.filter(
-            company=company,
-            status__in=[PayrollRunStatus.DRAFT, PayrollRunStatus.COMPUTED],
-        ).order_by("period_end").first()
-        if upcoming_payroll:
-            alerts.append(
-                {
-                    "id": "alert-payroll",
-                    "title": "Payroll pending posting",
-                    "level": "info",
-                    "detail": f"Complete posting for {upcoming_payroll.label}.",
-                }
-            )
+    queryset = ShiftTemplate.objects.all()
+    serializer_class = ShiftTemplateSerializer
+    permission_classes = [permissions.IsAdminUser]
 
-        automations = [
-            {
-                "id": "auto-1",
-                "title": "Overtime to payroll",
-                "status": "active",
-                "detail": "Approved overtime auto-syncs with payroll calculations nightly.",
-            },
-            {
-                "id": "auto-2",
-                "title": "Leave to attendance",
-                "status": "active",
-                "detail": "Approved leave auto marks attendance calendar.",
-            },
-        ]
+    def get_queryset(self):
+        return ShiftTemplate.objects.filter(company=self.request.user.employee_profile.company)
 
-        horizon_start = timezone.localdate()
-        horizon_end = horizon_start + timedelta(days=6)
-        capacity_qs = (
-            WorkforceCapacityPlan.objects.filter(
-                company=company,
-                date__gte=horizon_start,
-                date__lte=horizon_end,
-            ).select_related("shift", "cost_center", "qa_cost_center")
+
+class AttendanceViewSet(viewsets.ModelViewSet):
+    """API endpoint for managing attendance records."""
+
+    queryset = Attendance.objects.all()
+    serializer_class = AttendanceSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        employee = get_object_or_404(Employee, user=self.request.user)
+        return Attendance.objects.filter(
+            employee__in=Employee.objects.filter(manager=employee) | Employee.objects.filter(pk=employee.pk)
         )
-        capacity_cards = [plan.to_dashboard() for plan in capacity_qs]
-        scenario_breakdown = defaultdict(lambda: {"plans": 0, "required": 0, "actual": 0})
-        qa_alerts = []
-        for card in capacity_cards:
-            scenario_breakdown[card["scenario"]]["plans"] += 1
-            scenario_breakdown[card["scenario"]]["required"] += card["requiredHeadcount"]
-            scenario_breakdown[card["scenario"]]["actual"] += card["actualHeadcount"]
-            if card.get("qaVariance") is not None and card["qaVariance"] < 0:
-                qa_alerts.append(card)
 
-        totals_required = sum(card["requiredHeadcount"] for card in capacity_cards)
-        totals_actual = sum(card["actualHeadcount"] for card in capacity_cards)
-        totals_planned_ot = sum(card["plannedOvertimeHours"] for card in capacity_cards)
-        totals_actual_ot = sum(card["actualOvertimeHours"] for card in capacity_cards)
-        totals_qa_required = sum((card["qaRequiredHeadcount"] or 0) for card in capacity_cards)
-        totals_qa_actual = sum((card["qaActualHeadcount"] or 0) for card in capacity_cards)
+    def perform_create(self, serializer):
+        employee = get_object_or_404(Employee, user=self.request.user)
+        serializer.save(company=employee.company)
 
-        capacity_overview = {
-            "window": {
-                "start": horizon_start,
-                "end": horizon_end,
-                "days": (horizon_end - horizon_start).days + 1,
-            },
-            "totals": {
-                "requiredHeadcount": totals_required,
-                "actualHeadcount": totals_actual,
-                "plannedOvertimeHours": totals_planned_ot,
-                "actualOvertimeHours": totals_actual_ot,
-                "qaRequiredHeadcount": totals_qa_required,
-                "qaActualHeadcount": totals_qa_actual,
-                "qaVariance": totals_qa_actual - totals_qa_required,
-            },
-            "scenarios": [
-                {
-                    "scenario": scenario,
-                    "plans": breakdown["plans"],
-                    "requiredHeadcount": breakdown["required"],
-                    "actualHeadcount": breakdown["actual"],
-                }
-                for scenario, breakdown in scenario_breakdown.items()
-            ],
-            "plans": capacity_cards[:10],
-            "qaAlerts": qa_alerts[:5],
-        }
 
-        if qa_alerts:
-            alerts.append(
-                {
-                    "id": "alert-qa-capacity",
-                    "title": "QA coverage gaps",
-                    "level": "danger",
-                    "detail": f"{len(qa_alerts)} shift(s) short on QA coverage in the next week.",
-                }
-            )
+class OnboardingTaskViewSet(viewsets.ModelViewSet):
+    """API endpoint for individual onboarding tasks."""
 
-        overtime_window_start = horizon_start - timedelta(days=30)
-        approved_overtime_qs = OvertimeEntry.objects.filter(
-            company=company,
-            status=OvertimeRequestStatus.APPROVED,
-            date__gte=overtime_window_start,
+    queryset = OnboardingTask.objects.all()
+    serializer_class = OnboardingTaskSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        employee = get_object_or_404(Employee, user=self.request.user)
+        return OnboardingTask.objects.filter(
+            onboarding__employee__in=Employee.objects.filter(manager=employee) | Employee.objects.filter(pk=employee.pk)
         )
-        overtime_stats = approved_overtime_qs.aggregate(
-            total_hours=Sum(
-                Case(
-                    When(approved_hours__isnull=False, then="approved_hours"),
-                    default="requested_hours",
-                    output_field=DecimalField(max_digits=7, decimal_places=2),
-                )
-            ),
-            total_amount=Sum("amount"),
+
+    @action(detail=True, methods=["post"])
+    def complete(self, request, pk=None):
+        task = self.get_object()
+        task.is_completed = True
+        task.completed_by = request.user
+        task.completed_at = timezone.now()
+        task.save()
+        return Response({"status": "completed"})
+
+
+class PerformanceReviewCycleViewSet(viewsets.ModelViewSet):
+    """API endpoint for performance review cycles."""
+
+    queryset = PerformanceReviewCycle.objects.all()
+    serializer_class = PerformanceReviewCycleSerializer
+    permission_classes = [permissions.IsAdminUser]
+
+    def get_queryset(self):
+        return PerformanceReviewCycle.objects.filter(company=self.request.user.employee_profile.company)
+
+
+class PerformanceGoalViewSet(viewsets.ModelViewSet):
+    """API endpoint for performance goals."""
+
+    queryset = PerformanceGoal.objects.all()
+    serializer_class = PerformanceGoalSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        employee = get_object_or_404(Employee, user=self.request.user)
+        return PerformanceGoal.objects.filter(
+            employee__in=Employee.objects.filter(manager=employee) | Employee.objects.filter(pk=employee.pk)
         )
-        pending_overtime = OvertimeEntry.objects.filter(
-            company=company,
-            status__in=[OvertimeRequestStatus.SUBMITTED, OvertimeRequestStatus.DRAFT],
-        ).count()
 
-        overtime_dashboard = {
-            "window": {
-                "start": overtime_window_start,
-                "end": horizon_start,
-                "days": (horizon_start - overtime_window_start).days,
-            },
-            "approvedHours": float(overtime_stats.get("total_hours") or 0),
-            "approvedAmount": float(overtime_stats.get("total_amount") or Decimal("0")),
-            "pendingApprovals": pending_overtime,
-            "recent": [
-                {
-                    "id": entry.id,
-                    "employee": entry.employee.full_name,
-                    "date": entry.date,
-                    "hours": float(entry.effective_hours),
-                    "amount": float(entry.amount),
-                    "status": entry.get_status_display(),
-                }
-                for entry in OvertimeEntry.objects.filter(company=company)
-                .select_related("employee")
-                .order_by("-date", "-created_at")[:5]
-            ],
-        }
+    def perform_create(self, serializer):
+        employee = get_object_or_404(Employee, user=self.request.user)
+        serializer.save(employee=employee)
 
-        if pending_overtime:
-            alerts.append(
-                {
-                    "id": "alert-overtime-approvals",
-                    "title": "Overtime approvals pending",
-                    "level": "warning",
-                    "detail": f"{pending_overtime} overtime request(s) awaiting decision.",
-                }
-            )
 
-        payload = {
-            "kpis": kpis,
-            "headcount_trend": headcount_trend,
-            "pulse_results": pulse_results,
-            "people_board": people_board,
-            "payroll_runs": payroll_runs,
-            "capacity_overview": capacity_overview,
-            "overtime_dashboard": overtime_dashboard,
-            "alerts": alerts,
-            "automations": automations,
-        }
-        return Response(payload, status=status.HTTP_200_OK)
+class DisciplinaryActionViewSet(viewsets.ModelViewSet):
+    """API endpoint for disciplinary actions."""
 
+    queryset = DisciplinaryAction.objects.all()
+    serializer_class = DisciplinaryActionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return DisciplinaryAction.objects.filter(company=self.request.user.employee_profile.company)
+
+    def perform_create(self, serializer):
+        employee = get_object_or_404(Employee, user=self.request.user)
+        serializer.save(company=employee.company)
+
+
+class ClearanceChecklistViewSet(viewsets.ModelViewSet):
+    """API endpoint for clearance checklist templates."""
+
+    queryset = ClearanceChecklist.objects.all()
+    serializer_class = ClearanceChecklistSerializer
+    permission_classes = [permissions.IsAdminUser]
+
+    def get_queryset(self):
+        return ClearanceChecklist.objects.filter(company=self.request.user.employee_profile.company)
+
+    def perform_create(self, serializer):
+        serializer.save(company=self.request.user.employee_profile.company)
+
+
+class EmployeeClearanceViewSet(viewsets.ModelViewSet):
+    """API endpoint for employee clearance tracking."""
+
+    queryset = EmployeeClearance.objects.all()
+    serializer_class = EmployeeClearanceSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return EmployeeClearance.objects.filter(
+            employee_exit__employee__company=self.request.user.employee_profile.company
+        )
+
+    def perform_create(self, serializer):
+        employee = get_object_or_404(Employee, user=self.request.user)
+        serializer.save(company=employee.company)
+
+
+class ExitInterviewViewSet(viewsets.ModelViewSet):
+    """API endpoint for exit interviews."""
+
+    queryset = ExitInterview.objects.all()
+    serializer_class = ExitInterviewSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return ExitInterview.objects.filter(
+            employee_exit__employee__company=self.request.user.employee_profile.company
+        )
+
+    def perform_create(self, serializer):
+        employee = get_object_or_404(Employee, user=self.request.user)
+        serializer.save(company=employee.company)
+
+
+class FinalSettlementViewSet(viewsets.ModelViewSet):
+    """API endpoint for final settlements."""
+
+    queryset = FinalSettlement.objects.all()
+    serializer_class = FinalSettlementSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return FinalSettlement.objects.filter(
+            employee_exit__employee__company=self.request.user.employee_profile.company
+        )
+
+    def perform_create(self, serializer):
+        employee = get_object_or_404(Employee, user=self.request.user)
+        serializer.save(company=employee.company)
+
+
+class EmployeeExitViewSet(viewsets.ModelViewSet):
+    """API endpoint for employee exits."""
+
+    queryset = EmployeeExit.objects.all()
+    serializer_class = EmployeeExitSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return EmployeeExit.objects.filter(employee__company=self.request.user.employee_profile.company)
+
+    def perform_create(self, serializer):
+        employee = get_object_or_404(Employee, user=self.request.user)
+        serializer.save(company=employee.company)
+
+
+class CompetencyViewSet(viewsets.ModelViewSet):
+    """API endpoint for competencies."""
+
+    queryset = Competency.objects.all()
+    serializer_class = CompetencySerializer
+    permission_classes = [permissions.IsAdminUser]
+
+    def get_queryset(self):
+        return Competency.objects.filter(company=self.request.user.employee_profile.company)
+
+    def perform_create(self, serializer):
+        serializer.save(company=self.request.user.employee_profile.company)
+
+
+class CompetencyRatingViewSet(viewsets.ModelViewSet):
+    """API endpoint for competency ratings."""
+
+    queryset = CompetencyRating.objects.all()
+    serializer_class = CompetencyRatingSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        employee = get_object_or_404(Employee, user=self.request.user)
+        return CompetencyRating.objects.filter(
+            performance_review__employee__in=Employee.objects.filter(manager=employee)
+            | Employee.objects.filter(pk=employee.pk)
+        )
+
+
+class PerformanceReviewViewSet(viewsets.ModelViewSet):
+    """API endpoint for performance reviews."""
+
+    queryset = PerformanceReview.objects.all()
+    serializer_class = PerformanceReviewSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        employee = get_object_or_404(Employee, user=self.request.user)
+        return PerformanceReview.objects.filter(
+            employee__in=Employee.objects.filter(manager=employee) | Employee.objects.filter(pk=employee.pk)
+        )
+
+    def perform_create(self, serializer):
+        employee = get_object_or_404(Employee, user=self.request.user)
+        serializer.save(employee=employee)
+
+
+class EmployeeLeaveBalanceViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet for employees to view their leave balances."""
+
+    queryset = EmployeeLeaveBalance.objects.all()
+    serializer_class = EmployeeLeaveBalanceSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        employee = get_object_or_404(Employee, user=self.request.user)
+        return EmployeeLeaveBalance.objects.filter(employee=employee)
+
+
+class AdvanceSalaryViewSet(viewsets.ModelViewSet):
+    """API endpoint for salary advances."""
+
+    queryset = AdvanceSalary.objects.all()
+    serializer_class = AdvanceSalarySerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        employee = get_object_or_404(Employee, user=self.request.user)
+        return AdvanceSalary.objects.filter(
+            employee__in=Employee.objects.filter(manager=employee) | Employee.objects.filter(pk=employee.pk)
+        )
+
+    def perform_create(self, serializer):
+        employee = get_object_or_404(Employee, user=self.request.user)
+        serializer.save(employee=employee, company=employee.company)
+
+
+class EmployeeLoanViewSet(viewsets.ModelViewSet):
+    """API endpoint for employee loans."""
+
+    queryset = EmployeeLoan.objects.all()
+    serializer_class = EmployeeLoanSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        employee = get_object_or_404(Employee, user=self.request.user)
+        return EmployeeLoan.objects.filter(
+            employee__in=Employee.objects.filter(manager=employee) | Employee.objects.filter(pk=employee.pk)
+        )
+
+    def perform_create(self, serializer):
+        employee = get_object_or_404(Employee, user=self.request.user)
+        serializer.save(employee=employee, company=employee.company)

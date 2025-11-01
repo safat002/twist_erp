@@ -36,6 +36,7 @@ from .serializers import (
 )
 from .services.invoice_service import InvoiceService
 from .services.journal_service import JournalService
+from .services.document_processor import DocumentProcessor
 
 
 class CompanyScopedMixin:
@@ -185,6 +186,75 @@ class JournalVoucherViewSet(CompanyScopedMixin, viewsets.ModelViewSet):
             )
         serializer = self.get_serializer(voucher)
         return Response(serializer.data)
+
+    @action(detail=False, methods=["post"], url_path="process-document")
+    def process_document(self, request):
+        """Process uploaded PDF/image to extract journal voucher data using AI."""
+        company = self.get_company(required=True)
+
+        # Get uploaded file
+        uploaded_file = request.FILES.get('file')
+        if not uploaded_file:
+            return Response(
+                {"detail": "No file uploaded. Please attach a PDF or image file."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Validate file size (max 10MB)
+        max_size = 10 * 1024 * 1024  # 10MB
+        if uploaded_file.size > max_size:
+            return Response(
+                {"detail": "File size exceeds 10MB limit."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get available accounts and journals for matching
+        accounts = Account.objects.filter(company=company).values('id', 'code', 'name')
+        journals = Journal.objects.filter(company=company).values('id', 'code', 'name')
+
+        accounts_list = list(accounts)
+        journals_list = list(journals)
+
+        try:
+            # Read file content
+            file_content = uploaded_file.read()
+
+            # Process document with AI (pass user and company for logging)
+            processor = DocumentProcessor(user=request.user, company=company)
+            extracted_data = processor.process_journal_voucher_document(
+                file_content=file_content,
+                file_name=uploaded_file.name,
+                company=company,
+                accounts_list=accounts_list,
+                journals_list=journals_list,
+            )
+
+            # Log the processing
+            log_audit_event(
+                user=request.user,
+                company=company,
+                company_group=company.company_group,
+                action="DOCUMENT_PROCESSED",
+                entity_type="JournalVoucher",
+                entity_id=None,
+                description=f"Processed document {uploaded_file.name} for journal voucher creation.",
+            )
+
+            return Response(extracted_data)
+
+        except ValueError as exc:
+            return Response(
+                {"detail": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as exc:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.exception("Failed to process document: %s", exc)
+            return Response(
+                {"detail": "An error occurred while processing the document. Please try again."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class InvoiceViewSet(CompanyScopedMixin, viewsets.ModelViewSet):
