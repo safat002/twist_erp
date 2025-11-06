@@ -8,8 +8,8 @@ from django.db import models, transaction
 from django.utils import timezone
 
 from apps.finance.models import Journal
-from apps.finance.services.journal_service import JournalService
 from apps.inventory.models import StockLevel, StockMovement, StockMovementLine
+from core.doc_numbers import get_next_doc_no
 
 TWOPLACES = Decimal("0.01")
 
@@ -44,7 +44,7 @@ class WorkOrderPriority(models.TextChoices):
 class BillOfMaterial(models.Model):
     company_group = models.ForeignKey("companies.CompanyGroup", on_delete=models.PROTECT)
     company = models.ForeignKey("companies.Company", on_delete=models.PROTECT)
-    product = models.ForeignKey("inventory.Product", on_delete=models.PROTECT, related_name="boms")
+    product = models.ForeignKey("inventory.Item", on_delete=models.PROTECT, related_name="boms")
     code = models.CharField(max_length=32, blank=True)
     version = models.CharField(max_length=16, default="1.0")
     name = models.CharField(max_length=255, blank=True)
@@ -78,7 +78,7 @@ class BillOfMaterial(models.Model):
 class BillOfMaterialComponent(models.Model):
     bom = models.ForeignKey(BillOfMaterial, on_delete=models.CASCADE, related_name="components")
     sequence = models.PositiveIntegerField(default=1)
-    component = models.ForeignKey("inventory.Product", on_delete=models.PROTECT, related_name="bom_components")
+    component = models.ForeignKey("inventory.Item", on_delete=models.PROTECT, related_name="bom_components")
     quantity = models.DecimalField(max_digits=15, decimal_places=3)
     uom = models.ForeignKey("inventory.UnitOfMeasure", on_delete=models.PROTECT, null=True, blank=True)
     scrap_percent = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
@@ -101,7 +101,7 @@ class WorkOrder(models.Model):
     company_group = models.ForeignKey("companies.CompanyGroup", on_delete=models.PROTECT)
     company = models.ForeignKey("companies.Company", on_delete=models.PROTECT)
     number = models.CharField(max_length=40, blank=True)
-    product = models.ForeignKey("inventory.Product", on_delete=models.PROTECT, related_name="work_orders")
+    product = models.ForeignKey("inventory.Item", on_delete=models.PROTECT, related_name="work_orders")
     bom = models.ForeignKey(BillOfMaterial, on_delete=models.SET_NULL, null=True, blank=True, related_name="work_orders")
     quantity_planned = models.DecimalField(max_digits=15, decimal_places=3)
     quantity_completed = models.DecimalField(max_digits=15, decimal_places=3, default=Decimal("0.000"))
@@ -127,7 +127,7 @@ class WorkOrder(models.Model):
         is_new = self._state.adding and not self.number
         super().save(*args, **kwargs)
         if is_new:
-            generated = f"WO-{timezone.now():%Y%m}-{self.pk:05d}"
+            generated = get_next_doc_no(company=self.company, doc_type="WO", prefix="WO", fy_format="YYYY", width=5)
             WorkOrder.objects.filter(pk=self.pk).update(number=generated)
             self.number = generated
             self.refresh_from_db()
@@ -208,7 +208,7 @@ class WorkOrder(models.Model):
             StockMovementLine.objects.create(
                 movement=movement,
                 line_number=idx,
-                product=component.component,
+                item=component.component,
                 quantity=quantity,
                 rate=component.component.cost_price or Decimal("0.00"),
             )
@@ -256,7 +256,7 @@ class WorkOrder(models.Model):
         StockMovementLine.objects.create(
             movement=movement,
             line_number=1,
-            product=self.product,
+            item=self.product,
             quantity=receipt.quantity_good,
             rate=self.product.cost_price or Decimal("0.00"),
         )
@@ -265,7 +265,7 @@ class WorkOrder(models.Model):
         )
         stock_level, _ = StockLevel.objects.select_for_update().get_or_create(
             company=self.company,
-            product=self.product,
+            item=self.product,
             warehouse=warehouse,
             defaults={"created_by": user},
         )
@@ -292,6 +292,7 @@ class WorkOrder(models.Model):
         )
 
     def _post_material_issue_voucher(self, issue: MaterialIssue, user):
+        from apps.finance.services.journal_service import JournalService
         debit_totals = defaultdict(Decimal)
         credit_totals = defaultdict(Decimal)
         for line in issue.lines.select_related("product"):
@@ -338,6 +339,7 @@ class WorkOrder(models.Model):
         JournalService.post_journal_voucher(voucher, user)
 
     def _post_receipt_voucher(self, receipt: ProductionReceipt, user):
+        from apps.finance.services.journal_service import JournalService
         unit_cost = Decimal(self.product.cost_price or 0)
         line_value = (unit_cost * Decimal(receipt.quantity_good or 0)).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
         if line_value <= 0 or not self.product.inventory_account_id or not self.product.expense_account_id:
@@ -373,7 +375,12 @@ class WorkOrder(models.Model):
 
 class WorkOrderComponent(models.Model):
     work_order = models.ForeignKey(WorkOrder, on_delete=models.CASCADE, related_name="components")
-    component = models.ForeignKey("inventory.Product", on_delete=models.PROTECT)
+    component = models.ForeignKey(
+        "inventory.Item",
+        on_delete=models.PROTECT,
+        related_name="work_order_components",
+        help_text="Component item required for production"
+    )
     required_quantity = models.DecimalField(max_digits=15, decimal_places=3)
     issued_quantity = models.DecimalField(max_digits=15, decimal_places=3, default=Decimal("0.000"))
     uom = models.ForeignKey("inventory.UnitOfMeasure", on_delete=models.PROTECT, null=True, blank=True)
@@ -411,12 +418,17 @@ class MaterialIssue(models.Model):
 class MaterialIssueLine(models.Model):
     issue = models.ForeignKey(MaterialIssue, on_delete=models.CASCADE, related_name="lines")
     component = models.ForeignKey(WorkOrderComponent, on_delete=models.CASCADE, related_name="issues")
-    product = models.ForeignKey("inventory.Product", on_delete=models.PROTECT)
+    item = models.ForeignKey(
+        "inventory.Item",
+        on_delete=models.PROTECT,
+        related_name="material_issue_lines",
+        help_text="Item being issued for production"
+    )
     quantity = models.DecimalField(max_digits=15, decimal_places=3)
     warehouse = models.ForeignKey("inventory.Warehouse", on_delete=models.PROTECT, null=True, blank=True)
 
     class Meta:
-        ordering = ("issue", "product__code")
+        ordering = ("issue", "item__code")
 
 
 class ProductionReceipt(models.Model):

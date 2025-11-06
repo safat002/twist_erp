@@ -4,15 +4,20 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.db import models
+from django.db.models import Q
 from django.db.models import Sum
 from django.utils import timezone
 
-from apps.companies.models import Company, CompanyGroup
+from apps.companies.models import Company, CompanyGroup, Branch, Department
 
 User = settings.AUTH_USER_MODEL
 
 
 class CostCenter(models.Model):
+    """
+    Cost tracking entity. Each cost center belongs to a department.
+    One department may have multiple cost centers.
+    """
     class CostCenterType(models.TextChoices):
         DEPARTMENT = "department", "Department"
         BRANCH = "branch", "Branch"
@@ -22,12 +27,36 @@ class CostCenter(models.Model):
 
     code = models.CharField(max_length=20)
     name = models.CharField(max_length=255, default="Untitled Budget", blank=True, null=True)
+
+    # Hierarchy - Main requirement: Cost center belongs to department
+    department = models.ForeignKey(
+        Department,
+        on_delete=models.PROTECT,
+        null=True,  # Temporarily nullable for migration
+        blank=True,
+        related_name='cost_centers',
+        help_text='Department this cost center belongs to (required for new records)'
+    )
+
+    # Legacy/backward compatibility fields
     parent = models.ForeignKey('self', on_delete=models.PROTECT, null=True, blank=True, related_name='children')
     company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name='cost_centers')
     company_group = models.ForeignKey(CompanyGroup, on_delete=models.PROTECT, null=True, blank=True, related_name='cost_centers')
+
+    # Optional: For additional context
+    branch = models.ForeignKey(
+        Branch,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='cost_centers',
+        help_text='Branch (optional, derived from department if not set)'
+    )
+
     cost_center_type = models.CharField(max_length=32, choices=CostCenterType.choices, default=CostCenterType.DEPARTMENT)
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='primary_cost_centers')
     deputy_owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='backup_cost_centers')
+    budget_entry_users = models.ManyToManyField(User, blank=True, related_name='budget_entry_cost_centers', help_text="Users who can enter budget lines for this cost center")
     default_currency = models.CharField(max_length=3, default='USD')
     description = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
@@ -42,11 +71,21 @@ class CostCenter(models.Model):
         indexes = [
             models.Index(fields=["company", "cost_center_type"], name="budgeting_c_company_b28430_idx"),
             models.Index(fields=["company", "is_active"], name="budgeting_c_company_964e12_idx"),
+            models.Index(fields=["department", "is_active"]),
         ]
 
     def __str__(self):
         prefix = f"{self.company.code} · " if hasattr(self.company, "code") else ""
         return f"{prefix}{self.code} - {self.name}"
+
+    def save(self, *args, **kwargs):
+        # Auto-populate company and branch from department if not set
+        if self.department_id:
+            if not self.company_id:
+                self.company = self.department.company
+            if not self.branch_id and self.department.branch:
+                self.branch = self.department.branch
+        super().save(*args, **kwargs)
 
     @property
     def active_budget_periods(self):
@@ -60,22 +99,37 @@ class CostCenter(models.Model):
 
 
 class Budget(models.Model):
+    # Revised workflow statuses aligned with Budget-Module-Final-Requirements.md
     STATUS_DRAFT = "DRAFT"
-    STATUS_PROPOSED = "PROPOSED"
-    STATUS_UNDER_REVIEW = "UNDER_REVIEW"
+    STATUS_ENTRY_OPEN = "ENTRY_OPEN"
+    STATUS_ENTRY_CLOSED_REVIEW_PENDING = "ENTRY_CLOSED_REVIEW_PENDING"
+    STATUS_REVIEW_OPEN = "REVIEW_OPEN"
+    STATUS_PENDING_CC_APPROVAL = "PENDING_CC_APPROVAL"
+    STATUS_CC_APPROVED = "CC_APPROVED"
+    STATUS_PENDING_MODERATOR_REVIEW = "PENDING_MODERATOR_REVIEW"
+    STATUS_MODERATOR_REVIEWED = "MODERATOR_REVIEWED"
+    STATUS_PENDING_FINAL_APPROVAL = "PENDING_FINAL_APPROVAL"
+    STATUS_APPROVED = "APPROVED"
+    STATUS_AUTO_APPROVED = "AUTO_APPROVED"
     STATUS_ACTIVE = "ACTIVE"
-    STATUS_LOCKED = "LOCKED"
+    STATUS_EXPIRED = "EXPIRED"
     STATUS_CLOSED = "CLOSED"
-    STATUS_ARCHIVED = "ARCHIVED"
 
     STATUS_CHOICES = [
         (STATUS_DRAFT, "Draft"),
-        (STATUS_PROPOSED, "Proposed"),
-        (STATUS_UNDER_REVIEW, "Under Review"),
+        (STATUS_ENTRY_OPEN, "Entry Open"),
+        (STATUS_ENTRY_CLOSED_REVIEW_PENDING, "Entry Closed - Review Pending"),
+        (STATUS_REVIEW_OPEN, "Review Period Open"),
+        (STATUS_PENDING_CC_APPROVAL, "Pending CC Approval"),
+        (STATUS_CC_APPROVED, "CC Approved"),
+        (STATUS_PENDING_MODERATOR_REVIEW, "Pending Moderator Review"),
+        (STATUS_MODERATOR_REVIEWED, "Moderator Reviewed"),
+        (STATUS_PENDING_FINAL_APPROVAL, "Pending Final Approval"),
+        (STATUS_APPROVED, "Approved"),
+        (STATUS_AUTO_APPROVED, "Auto Approved"),
         (STATUS_ACTIVE, "Active"),
-        (STATUS_LOCKED, "Locked"),
+        (STATUS_EXPIRED, "Expired"),
         (STATUS_CLOSED, "Closed"),
-        (STATUS_ARCHIVED, "Archived"),
     ]
 
     TYPE_OPERATIONAL = "operational"
@@ -90,32 +144,244 @@ class Budget(models.Model):
         (TYPE_REVENUE, "Revenue Target"),
     ]
 
-    cost_center = models.ForeignKey(CostCenter, on_delete=models.PROTECT, related_name='budgets')
+    # Duration Types (NEW - Section 2.1)
+    DURATION_MONTHLY = "monthly"
+    DURATION_QUARTERLY = "quarterly"
+    DURATION_HALF_YEARLY = "half_yearly"
+    DURATION_YEARLY = "yearly"
+    DURATION_CUSTOM = "custom"
+
+    DURATION_CHOICES = [
+        (DURATION_MONTHLY, "Monthly"),
+        (DURATION_QUARTERLY, "Quarterly"),
+        (DURATION_HALF_YEARLY, "Half Yearly"),
+        (DURATION_YEARLY, "Yearly"),
+        (DURATION_CUSTOM, "Custom"),
+    ]
+
+    # Optional: when null, budget is company-wide (no cost center)
+    cost_center = models.ForeignKey(CostCenter, on_delete=models.PROTECT, null=True, blank=True, related_name='budgets')
+    # For CC budgets derived from a declared budget
+    parent_declared = models.ForeignKey('self', on_delete=models.PROTECT, null=True, blank=True, related_name='cc_budgets')
     company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name='budgets')
     name = models.CharField(max_length=255, default="Untitled Budget")
     budget_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default=TYPE_OPERATIONAL)
-    period_start = models.DateField(default=timezone.now)
-    period_end = models.DateField(default=timezone.now)
-    amount = models.DecimalField(max_digits=16, decimal_places=2)
-    consumed = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0.00"))
+    description = models.TextField(blank=True)
+
+    # CUSTOM DURATION SETTINGS (NEW - Section 2.1)
+    duration_type = models.CharField(
+        max_length=50,
+        choices=DURATION_CHOICES,
+        default=DURATION_YEARLY,
+        help_text="Budget duration type"
+    )
+    custom_duration_days = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Days if duration_type=custom"
+    )
+
+    # Budget Period (actual effective dates)
+    period_start = models.DateField(
+        default=timezone.now,
+        help_text="When budget becomes effective"
+    )
+    period_end = models.DateField(
+        default=timezone.now,
+        help_text="When budget expires"
+    )
+
+    # ENTRY PERIOD (Section 2.2)
+    entry_start_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="When department users can start entering budget lines"
+    )
+    entry_end_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Deadline for department users to submit budget"
+    )
+    entry_enabled = models.BooleanField(
+        default=True,
+        help_text="Toggle to enable/disable entry period"
+    )
+
+    # GRACE PERIOD (NEW - Section 8)
+    grace_period_days = models.IntegerField(
+        default=3,
+        help_text="Days after entry period ends before review starts"
+    )
+
+    # REVIEW PERIOD (NEW - Section 3)
+    review_start_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="When review period starts (auto-calculated from entry_end + grace)"
+    )
+    review_end_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="When review period ends"
+    )
+    review_enabled = models.BooleanField(
+        default=False,
+        help_text="Auto-enabled when first item sent back for review"
+    )
+
+    # BUDGET IMPACT PERIOD (Section 2.5)
+    budget_impact_start_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="When consumption tracking begins"
+    )
+    budget_impact_end_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="When consumption tracking stops"
+    )
+    budget_impact_enabled = models.BooleanField(
+        default=False,
+        help_text="Toggle to enable/disable consumption tracking"
+    )
+
+    # Legacy active window fields (keep for backward compatibility)
+    budget_active_date = models.DateField(null=True, blank=True)
+    budget_expire_date = models.DateField(null=True, blank=True)
+
+    # AUTO-APPROVAL SETTINGS (NEW - Section 6)
+    auto_approve_if_not_approved = models.BooleanField(
+        default=False,
+        help_text="Auto-approve budget at budget start date if not approved yet"
+    )
+    auto_approve_by_role = models.CharField(
+        max_length=50,
+        blank=True,
+        default="Module Owner (System)",
+        help_text="Which role should be recorded as auto-approver"
+    )
+    auto_approved_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When budget was auto-approved"
+    )
+
+    # Amount Tracking (Denormalized)
+    amount = models.DecimalField(
+        max_digits=18,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        help_text="Total allocated budget amount"
+    )
+    consumed = models.DecimalField(
+        max_digits=18,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        help_text="Total consumed amount"
+    )
+    committed = models.DecimalField(
+        max_digits=18,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        help_text="Total committed amount"
+    )
+    remaining = models.DecimalField(
+        max_digits=18,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        help_text="Total remaining amount"
+    )
+
+    # VARIANCE TRACKING (NEW - Section 4)
+    total_variance_amount = models.DecimalField(
+        max_digits=18,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        help_text="Sum of all line modifications (original vs modified)"
+    )
+    total_variance_count = models.IntegerField(
+        default=0,
+        help_text="Number of lines with modifications"
+    )
+
+    # Status & Workflow
     threshold_percent = models.PositiveIntegerField(default=90)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_DRAFT)
+    status = models.CharField(max_length=50, choices=STATUS_CHOICES, default=STATUS_DRAFT)
     workflow_state = models.CharField(max_length=120, blank=True, default="")
+
+    # Approval Tracking
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_budgets')
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_budgets')
     approved_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_budgets')
     approved_at = models.DateTimeField(null=True, blank=True)
+
+    # Moderator tracking (NEW)
+    moderator_reviewed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='moderator_reviewed_budgets',
+        help_text="Moderator who reviewed this budget"
+    )
+    moderator_reviewed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When moderator completed review"
+    )
+
+    # Final approval tracking
+    final_approved_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='final_approved_budgets',
+        help_text="Module owner who gave final approval"
+    )
+    final_approved_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When budget was finally approved"
+    )
+
+    # Activation tracking
+    activated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='activated_budgets',
+        help_text="User who activated budget (turned on impact tracking)"
+    )
+    activated_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When budget was activated"
+    )
+
     locked_at = models.DateTimeField(null=True, blank=True)
     metadata = models.JSONField(default=dict, blank=True)
+
+    # Revision number for CC budgets (allows multiple submissions per declared budget per CC)
+    revision_no = models.PositiveIntegerField(default=1)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["-period_start", "-created_at"]
         constraints = [
+            # Only one declared budget (company-wide) per type/period
             models.UniqueConstraint(
-                fields=["cost_center", "budget_type", "period_start", "period_end"],
-                name="unique_budget_period_per_type",
+                fields=["company", "budget_type", "period_start", "period_end"],
+                condition=Q(cost_center__isnull=True),
+                name="uniq_declared_company_type_period",
+            ),
+            # CC budgets unique per CC/type/period and revision
+            models.UniqueConstraint(
+                fields=["company", "budget_type", "period_start", "period_end", "cost_center", "revision_no"],
+                condition=Q(cost_center__isnull=False),
+                name="uniq_cc_company_type_period_revision",
             ),
         ]
         indexes = [
@@ -156,10 +422,109 @@ class Budget(models.Model):
 
     def mark_active(self, user=None):
         self.status = self.STATUS_ACTIVE
-        self.approved_at = timezone.now()
+        # If not explicitly set, start active from today
+        if not self.budget_active_date:
+            self.budget_active_date = timezone.now().date()
+        if not self.approved_at:
+            self.approved_at = timezone.now()
         if user:
             self.approved_by = user
-        self.save(update_fields=["status", "approved_at", "approved_by", "updated_at"])
+        self.save(update_fields=[
+            "status",
+            "approved_at",
+            "approved_by",
+            "budget_active_date",
+            "updated_at",
+        ])
+
+    def open_entry(self, *, start_date=None, end_date=None, user=None):
+        self.status = self.STATUS_ENTRY_OPEN
+        if start_date:
+            self.entry_start_date = start_date
+        elif not self.entry_start_date:
+            self.entry_start_date = timezone.now().date()
+        if end_date:
+            self.entry_end_date = end_date
+        self.updated_by = user or self.updated_by
+        self.save(update_fields=["status", "entry_start_date", "entry_end_date", "updated_by", "updated_at"])
+
+    def is_entry_period_active(self) -> bool:
+        """Check if entry period is active and entry is enabled"""
+        today = timezone.now().date()
+        if not self.entry_enabled:
+            return False
+        if self.status not in {self.STATUS_DRAFT, self.STATUS_ENTRY_OPEN}:
+            return False
+        if self.entry_start_date and today < self.entry_start_date:
+            return False
+        if self.entry_end_date and today > self.entry_end_date:
+            return False
+        return True
+
+    def is_review_period_active(self) -> bool:
+        """Check if review period is active"""
+        if not self.review_start_date or not self.review_end_date:
+            return False
+        if not self.review_enabled:
+            return False
+        today = timezone.now().date()
+        return self.review_start_date <= today <= self.review_end_date
+
+    def is_budget_impact_active(self) -> bool:
+        """Check if budget impact (consumption tracking) is active"""
+        if not self.budget_impact_enabled:
+            return False
+        if not self.budget_impact_start_date or not self.budget_impact_end_date:
+            return False
+        today = timezone.now().date()
+        return self.budget_impact_start_date <= today <= self.budget_impact_end_date
+
+    def calculate_review_start_date(self):
+        """Auto-calculate review start date from entry end date + grace period"""
+        if self.entry_end_date and self.grace_period_days is not None:
+            from datetime import timedelta
+            return self.entry_end_date + timedelta(days=self.grace_period_days)
+        return None
+
+    def should_auto_approve(self) -> bool:
+        """Check if budget should auto-approve at budget start date"""
+        from datetime import date
+        today = date.today()
+        return (
+            self.auto_approve_if_not_approved and
+            today >= self.period_start and
+            self.status not in {self.STATUS_APPROVED, self.STATUS_AUTO_APPROVED, self.STATUS_ACTIVE}
+        )
+
+    def get_duration_display(self) -> str:
+        """Get human-readable duration"""
+        if self.duration_type == self.DURATION_CUSTOM:
+            return f"Custom ({self.custom_duration_days} days)"
+        return self.get_duration_type_display()
+
+    def can_user_enter_budget(self, user, cost_center=None) -> bool:
+        if not user or not user.is_authenticated:
+            return False
+        if not self.is_entry_period_active():
+            return False
+        cc = cost_center or self.cost_center
+        # cost center owner, deputy, or explicitly granted entry users
+        return bool(
+            (cc.owner_id and user.id == cc.owner_id)
+            or (cc.deputy_owner_id and user.id == cc.deputy_owner_id)
+            or cc.budget_entry_users.filter(id=user.id).exists()
+        )
+
+    def submit_for_approval(self, user=None):
+        # Move budget to pending cc approval
+        self.status = self.STATUS_PENDING_CC_APPROVAL
+        self.updated_by = user or self.updated_by
+        self.save(update_fields=["status", "updated_by", "updated_at"])
+
+    def get_pending_cost_center_approvals(self):
+        return getattr(self, "approvals", None).filter(
+            approver_type="cost_center_owner", status=BudgetApproval.Status.PENDING
+        ) if hasattr(self, "approvals") else []
 
     def lock(self, user=None):
         self.status = self.STATUS_LOCKED
@@ -185,17 +550,194 @@ class BudgetLine(models.Model):
     sequence = models.PositiveIntegerField(default=1)
     procurement_class = models.CharField(max_length=20, choices=ProcurementClass.choices)
     item_code = models.CharField(max_length=64, blank=True)
+
+    # REFACTORED: Split product field into sales.Product and inventory.Item
+    # For revenue budgets only - links to saleable products
+    product = models.ForeignKey(
+        'sales.Product',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='budget_lines',
+        help_text='For revenue budgets only - saleable product'
+    )
+
+    # For expense/capex/operational budgets - links to inventory items
+    item = models.ForeignKey(
+        'inventory.Item',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='budget_lines',
+        help_text='For expense/capex/operational budgets - inventory item'
+    )
+
+    # Sub-category for hierarchical classification
+    sub_category = models.ForeignKey(
+        'inventory.ItemCategory',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='budget_lines',
+        help_text='Sub-category for budget classification'
+    )
+
     item_name = models.CharField(max_length=255)
     category = models.CharField(max_length=120, blank=True)
     project_code = models.CharField(max_length=64, blank=True)
+
+    # ORIGINAL VALUES (for variance tracking - Section 4)
+    original_qty_limit = models.DecimalField(
+        max_digits=15,
+        decimal_places=3,
+        default=Decimal("0"),
+        help_text="Original quantity at submission"
+    )
+    original_unit_price = models.DecimalField(
+        max_digits=20,
+        decimal_places=2,
+        default=Decimal("0"),
+        help_text="Original price at submission"
+    )
+    original_value_limit = models.DecimalField(
+        max_digits=20,
+        decimal_places=2,
+        default=Decimal("0"),
+        help_text="Original value at submission"
+    )
+
+    # CURRENT VALUES (may be modified)
     qty_limit = models.DecimalField(max_digits=15, decimal_places=3, default=Decimal("0"))
-    value_limit = models.DecimalField(max_digits=20, decimal_places=2)
+    value_limit = models.DecimalField(max_digits=20, decimal_places=2, default=Decimal("0"))
     standard_price = models.DecimalField(max_digits=20, decimal_places=2, default=Decimal("0"))
+    manual_unit_price = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+
+    # VARIANCE DETAILS (NEW - Section 4)
+    qty_variance = models.DecimalField(
+        max_digits=15,
+        decimal_places=3,
+        default=Decimal("0"),
+        help_text="Current Qty - Original Qty"
+    )
+    price_variance = models.DecimalField(
+        max_digits=20,
+        decimal_places=2,
+        default=Decimal("0"),
+        help_text="Current Price - Original Price"
+    )
+    value_variance = models.DecimalField(
+        max_digits=20,
+        decimal_places=2,
+        default=Decimal("0"),
+        help_text="Current Value - Original Value"
+    )
+    variance_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("0"),
+        help_text="% change from original"
+    )
+
+    # Who modified this line (NEW - Section 4)
+    modified_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='modified_budget_lines',
+        help_text="User who last modified this line"
+    )
+    modified_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When line was last modified"
+    )
+    modification_reason = models.TextField(
+        blank=True,
+        help_text="Justification for modification"
+    )
+
+    # HELD ITEMS LOGIC (NEW - Section 3)
+    is_held_for_review = models.BooleanField(
+        default=False,
+        help_text="Marked as held for further review by owner/moderator"
+    )
+    held_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='held_budget_lines',
+        help_text="User who marked this line as held"
+    )
+    held_reason = models.TextField(
+        blank=True,
+        help_text="Reason for holding this line"
+    )
+    held_until_date = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Hold expires on this date"
+    )
+
+    # REVIEW LOGIC (NEW - Section 3)
+    sent_back_for_review = models.BooleanField(
+        default=False,
+        help_text="Sent back to CC owner/entry user for review"
+    )
+
+    # MODERATOR REMARKS (NEW - Section 2.4)
+    moderator_remarks = models.TextField(
+        blank=True,
+        help_text="Moderator comments on this line"
+    )
+    moderator_remarks_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='budget_line_remarks',
+        help_text="Moderator who added remarks"
+    )
+    moderator_remarks_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When moderator added remarks"
+    )
+
+    # CC Owner modification notes
+    cc_owner_modification_notes = models.TextField(
+        blank=True,
+        help_text="CC Owner notes for modifications"
+    )
+
+    # Consumption Tracking
     tolerance_percent = models.PositiveIntegerField(default=5)
     consumed_quantity = models.DecimalField(max_digits=15, decimal_places=3, default=Decimal("0"))
     consumed_value = models.DecimalField(max_digits=20, decimal_places=2, default=Decimal("0"))
     committed_quantity = models.DecimalField(max_digits=15, decimal_places=3, default=Decimal("0"))
     committed_value = models.DecimalField(max_digits=20, decimal_places=2, default=Decimal("0"))
+
+    # Projected Consumption (AI-powered - Section 12)
+    projected_consumption_value = models.DecimalField(
+        max_digits=20,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="AI-predicted consumption based on trends"
+    )
+    projected_consumption_confidence = models.DecimalField(
+        max_digits=3,
+        decimal_places=0,
+        null=True,
+        blank=True,
+        help_text="Confidence level (0-100) for projection"
+    )
+    will_exceed_budget = models.BooleanField(
+        default=False,
+        help_text="True if projected consumption > allocated"
+    )
+
     budget_owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_budget_lines')
     is_active = models.BooleanField(default=True)
     notes = models.TextField(blank=True)
@@ -211,6 +753,9 @@ class BudgetLine(models.Model):
         indexes = [
             models.Index(fields=["budget", "procurement_class"], name="budgeting_b_budget__8d9b4c_idx"),
             models.Index(fields=["item_code"], name="budgeting_b_item_co_a819b1_idx"),
+            models.Index(fields=["budget", "is_active"]),
+            models.Index(fields=["is_held_for_review"]),
+            models.Index(fields=["sent_back_for_review"]),
         ]
 
     def __str__(self):
@@ -268,6 +813,40 @@ class BudgetLine(models.Model):
         if commit:
             self.save(update_fields=["committed_quantity", "committed_value", "updated_at"])
         return self.committed_quantity, self.committed_value
+
+    def clean(self):
+        """
+        Validation for Product vs Item split:
+        - Revenue budgets must use product (not item)
+        - Other budgets must use item (not product)
+        - Cannot have both product and item set
+        """
+        from django.core.exceptions import ValidationError
+
+        # Check if both are set
+        if self.product_id and self.item_id:
+            raise ValidationError({
+                'product': 'Cannot specify both product and item. Use product for revenue budgets, item for others.',
+                'item': 'Cannot specify both product and item. Use product for revenue budgets, item for others.'
+            })
+
+        # Revenue budgets should use product
+        if self.budget and self.budget.budget_type == Budget.TYPE_REVENUE:
+            if self.item_id and not self.product_id:
+                raise ValidationError({
+                    'item': 'Revenue budgets must use product field, not item field.'
+                })
+
+        # Non-revenue budgets should use item
+        if self.budget and self.budget.budget_type != Budget.TYPE_REVENUE:
+            if self.product_id and not self.item_id:
+                raise ValidationError({
+                    'product': 'Non-revenue budgets (expense/capex/operational) must use item field, not product field.'
+                })
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
 
 
 class BudgetUsage(models.Model):
@@ -397,6 +976,38 @@ class BudgetCommitment(models.Model):
         self.save(update_fields=["consumed_quantity", "consumed_value", "status", "consumed_at", "updated_at"])
 
 
+class BudgetApproval(models.Model):
+    class ApproverType(models.TextChoices):
+        COST_CENTER_OWNER = "cost_center_owner", "Cost Center Owner"
+        BUDGET_MODULE_OWNER = "budget_module_owner", "Budget Module Owner"
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        APPROVED = "approved", "Approved"
+        REJECTED = "rejected", "Rejected"
+        SENT_BACK = "sent_back", "Sent Back for Review"
+
+    budget = models.ForeignKey(Budget, on_delete=models.CASCADE, related_name="approvals")
+    approver_type = models.CharField(max_length=32, choices=ApproverType.choices)
+    cost_center = models.ForeignKey(CostCenter, on_delete=models.PROTECT, null=True, blank=True, related_name="budget_approvals")
+    approver = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="budget_approvals")
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    decision_date = models.DateTimeField(auto_now_add=True)
+    comments = models.TextField(blank=True)
+    modifications_made = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["budget", "approver_type", "status"]),
+            models.Index(fields=["approver", "status"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.budget_id}:{self.approver_type}:{self.status}"
+
+
 class BudgetOverrideRequest(models.Model):
     STATUS_PENDING = "PENDING"
     STATUS_APPROVED = "APPROVED"
@@ -479,3 +1090,177 @@ class BudgetItemCode(models.Model):
 
     def __str__(self) -> str:
         return f"{self.code} - {self.name}"
+
+
+class BudgetPricePolicy(models.Model):
+    SOURCE_STANDARD = "standard"
+    SOURCE_LAST_PO = "last_po"
+    SOURCE_AVG = "avg"
+    SOURCE_MANUAL_ONLY = "manual_only"
+
+    SOURCE_CHOICES = [
+        (SOURCE_STANDARD, "Standard"),
+        (SOURCE_LAST_PO, "Last PO"),
+        (SOURCE_AVG, "Average"),
+        (SOURCE_MANUAL_ONLY, "Manual Only"),
+    ]
+
+    company = models.OneToOneField(Company, on_delete=models.CASCADE, related_name="budget_price_policy")
+    primary_source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default=SOURCE_STANDARD)
+    secondary_source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default=SOURCE_LAST_PO)
+    tertiary_source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default=SOURCE_AVG)
+    avg_lookback_days = models.IntegerField(default=365)
+    fallback_on_zero = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["company_id"]
+
+    def __str__(self) -> str:
+        return f"Policy {self.company_id}: {self.primary_source} > {self.secondary_source} > {self.tertiary_source}"
+
+
+class BudgetRemarkTemplate(models.Model):
+    """
+    Pre-defined and custom remark templates for moderators
+    Section 10: Remark Templates System
+    """
+    class RemarkType(models.TextChoices):
+        SUGGESTION = "suggestion", "Suggestion"
+        CONCERN = "concern", "Concern"
+        APPROVAL_NOTE = "approval_note", "Approval Note"
+        CLARIFICATION_NEEDED = "clarification_needed", "Clarification Needed"
+        DATA_ISSUE = "data_issue", "Data Issue"
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name='budget_remark_templates'
+    )
+
+    # Template Details
+    name = models.CharField(
+        max_length=255,
+        help_text='e.g., "Qty Exceeds Standard"'
+    )
+    description = models.TextField(blank=True)
+
+    template_text = models.TextField(
+        help_text='Remark text (can include placeholders like {item_name}, {qty})'
+    )
+
+    remark_type = models.CharField(
+        max_length=50,
+        choices=RemarkType.choices
+    )
+
+    is_predefined = models.BooleanField(
+        default=False,
+        help_text='True if predefined by system; False if custom'
+    )
+
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_budget_templates'
+    )
+
+    usage_count = models.IntegerField(
+        default=0,
+        help_text='How many times used'
+    )
+
+    is_shared = models.BooleanField(
+        default=True,
+        help_text='Visible to all moderators if True'
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'budget_remark_template'
+        ordering = ['name']
+        indexes = [
+            models.Index(fields=['company', 'is_predefined']),
+            models.Index(fields=['company', 'is_shared']),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.get_remark_type_display()})"
+
+
+class BudgetVarianceAudit(models.Model):
+    """
+    Complete audit trail of all modifications (original vs. current)
+    Section 4: Variance Tracking & Audit
+    """
+    class ChangeType(models.TextChoices):
+        QTY_CHANGE = "qty_change", "Quantity Changed"
+        PRICE_CHANGE = "price_change", "Price Changed"
+        BOTH_CHANGE = "both_change", "Qty & Price Changed"
+
+    class ModifierRole(models.TextChoices):
+        CC_OWNER = "cc_owner", "CC Owner"
+        MODERATOR = "moderator", "Moderator"
+        MODULE_OWNER = "module_owner", "Module Owner"
+
+    budget_line = models.ForeignKey(
+        BudgetLine,
+        on_delete=models.CASCADE,
+        related_name='variance_audit_trail'
+    )
+
+    # Who made the change
+    modified_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='budget_modifications'
+    )
+    modified_at = models.DateTimeField(auto_now_add=True)
+
+    # What changed
+    change_type = models.CharField(
+        max_length=50,
+        choices=ChangeType.choices
+    )
+
+    # Quantity changes
+    original_qty = models.DecimalField(max_digits=15, decimal_places=3)
+    new_qty = models.DecimalField(max_digits=15, decimal_places=3)
+    qty_change_percent = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0"))
+
+    # Price changes
+    original_price = models.DecimalField(max_digits=20, decimal_places=2)
+    new_price = models.DecimalField(max_digits=20, decimal_places=2)
+    price_change_percent = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0"))
+
+    # Value changes
+    original_value = models.DecimalField(max_digits=20, decimal_places=2)
+    new_value = models.DecimalField(max_digits=20, decimal_places=2)
+    value_variance = models.DecimalField(max_digits=20, decimal_places=2, default=Decimal("0"))
+
+    # Justification
+    justification = models.TextField(
+        blank=True,
+        help_text='Why this change was made'
+    )
+
+    role_of_modifier = models.CharField(
+        max_length=50,
+        choices=ModifierRole.choices
+    )
+
+    class Meta:
+        db_table = 'budget_variance_audit'
+        ordering = ['-modified_at']
+        indexes = [
+            models.Index(fields=['budget_line']),
+            models.Index(fields=['modified_at']),
+            models.Index(fields=['modified_by']),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.budget_line.item_name} - {self.get_change_type_display()} by {self.modified_by}"

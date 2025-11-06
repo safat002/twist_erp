@@ -11,6 +11,8 @@ from apps.sales.models import Customer
 
 from ..models import Account, Invoice, InvoiceStatus, Journal
 from .journal_service import JournalService
+from ..models import FiscalPeriod, FiscalPeriodStatus
+from .config import require_invoice_approval, enforce_period_posting, enforce_segregation_of_duties
 
 
 class InvoiceService:
@@ -45,10 +47,25 @@ class InvoiceService:
     def post_supplier_invoice(invoice: Invoice, posted_by):
         if invoice.invoice_type != "AP":
             raise ValueError("This service can only post Accounts Payable invoices.")
-        if invoice.status not in {InvoiceStatus.DRAFT, InvoiceStatus.POSTED}:
-            raise ValueError("Invoice must be in draft state before posting.")
-
         company = invoice.company
+        # Require approval if configured
+        if require_invoice_approval(company) and invoice.status != InvoiceStatus.APPROVED:
+            raise ValueError("Invoice must be approved before posting.")
+        if not require_invoice_approval(company) and invoice.status not in {InvoiceStatus.DRAFT, InvoiceStatus.APPROVED}:
+            raise ValueError("Invoice not in a postable state.")
+        # Period enforcement
+        if enforce_period_posting(company):
+            period = invoice.invoice_date.strftime('%Y-%m')
+            try:
+                period_row = FiscalPeriod.objects.get(company=company, period=period)
+            except FiscalPeriod.DoesNotExist:
+                period_row = None
+            if period_row and period_row.status != FiscalPeriodStatus.OPEN:
+                raise ValueError(f"Posting blocked: fiscal period {period} is {period_row.status}.")
+        # SoD enforcement
+        if enforce_segregation_of_duties(company):
+            if invoice.created_by_id and posted_by and invoice.created_by_id == posted_by.id:
+                raise ValueError("Segregation of duties: creator cannot post their own invoice.")
 
         try:
             supplier = Supplier.objects.select_related("payable_account").get(pk=invoice.partner_id, company=company)
@@ -107,8 +124,22 @@ class InvoiceService:
     def post_sales_invoice(invoice: Invoice, posted_by):
         if invoice.invoice_type != "AR":
             raise ValueError("This service can only post Accounts Receivable invoices.")
-        if invoice.status not in {InvoiceStatus.DRAFT, InvoiceStatus.POSTED}:
-            raise ValueError("Invoice must be in draft state before posting.")
+        company = invoice.company
+        if require_invoice_approval(company) and invoice.status != InvoiceStatus.APPROVED:
+            raise ValueError("Invoice must be approved before posting.")
+        if not require_invoice_approval(company) and invoice.status not in {InvoiceStatus.DRAFT, InvoiceStatus.APPROVED}:
+            raise ValueError("Invoice not in a postable state.")
+        if enforce_period_posting(company):
+            period = invoice.invoice_date.strftime('%Y-%m')
+            try:
+                period_row = FiscalPeriod.objects.get(company=company, period=period)
+            except FiscalPeriod.DoesNotExist:
+                period_row = None
+            if period_row and period_row.status != FiscalPeriodStatus.OPEN:
+                raise ValueError(f"Posting blocked: fiscal period {period} is {period_row.status}.")
+        if enforce_segregation_of_duties(company):
+            if invoice.created_by_id and posted_by and invoice.created_by_id == posted_by.id:
+                raise ValueError("Segregation of duties: creator cannot post their own invoice.")
 
         company = invoice.company
 
@@ -162,4 +193,19 @@ class InvoiceService:
 
         JournalService.post_journal_voucher(voucher, posted_by)
         invoice.mark_posted(voucher, posted_by)
+        return invoice
+
+    @staticmethod
+    @transaction.atomic
+    def approve_invoice(invoice: Invoice, approver):
+        if invoice.status not in {InvoiceStatus.DRAFT, InvoiceStatus.CANCELLED}:
+            raise ValueError("Only draft or cancelled invoices can be approved.")
+        if enforce_segregation_of_duties(invoice.company):
+            if invoice.created_by_id and approver and invoice.created_by_id == approver.id:
+                raise ValueError("Segregation of duties: creator cannot approve their own invoice.")
+        from django.utils import timezone
+        invoice.status = InvoiceStatus.APPROVED
+        invoice.approved_by = approver
+        invoice.approved_at = timezone.now()
+        invoice.save(update_fields=["status", "approved_by", "approved_at"])
         return invoice

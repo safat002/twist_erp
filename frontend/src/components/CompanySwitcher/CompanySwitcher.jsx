@@ -14,7 +14,7 @@ const CompanySwitcher = () => {
         try {
             await api.post('/companies/switch/', { company_id: companyId });
             dispatch(setActiveCompany(companyId));
-            window.location.reload(); // Refresh to load company-specific data
+            // Avoid full page reload; state update is enough
         } catch (error) {
             console.error('Failed to switch company:', error);
         } finally {

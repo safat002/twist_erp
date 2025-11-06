@@ -70,5 +70,81 @@
       "name": "Delete User",
       "module": "users"
     }
-  }
+  },
+  {
+    "model": "permissions.permission",
+    "pk": 9,
+    "fields": {
+      "code": "policies.view",
+      "name": "View Policies",
+      "module": "policies"
+    }
+  },
+  {
+    "model": "permissions.permission",
+    "pk": 10,
+    "fields": {
+      "code": "policies.create",
+      "name": "Create Policy",
+      "module": "policies"
+    }
+  },
+  {
+    "model": "permissions.permission",
+    "pk": 11,
+    "fields": {
+      "code": "policies.update",
+      "name": "Update Policy",
+      "module": "policies"
+    }
+  },
+  {
+    "model": "permissions.permission",
+    "pk": 12,
+    "fields": {
+      "code": "policies.delete",
+      "name": "Delete Policy",
+      "module": "policies"
+    }
+  },
+  {
+    "model": "permissions.permission",
+    "pk": 13,
+    "fields": {
+      "code": "policies.publish",
+      "name": "Publish Policy",
+      "module": "policies"
+    }
+  },
+  {
+    "model": "permissions.permission",
+    "pk": 14,
+    "fields": {
+      "code": "policies.manage_categories",
+      "name": "Manage Policy Categories",
+      "module": "policies"
+    }
+  },
+  { "model": "permissions.permission", "pk": 15, "fields": {"code": "ngo.view_program", "name": "View Programs", "module": "ngo"}},
+  { "model": "permissions.permission", "pk": 16, "fields": {"code": "ngo.create_program", "name": "Create Program", "module": "ngo"}},
+  { "model": "permissions.permission", "pk": 17, "fields": {"code": "ngo.update_program", "name": "Update Program", "module": "ngo"}},
+  { "model": "permissions.permission", "pk": 18, "fields": {"code": "ngo.delete_program", "name": "Delete Program", "module": "ngo"}},
+  { "model": "permissions.permission", "pk": 25, "fields": {"code": "ngo.view_donor", "name": "View Donors", "module": "ngo"}},
+  { "model": "permissions.permission", "pk": 26, "fields": {"code": "ngo.create_donor", "name": "Create Donor", "module": "ngo"}},
+  { "model": "permissions.permission", "pk": 27, "fields": {"code": "ngo.update_donor", "name": "Update Donor", "module": "ngo"}},
+  { "model": "permissions.permission", "pk": 28, "fields": {"code": "ngo.delete_donor", "name": "Delete Donor", "module": "ngo"}},
+  { "model": "permissions.permission", "pk": 29, "fields": {"code": "ngo.view_requirement", "name": "View Requirements", "module": "ngo"}},
+  { "model": "permissions.permission", "pk": 30, "fields": {"code": "ngo.create_requirement", "name": "Create Requirement", "module": "ngo"}},
+  { "model": "permissions.permission", "pk": 31, "fields": {"code": "ngo.update_requirement", "name": "Update Requirement", "module": "ngo"}},
+  { "model": "permissions.permission", "pk": 32, "fields": {"code": "ngo.delete_requirement", "name": "Delete Requirement", "module": "ngo"}},
+  { "model": "permissions.permission", "pk": 33, "fields": {"code": "ngo.view_submission", "name": "View Submissions", "module": "ngo"}},
+  { "model": "permissions.permission", "pk": 34, "fields": {"code": "ngo.create_submission", "name": "Create Submission", "module": "ngo"}},
+  { "model": "permissions.permission", "pk": 35, "fields": {"code": "ngo.update_submission", "name": "Update Submission", "module": "ngo"}},
+  { "model": "permissions.permission", "pk": 36, "fields": {"code": "ngo.delete_submission", "name": "Delete Submission", "module": "ngo"}},
+  { "model": "permissions.permission", "pk": 19, "fields": {"code": "microfinance.view_loan", "name": "View Loans", "module": "microfinance"}},
+  { "model": "permissions.permission", "pk": 20, "fields": {"code": "microfinance.create_loan", "name": "Create Loan", "module": "microfinance"}},
+  { "model": "permissions.permission", "pk": 21, "fields": {"code": "microfinance.update_loan", "name": "Update Loan", "module": "microfinance"}},
+  { "model": "permissions.permission", "pk": 22, "fields": {"code": "microfinance.delete_loan", "name": "Delete Loan", "module": "microfinance"}},
+  { "model": "permissions.permission", "pk": 23, "fields": {"code": "microfinance.disburse_loan", "name": "Disburse Loan", "module": "microfinance"}},
+  { "model": "permissions.permission", "pk": 24, "fields": {"code": "microfinance.record_repayment", "name": "Record Repayment", "module": "microfinance"}}
 ]

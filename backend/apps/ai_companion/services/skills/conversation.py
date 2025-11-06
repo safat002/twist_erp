@@ -7,9 +7,11 @@ import logging
 from typing import List
 
 import google.generativeai as genai
+from django.conf import settings
 
 from apps.ai_companion.models import AIConfiguration, AIMessage
 from apps.ai_companion.services.api_key_manager import APIKeyManager
+from apps.ai_companion.services.ai_service_v2 import ai_service_v2
 from .base import BaseSkill, SkillContext, SkillResponse, MemoryRecord
 
 logger = logging.getLogger(__name__)
@@ -56,7 +58,7 @@ class ConversationSkill(BaseSkill):
             config = AIConfiguration.get_config()
             if not config.ai_assistant_enabled:
                 return SkillResponse(
-                    message="AI assistant is currently disabled. Please contact your administrator.",
+                    message="Hey! I'm currently switched off. Your administrator can turn me back on if you need my help.",
                     intent="error",
                     confidence=1.0
                 )
@@ -64,8 +66,36 @@ class ConversationSkill(BaseSkill):
             # Build context-aware prompt
             prompt = self._build_conversation_prompt(message, context)
 
-            # Call Gemini
-            response_text = self._call_gemini(prompt, context)
+            # Check if we have Gemini API keys available
+            from apps.ai_companion.services.api_key_manager import APIKeyManager
+            has_gemini_keys = APIKeyManager.get_available_key() is not None
+
+            response_text = None
+
+            # Prefer Gemini when API keys are available (faster and better)
+            if has_gemini_keys:
+                try:
+                    response_text = self._call_gemini(prompt, context)
+                except Exception as e:
+                    logger.warning(f"Gemini failed, trying local RAG: {e}")
+                    response_text = None
+
+            # Fall back to local RAG if Gemini not available or failed
+            if not response_text:
+                ai_cfg = getattr(settings, "AI_CONFIG", {})
+                mode = str(ai_cfg.get("MODE", "mock")).lower()
+
+                if mode in {"full", "local", "rag"}:
+                    try:
+                        rag = ai_service_v2.chat(message, company_id=getattr(context.company, "id", None))
+                        response_text = rag.get("message")
+                    except Exception as e:
+                        logger.warning(f"Local RAG failed: {e}")
+                        response_text = None
+
+            # Final fallback
+            if not response_text:
+                raise Exception("No AI provider available")
 
             # Extract memory if any
             memory_updates = self._extract_memory_from_response(response_text, context)
@@ -98,49 +128,39 @@ class ConversationSkill(BaseSkill):
         current_page = context.current_page or "unknown"
         current_module = context.module or "unknown"
 
-        prompt = f"""You are a helpful AI assistant for Twist ERP, an enterprise resource planning system.
+        prompt = f"""Hey! You're helping {user_name} at {company_name} with their Twist ERP system. They're currently on the {current_page} page in the {current_module} module.
 
-**Your Role:**
-- Help users navigate and understand the ERP system
-- Answer questions about business processes (procurement, finance, inventory, sales, HR, etc.)
-- Explain ERP concepts in simple terms
-- Guide users on how to perform tasks
-- Be friendly, concise, and professional
+Here's what you need to know:
 
-**Current Context:**
-- User: {user_name}
-- Company: {company_name}
-- Current Page: {current_page}
-- Current Module: {current_module}
-
-**Conversation History:**
+**Recent conversation:**
 {history_text}
 
-**User Preferences:**
+**What they prefer:**
 {pref_text}
 
-**ERP Modules Available:**
-1. **Procurement** - Purchase orders, suppliers, GRN (Goods Receipt Note)
-2. **Finance** - Accounts, journal entries, AR (Accounts Receivable), AP (Accounts Payable), banking
-3. **Inventory** - Stock management, warehouses, stock movements
-4. **Sales** - Sales orders, customers, invoicing
-5. **Production** - Work orders, BOM (Bill of Materials), manufacturing
-6. **HR** - Employees, payroll, attendance, leave management
-7. **Assets** - Asset management, depreciation, maintenance
-8. **Projects** - Project tracking, tasks, budgets
+**What you can help with in Twist ERP:**
+- **Procurement**: Purchase orders, suppliers, receiving goods (GRN)
+- **Finance**: Accounts, journal entries, receivables (AR), payables (AP), banking
+- **Inventory**: Stock levels, warehouses, moving items around
+- **Sales**: Sales orders, customers, invoices
+- **Production**: Work orders, bills of materials (BOM), manufacturing
+- **HR**: Employees, payroll, attendance, leave
+- **Assets**: Equipment tracking, depreciation, maintenance
+- **Projects**: Project tracking, tasks, budgets
 
-**Important Guidelines:**
-- Keep responses concise (2-4 sentences for simple queries, more for complex explanations)
-- If asked about specific data ("show me POs", "what's my cash balance"), tell them you can help with that and suggest they use the data query feature
-- If asked to perform actions ("approve PO 123"), explain you can help prepare that action but they need to confirm it
-- Use business-friendly language, avoid technical jargon unless necessary
-- If you're not sure, be honest and suggest alternatives
+**How to respond:**
+- Talk naturally like you're chatting with a colleague
+- Keep it short and sweet (2-4 sentences usually works)
+- If they ask for specific data like "show me my purchase orders" or "what's my cash balance", let them know you can totally help with that
+- If they want you to do something like "approve PO 123" or "create a sales order", guide them through it step by step
+- Don't use corporate-speak or jargon unless you have to
+- If you don't know something, just say so - no need to pretend
+- Never start with "As an AI assistant" or similar - just talk normally
 
-**User Message:**
+**Their message:**
 "{message}"
 
-**Your Response:**
-Respond naturally and helpfully. Do not include any preamble like "As an AI assistant" - just answer directly."""
+**Your response (just answer directly, like you're having a conversation):**"""
 
         return prompt
 
@@ -213,7 +233,7 @@ Respond naturally and helpfully. Do not include any preamble like "As an AI assi
         # Handle greetings
         if any(lowered.startswith(greet) for greet in ["hi", "hello", "hey"]):
             return SkillResponse(
-                message=f"Hello! I'm your Twist ERP assistant. How can I help you today?",
+                message=f"Hey there! What can I help you with in Twist ERP today?",
                 intent="greeting",
                 confidence=0.9
             )
@@ -222,12 +242,12 @@ Respond naturally and helpfully. Do not include any preamble like "As an AI assi
         if "help" in lowered:
             return SkillResponse(
                 message=(
-                    "I can help you with:\n"
-                    "- Answering questions about ERP processes\n"
-                    "- Querying data (purchase orders, invoices, stock levels, etc.)\n"
-                    "- Guiding you through workflows\n"
-                    "- Explaining business concepts\n\n"
-                    "What would you like to know?"
+                    "I'm here to help you with all sorts of things! I can:\n"
+                    "- Answer questions about how things work in the ERP\n"
+                    "- Look up data like purchase orders, invoices, or stock levels\n"
+                    "- Walk you through different processes\n"
+                    "- Explain business concepts in simple terms\n\n"
+                    "What do you need help with?"
                 ),
                 intent="help",
                 confidence=0.9
@@ -235,7 +255,7 @@ Respond naturally and helpfully. Do not include any preamble like "As an AI assi
 
         # Default
         return SkillResponse(
-            message="I'm here to help! Could you please rephrase your question or tell me what you'd like to do?",
+            message="I want to help, but I'm not quite sure what you mean. Could you rephrase that or tell me what you're trying to do?",
             intent="fallback",
             confidence=0.5
         )

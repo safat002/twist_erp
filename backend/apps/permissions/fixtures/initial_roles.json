@@ -1,0 +1,8 @@
+[
+  {"model":"permissions.role","pk":1,"fields":{"name":"System Administrator","company":null,"description":"Full system access across all companies","is_system_role":true,"permissions":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36]}},
+  {"model":"permissions.role","pk":2,"fields":{"name":"Company Administrator","company":1,"description":"Full access within company","is_system_role":false,"permissions":[1,3,5,6,7]}},
+  {"model":"permissions.role","pk":3,"fields":{"name":"Policy Admin","company":null,"description":"Manage policies, categories and publishing","is_system_role":false,"permissions":[9,10,11,12,13,14]}},
+  {"model":"permissions.role","pk":4,"fields":{"name":"NGO Admin","company":null,"description":"Manage NGO donors, programs, compliance","is_system_role":false,"permissions":[15,16,17,18,25,26,27,28,29,30,31,32,33,34,35,36]}},
+  {"model":"permissions.role","pk":5,"fields":{"name":"Microfinance Officer","company":null,"description":"Manage microfinance borrowers, products, loans and postings","is_system_role":false,"permissions":[19,20,21,22,23,24]}}
+]
+

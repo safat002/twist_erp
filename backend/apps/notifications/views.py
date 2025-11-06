@@ -25,7 +25,12 @@ class NotificationListView(generics.ListAPIView):
         qs = Notification.objects.filter(user=self.request.user)
         if company:
             qs = qs.filter(company=company)
-        return qs.order_by("-created_at")[:50]
+        try:
+            limit = int(self.request.query_params.get("limit", 10))
+        except ValueError:
+            limit = 10
+        limit = max(1, min(limit, 50))
+        return qs.order_by("-created_at")[:limit]
 
 
 class NotificationCenterView(generics.ListAPIView):

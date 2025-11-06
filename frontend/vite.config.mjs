@@ -7,6 +7,7 @@ export default defineConfig({
   server: {
     port: 5173,
     host: 'localhost',
+    hmr: false, // Disable Hot Module Replacement (auto-refresh)
     proxy: {
       // Proxy API calls in dev to Django running on 8788
       '/api': {

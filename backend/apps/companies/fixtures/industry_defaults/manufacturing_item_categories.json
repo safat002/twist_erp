@@ -1,0 +1,23 @@
+[
+  {"code": "RM", "name": "Raw Materials", "parent_code": null, "level": 0},
+  {"code": "RM-CHEM", "name": "Chemicals", "parent_code": "RM", "level": 1},
+  {"code": "RM-METAL", "name": "Metals", "parent_code": "RM", "level": 1},
+  {"code": "RM-PLASTIC", "name": "Plastics", "parent_code": "RM", "level": 1},
+  {"code": "RM-TEXTILE", "name": "Textiles", "parent_code": "RM", "level": 1},
+
+  {"code": "PKG", "name": "Packaging Materials", "parent_code": null, "level": 0},
+  {"code": "PKG-BOX", "name": "Boxes and Cartons", "parent_code": "PKG", "level": 1},
+  {"code": "PKG-LABEL", "name": "Labels and Tags", "parent_code": "PKG", "level": 1},
+
+  {"code": "CONS", "name": "Consumables", "parent_code": null, "level": 0},
+  {"code": "CONS-OIL", "name": "Lubricants and Oils", "parent_code": "CONS", "level": 1},
+  {"code": "CONS-CHEM", "name": "Cleaning Chemicals", "parent_code": "CONS", "level": 1},
+
+  {"code": "SPARE", "name": "Spare Parts", "parent_code": null, "level": 0},
+  {"code": "SPARE-MECH", "name": "Mechanical Parts", "parent_code": "SPARE", "level": 1},
+  {"code": "SPARE-ELEC", "name": "Electrical Parts", "parent_code": "SPARE", "level": 1},
+
+  {"code": "TOOL", "name": "Tools and Equipment", "parent_code": null, "level": 0},
+  {"code": "TOOL-HAND", "name": "Hand Tools", "parent_code": "TOOL", "level": 1},
+  {"code": "TOOL-POWER", "name": "Power Tools", "parent_code": "TOOL", "level": 1}
+]

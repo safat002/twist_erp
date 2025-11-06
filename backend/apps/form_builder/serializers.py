@@ -4,7 +4,6 @@ from django.utils.text import slugify
 from rest_framework import serializers
 
 from apps.audit.utils import log_audit_event
-from apps.metadata.services import MetadataScope, create_metadata_version
 from apps.metadata.models import MetadataDefinition
 from .models import DynamicEntity, FormSubmission, FormTemplate
 from .services.dynamic_entities import generate_dynamic_entity
@@ -74,6 +73,7 @@ class FormTemplateSerializer(serializers.ModelSerializer):
         read_only_fields = ["created_at", "updated_at", "entity", "metadata", "version", "status", "slug", "scope_options"]
 
     def create(self, validated_data):
+        from apps.metadata.services import MetadataScope, create_metadata_version
         request = self.context.get("request")
         company = getattr(request, "company", None)
         user = getattr(request, "user", None)

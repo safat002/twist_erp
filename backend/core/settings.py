@@ -59,6 +59,7 @@ if APPS_DIR.is_dir():
 INSTALLED_APPS = [
     'jazzmin',
     'shared',  # Shared app for common utilities (placed early to override commands like runserver)
+    'apps.companies',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -80,7 +81,6 @@ INSTALLED_APPS = [
 # For now, we will keep the remaining apps static to ensure stability during transition.
 STATIC_APPS = [
     'apps.users',
-    'apps.companies',
     'apps.data_migration',
     'apps.finance',
     'apps.sales',
@@ -104,31 +104,36 @@ STATIC_APPS = [
     'apps.report_builder',
     'apps.tasks',
     'apps.notifications',
+    'apps.policies',
+    'apps.ngo',
+    'apps.microfinance',
+    'apps.admin_settings',  # Feature toggle system
 ]
 
 INSTALLED_APPS += STATIC_APPS
 
 JAZZMIN_SETTINGS = {
     # title of the window (Will default to current_admin_site.site_title if absent or None)
-    "site_title": "Twist Erp administration Control Centre",
+    "site_title": "Twist ERP Admin",
 
     # Title on the login screen (19 chars max) (defaults to current_admin_site.site_header if absent or None)
-    "site_header": "Twist Erp administration Control Centre",
+    "site_header": "Twist ERP",
 
     # Brand & logos
     "site_brand": "TWIST ERP",
     "site_logo": "brand/twist-logo.svg",
     "login_logo": "brand/twist-logo.svg",
     "login_logo_dark": "brand/twist-logo-white.svg",
+    "site_logo_classes": "img-circle",
 
     # Welcome text on the login screen
-    "welcome_sign": "Welcome to Twist ERP",
+    "welcome_sign": "Welcome to Twist ERP Administration",
 
     # Copyright on the footer
-    "copyright": "Twist ERP Ltd",
+    "copyright": "Twist ERP Ltd © 2025",
 
-    # The model admin to search from the search bar, search bar will not be displayed if the list is empty
-    "search_model": ["users.User", "auth.Group"],
+    # The model admin to search from the search bar
+    "search_model": ["users.User", "companies.Company", "sales.Customer"],
 
     # Field name on user model that contains name of the user for the admin panel
     "user_avatar": None,
@@ -139,152 +144,147 @@ JAZZMIN_SETTINGS = {
 
     # Links to put along the top menu
     "topmenu_links": [
-        # Url that gets reversed (Permissions can be added)
         {"name": "Home",  "url": "admin:index", "permissions": ["auth.view_user"]},
-
-        # external url that gets opened in a new window (Permissions can be added)
-        {"name": "Support", "url": "https://github.com/farridav/django-jazzmin/issues", "new_window": True},
-
-        # model admin to link to (Permissions can be added)
+        {"name": "View Site", "url": "/", "new_window": True},
         {"model": "users.User"},
-
-        # App with dropdown menu to all its models pages (Permissions can be added)
-        {"app": "companies"},
     ],
 
     #############
     # User Menu #
     #############
 
-    # Additional links to include in the user menu on the top right ("app" url names) 
+    # Additional links to include in the user menu on the top right
     "usermenu_links": [
-        {"name": "Support", "url": "https://github.com/farridav/django-jazzmin/issues", "new_window": True},
         {"model": "users.User"},
-        {"name": "Theme", "url": "admin-appearance"}
     ],
 
     #############
     # Side Menu #
     #############
 
-    # Whether to display the search bar in the sidebar
-    "sidebar_show_search": True,
+    # Whether to display the side menu
+    "show_sidebar": True,
 
-    # Start with navigation collapsed
+    # Whether to aut expand the menu
     "navigation_expanded": False,
 
-    # Whether to display the self or the user's groups first in the sidebar
-    "sidebar_show_app_list": True,
+    # Hide these apps when generating side menu
+    "hide_apps": [],
 
-    # Whether to enable the sidebar
-    "sidebar_fixed": True,
+    # Hide these models when generating side menu (e.g. auth.user)
+    "hide_models": [],
 
-    # Add a custom icon to the admin app list
-    "icons": {
-        "auth": "fas fa-users-cog",
-        # Use the custom user model
-        "users.user": "fas fa-user",
-        "auth.Group": "fas fa-users",
-        "admin": "fas fa-tools",
-        "companies": "fas fa-building",
-        "companies.company": "fas fa-building",
-        "companies.companygroup": "fas fa-layer-group",
-        "finance": "fas fa-dollar-sign",
-        "finance.account": "fas fa-money-check-alt",
-        "finance.journalvoucher": "fas fa-book",
-        "inventory": "fas fa-boxes",
-        "inventory.product": "fas fa-box",
-        "inventory.warehouse": "fas fa-warehouse",
-        "sales": "fas fa-chart-line",
-        "sales.customer": "fas fa-user-tie",
-        "sales.salesorder": "fas fa-shopping-cart",
-        "procurement": "fas fa-truck-loading",
-        "procurement.supplier": "fas fa-truck",
-        "procurement.purchaseorder": "fas fa-file-invoice",
-        "assets": "fas fa-tools",
-        "assets.asset": "fas fa-wrench",
-        "budgeting": "fas fa-calculator",
-        "budgeting.budgetline": "fas fa-money-bill-wave",
-        "production": "fas fa-industry",
-        "production.bom": "fas fa-clipboard-list",
-        "production.workorder": "fas fa-cogs",
-        "hr": "fas fa-users",
-        "hr.employee": "fas fa-user-friends",
-        "hr.leaverequest": "fas fa-calendar-times",
-        "projects": "fas fa-project-diagram",
-        "projects.project": "fas fa-tasks",
-        "ai_companion": "fas fa-robot",
-        "ai_companion.aitrainingexample": "fas fa-brain",
-        "security": "fas fa-shield-alt",
-        "security.secpermission": "fas fa-key",
-        "security.secrole": "fas fa-user-tag",
-        "security.secuserrole": "fas fa-user-shield",
-        "security.secscope": "fas fa-globe",
-        "security.secsoDRule": "fas fa-handshake-slash",
-    },
-
-    # Custom links for sidebar app list
+    # List of apps (and/or models) to base side menu ordering off of (does not need to contain all apps/models)
     "order_with_respect_to": [
         "companies",
         "security",
+        "users",
         "finance",
         "inventory",
         "sales",
         "procurement",
+        "production",
         "assets",
         "budgeting",
-        "production",
         "hr",
         "projects",
         "ai_companion",
-        "auth",
+        "workflows",
+        "form_builder",
     ],
 
-    # Custom links to include, there are 3 places where you can add links
-    "custom_links": {
-        "administration_security": [
-            {"name": "Companies", "url": "admin:companies_company_changelist", "icon": "fas fa-building"},
-            {"name": "Company Groups", "url": "admin:companies_companygroup_changelist", "icon": "fas fa-layer-group"},
-            {"name": "Permissions", "url": "admin:security_secpermission_changelist", "icon": "fas fa-key"},
-            {"name": "Roles", "url": "admin:security_secrole_changelist", "icon": "fas fa-user-tag"},
-            {"name": "Users", "url": "admin:users_user_changelist", "icon": "fas fa-user"},
-            {"name": "Groups", "url": "admin:auth_group_changelist", "icon": "fas fa-users"},
-        ],
-        "finance_accounting": [
-            {"name": "Accounts", "url": "admin:finance_account_changelist", "icon": "fas fa-money-check-alt"},
-            {"name": "Journal Vouchers", "url": "admin:finance_journalvoucher_changelist", "icon": "fas fa-book"},
-            {"name": "Invoices", "url": "admin:finance_invoice_changelist", "icon": "fas fa-file-invoice"},
-            {"name": "Payments", "url": "admin:finance_payment_changelist", "icon": "fas fa-dollar-sign"},
-            {"name": "Budget Lines", "url": "admin:budgeting_budgetline_changelist", "icon": "fas fa-money-bill-wave"},
-        ],
-        "operations_supply_chain": [
-            {"name": "Products", "url": "admin:inventory_product_changelist", "icon": "fas fa-box"},
-            {"name": "Warehouses", "url": "admin:inventory_warehouse_changelist", "icon": "fas fa-warehouse"},
-            {"name": "Purchase Orders", "url": "admin:procurement_purchaseorder_changelist", "icon": "fas fa-truck-loading"},
-            {"name": "Work Orders", "url": "admin:production_workorder_changelist", "icon": "fas fa-cogs"},
-            {"name": "Assets", "url": "admin:assets_asset_changelist", "icon": "fas fa-wrench"},
-        ],
-        "sales_crm": [
-            {"name": "Customers", "url": "admin:sales_customer_changelist", "icon": "fas fa-user-tie"},
-            {"name": "Sales Orders", "url": "admin:sales_salesorder_changelist", "icon": "fas fa-shopping-cart"},
-        ],
-        "human_resources_people": [
-            {"name": "Employees", "url": "admin:hr_employee_changelist", "icon": "fas fa-user-friends"},
-            {"name": "Leave Requests", "url": "admin:hr_leaverequest_changelist", "icon": "fas fa-calendar-times"},
-            {"name": "Payroll Runs", "url": "admin:hr_payrollrun_changelist", "icon": "fas fa-file-invoice-dollar"},
-            {"name": "Projects", "url": "admin:projects_project_changelist", "icon": "fas fa-tasks"},
-        ],
-        "ai_development_tools": [
-            {"name": "AI Training Examples", "url": "admin:ai_companion_aitrainingexample_changelist", "icon": "fas fa-brain"},
-            {"name": "Form Templates", "url": "admin:form_builder_formtemplate_changelist", "icon": "fas fa-file-alt"},
-            {"name": "Workflow Templates", "url": "admin:workflows_workflowtemplate_changelist", "icon": "fas fa-project-diagram"},
-            {"name": "Migration Jobs", "url": "admin:data_migration_migrationjob_changelist", "icon": "fas fa-database"},
-            {"name": "Reports", "url": "admin:report_builder_reportdefinition_changelist", "icon": "fas fa-file-chart-pie"},
-            {"name": "Audit Logs", "url": "admin:audit_auditlog_changelist", "icon": "fas fa-history"},
-            {"name": "Tasks", "url": "admin:tasks_taskitem_changelist", "icon": "fas fa-tasks"},
-            {"name": "Notifications", "url": "admin:notifications_notification_changelist", "icon": "fas fa-bell"}
-        ]
-    }
+    # Custom icons for side menu apps/models
+    "icons": {
+        "auth": "fas fa-users-cog",
+        "auth.Group": "fas fa-users",
+        "users.user": "fas fa-user",
+        "companies": "fas fa-building",
+        "companies.company": "fas fa-building",
+        "companies.companygroup": "fas fa-layer-group",
+        "finance": "fas fa-dollar-sign",
+        "finance.account": "fas fa-wallet",
+        "finance.journalvoucher": "fas fa-file-invoice",
+        "finance.invoice": "fas fa-file-invoice-dollar",
+        "finance.payment": "fas fa-money-bill-wave",
+        "inventory": "fas fa-warehouse",
+        "inventory.product": "fas fa-box-open",
+        "inventory.warehouse": "fas fa-warehouse",
+        "inventory.stockmovement": "fas fa-exchange-alt",
+        "sales": "fas fa-chart-line",
+        "sales.customer": "fas fa-user-tie",
+        "sales.salesorder": "fas fa-shopping-cart",
+        "sales.quote": "fas fa-file-contract",
+        "procurement": "fas fa-truck",
+        "procurement.supplier": "fas fa-shipping-fast",
+        "procurement.purchaseorder": "fas fa-file-invoice",
+        "assets": "fas fa-toolbox",
+        "assets.asset": "fas fa-wrench",
+        "budgeting": "fas fa-calculator",
+        "budgeting.budget": "fas fa-piggy-bank",
+        "budgeting.budgetline": "fas fa-coins",
+        "production": "fas fa-industry",
+        "production.bom": "fas fa-clipboard-list",
+        "production.workorder": "fas fa-cogs",
+        "hr": "fas fa-user-friends",
+        "hr.employee": "fas fa-id-badge",
+        "hr.leaverequest": "fas fa-calendar-times",
+        "hr.payrollrun": "fas fa-file-invoice-dollar",
+        "projects": "fas fa-project-diagram",
+        "projects.project": "fas fa-folder-open",
+        "projects.task": "fas fa-tasks",
+        "ai_companion": "fas fa-robot",
+        "ai_companion.aitrainingexample": "fas fa-brain",
+        "ai_companion.conversation": "fas fa-comments",
+        "security": "fas fa-shield-alt",
+        "security.secpermission": "fas fa-key",
+        "security.secrole": "fas fa-user-tag",
+        "security.secuserrole": "fas fa-user-shield",
+        "workflows": "fas fa-sitemap",
+        "form_builder": "fas fa-wpforms",
+        "data_migration": "fas fa-database",
+        "analytics": "fas fa-chart-pie",
+        "dashboard": "fas fa-tachometer-alt",
+        "report_builder": "fas fa-chart-bar",
+        "audit": "fas fa-history",
+        "tasks": "fas fa-check-square",
+        "notifications": "fas fa-bell",
+        "policies": "fas fa-file-contract",
+        "ngo": "fas fa-hands-helping",
+        "microfinance": "fas fa-university",
+        "admin_settings": "fas fa-cog",
+    },
+
+    # Icons that are used when one is not manually specified
+    "default_icon_parents": "fas fa-chevron-circle-right",
+    "default_icon_children": "fas fa-circle",
+
+    #################
+    # Related Modal #
+    #################
+    # Use modals instead of popups
+    "related_modal_active": False,
+
+    #############
+    # UI Tweaks #
+    #############
+    # Relative paths to custom CSS/JS scripts (must be present in static files)
+    "custom_css": "admin/css/custom_admin.css",
+    "custom_js": None,
+    # Whether to show the UI customizer on the sidebar
+    "show_ui_builder": False,
+
+    ###############
+    # Change view #
+    ###############
+    # Render out the change view as a single form, or in tabs, current options are
+    # - single
+    # - horizontal_tabs (default)
+    # - vertical_tabs
+    # - collapsible
+    # - carousel
+    "changeform_format": "horizontal_tabs",
+    # override change forms on a per modeladmin basis
+    "changeform_format_overrides": {"auth.user": "collapsible", "auth.group": "vertical_tabs"},
 }
 
 JAZZMIN_UI_TWEAKS = {
@@ -292,26 +292,30 @@ JAZZMIN_UI_TWEAKS = {
     "footer_small_text": False,
     "body_small_text": False,
     "brand_small_text": False,
-    "brand_colour": False,
+    "brand_colour": "navbar-primary",
     "accent": "accent-primary",
-    "navbar": "navbar-white navbar-light",
-    "no_navbar_border": False,
+    "navbar": "navbar-dark navbar-primary",
+    "no_navbar_border": True,
     "navbar_fixed": True,
     "layout_boxed": False,
     "footer_fixed": False,
     "sidebar_fixed": True,
-    "sidebar": "sidebar-light-primary",
+    "sidebar": "sidebar-dark-primary",
     "sidebar_nav_small_text": False,
     "sidebar_disable_expand": False,
-    "sidebar_nav_child_indent": False,
-    "sidebar_nav_compact_style": False,
+    "sidebar_nav_child_indent": True,
+    "sidebar_nav_compact_style": True,
     "sidebar_nav_legacy_style": False,
-    "sidebar_nav_flat_style": False,
-    "theme": "default",
-    "dark_mode_theme": None,
+    "sidebar_nav_flat_style": True,
+    "theme": "flatly",
+    "dark_mode_theme": "darkly",
     "button_classes": {
-        "primary": "btn-outline-primary",
-        "secondary": "btn-outline-secondary",
+        "primary": "btn-primary",
+        "secondary": "btn-secondary",
+        "info": "btn-info",
+        "warning": "btn-warning",
+        "danger": "btn-danger",
+        "success": "btn-success"
     }
 }
 
@@ -363,21 +367,23 @@ if USE_SQLITE:
         }
     }
 else:
-    DATABASES = {
-        'default': dj_database_url.config(
-            default='postgresql://postgres:dev_password@localhost:54322/twist_erp_db'
-        )
-    }
-if 'data_warehouse' not in DATABASES:
-    warehouse_config = DATABASES['default'].copy()
-    if USE_SQLITE:
-        base_sqlite_path = warehouse_config.get('NAME') or (BASE_DIR / 'db.sqlite3')
-        base_sqlite_path = str(base_sqlite_path)
-        if base_sqlite_path.endswith('.sqlite3'):
-            warehouse_config['NAME'] = base_sqlite_path.replace('.sqlite3', '_warehouse.sqlite3')
-        else:
-            warehouse_config['NAME'] = f"{base_sqlite_path}_warehouse"
-    DATABASES['data_warehouse'] = warehouse_config
+        
+            DATABASES = {
+                'default': dj_database_url.config(
+                    default='postgresql://postgres:dev_password@localhost:54322/twist_erp_db'
+                )
+            }
+            if 'data_warehouse' not in DATABASES:
+                warehouse_config = DATABASES['default'].copy()
+                if USE_SQLITE:
+                    base_sqlite_path = warehouse_config.get('NAME') or (BASE_DIR / 'db.sqlite3')
+                    base_sqlite_path = str(base_sqlite_path)
+                    if base_sqlite_path.endswith('.sqlite3'):
+                        warehouse_config['NAME'] = base_sqlite_path.replace('.sqlite3', '_warehouse.sqlite3')
+                    else:
+                        warehouse_config['NAME'] = f"{base_sqlite_path}_warehouse"
+                DATABASES['data_warehouse'] = warehouse_config
+        
 
 DATABASE_ROUTERS = [
     'shared.db_routers.SystemDatabaseRouter',
@@ -472,6 +478,13 @@ AI_CONFIG = {
 # Get your free API key from: https://makersuite.google.com/app/apikey
 GOOGLE_GEMINI_API_KEY = os.getenv('GOOGLE_GEMINI_API_KEY', None)
 
+# Outlook Calendar OAuth Configuration
+# Register your app at: https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade
+OUTLOOK_CLIENT_ID = os.getenv('OUTLOOK_CLIENT_ID', None)
+OUTLOOK_CLIENT_SECRET = os.getenv('OUTLOOK_CLIENT_SECRET', None)
+OUTLOOK_REDIRECT_URI = os.getenv('OUTLOOK_REDIRECT_URI', None)
+OUTLOOK_TENANT = os.getenv('OUTLOOK_TENANT', 'common')
+
 # Celery Beat Schedule (for periodic tasks)
 from celery.schedules import crontab
 
@@ -530,7 +543,28 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 104857600
 # DRF & Schema
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    # Prefer JWT first to avoid unintended CSRF enforcement via SessionAuthentication
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
     ),
 }
+
+# Dev CORS/CSRF for local Vite server
+CSRF_TRUSTED_ORIGINS = list(set([
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:8788',
+    'http://127.0.0.1:8788',
+]))
+
+try:
+    # If corsheaders is installed, allow local dev origins
+    CORS_ALLOWED_ORIGINS = list(set([
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+    ]))
+    CORS_ALLOW_CREDENTIALS = True
+except Exception:
+    pass
+

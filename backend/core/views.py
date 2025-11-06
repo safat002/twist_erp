@@ -7,7 +7,8 @@ from apps.companies.models import Company
 from apps.finance.models import Invoice
 from apps.sales.models import Customer, SalesOrder
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
+from django.db import connection
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -130,3 +131,21 @@ _FAVICON_BASE64 = (
 def favicon(_request):
     data = b64decode(_FAVICON_BASE64)
     return HttpResponse(data, content_type="image/png")
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def health(_request):
+    """Basic health endpoint for pilot/hypercare (Phase 8/10)."""
+    db_ok = True
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+    except Exception:
+        db_ok = False
+    return JsonResponse({
+        "status": "ok" if db_ok else "degraded",
+        "timestamp": timezone.now().isoformat(),
+        "database": "ok" if db_ok else "error",
+    })

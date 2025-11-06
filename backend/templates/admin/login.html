@@ -1,0 +1,399 @@
+{% extends "admin/base.html" %}
+{% load i18n static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    /* Professional Login Page Styles */
+    body.login {
+        margin: 0;
+        padding: 0;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        position: relative;
+        overflow: hidden;
+    }
+
+    /* Animated background particles */
+    body.login::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-image:
+            radial-gradient(circle at 20% 50%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
+            radial-gradient(circle at 80% 80%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
+            radial-gradient(circle at 40% 20%, rgba(255, 255, 255, 0.05) 0%, transparent 50%);
+        animation: float 20s ease-in-out infinite;
+    }
+
+    @keyframes float {
+        0%, 100% { transform: translateY(0) rotate(0deg); }
+        50% { transform: translateY(-20px) rotate(5deg); }
+    }
+
+    .login-container {
+        position: relative;
+        z-index: 10;
+        width: 100%;
+        max-width: 450px;
+        padding: 20px;
+    }
+
+    .login-logo {
+        text-align: center;
+        margin-bottom: 30px;
+        animation: slideDown 0.6s ease-out;
+    }
+
+    @keyframes slideDown {
+        from {
+            opacity: 0;
+            transform: translateY(-30px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .login-logo img {
+        max-width: 80px;
+        height: auto;
+        filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
+        margin-bottom: 15px;
+    }
+
+    .login-logo h1 {
+        color: #fff;
+        font-size: 2.5rem;
+        font-weight: 700;
+        margin: 0;
+        text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+        letter-spacing: 1px;
+    }
+
+    .login-logo p {
+        color: rgba(255, 255, 255, 0.9);
+        font-size: 1rem;
+        margin: 10px 0 0;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+
+    #content {
+        background: #fff;
+        border-radius: 16px;
+        padding: 40px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        animation: slideUp 0.6s ease-out;
+        backdrop-filter: blur(10px);
+    }
+
+    @keyframes slideUp {
+        from {
+            opacity: 0;
+            transform: translateY(30px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    #content h2 {
+        color: #2c3e50;
+        text-align: center;
+        margin-bottom: 30px;
+        font-size: 1.8rem;
+        font-weight: 600;
+    }
+
+    .form-row {
+        margin-bottom: 20px;
+    }
+
+    .form-row label {
+        display: block;
+        color: #2c3e50;
+        font-weight: 500;
+        margin-bottom: 8px;
+        font-size: 0.95rem;
+    }
+
+    .form-row input[type="text"],
+    .form-row input[type="password"] {
+        width: 100%;
+        padding: 12px 15px;
+        border: 2px solid #e1e8ed;
+        border-radius: 8px;
+        font-size: 1rem;
+        transition: all 0.3s ease;
+        box-sizing: border-box;
+    }
+
+    .form-row input[type="text"]:focus,
+    .form-row input[type="password"]:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .submit-row {
+        margin-top: 30px;
+        text-align: center;
+    }
+
+    .submit-row input[type="submit"] {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: #fff;
+        border: none;
+        padding: 14px 40px;
+        border-radius: 8px;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        width: 100%;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .submit-row input[type="submit"]:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+    }
+
+    .submit-row input[type="submit"]:active {
+        transform: translateY(0);
+    }
+
+    .errornote {
+        background: #fee;
+        border: 2px solid #e74c3c;
+        color: #e74c3c;
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        text-align: center;
+        font-weight: 500;
+        animation: shake 0.5s;
+    }
+
+    @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        25% { transform: translateX(-10px); }
+        75% { transform: translateX(10px); }
+    }
+
+    .help_text {
+        color: #6c757d;
+        font-size: 0.85rem;
+        margin-top: 5px;
+        display: block;
+    }
+
+    /* Password visibility toggle */
+    .password-toggle {
+        position: relative;
+    }
+
+    .password-toggle-btn {
+        position: absolute;
+        right: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: none;
+        border: none;
+        color: #6c757d;
+        cursor: pointer;
+        padding: 5px;
+        transition: color 0.3s ease;
+    }
+
+    .password-toggle-btn:hover {
+        color: #2c3e50;
+    }
+
+    /* Forgot password link */
+    .password-reset-link {
+        text-align: center;
+        margin-top: 20px;
+    }
+
+    .password-reset-link a {
+        color: #667eea;
+        text-decoration: none;
+        font-size: 0.9rem;
+        transition: color 0.3s ease;
+    }
+
+    .password-reset-link a:hover {
+        color: #764ba2;
+        text-decoration: underline;
+    }
+
+    /* Loading state */
+    .submit-row input[type="submit"].loading {
+        position: relative;
+        color: transparent;
+    }
+
+    .submit-row input[type="submit"].loading::after {
+        content: "";
+        position: absolute;
+        width: 20px;
+        height: 20px;
+        top: 50%;
+        left: 50%;
+        margin-left: -10px;
+        margin-top: -10px;
+        border: 3px solid rgba(255, 255, 255, 0.3);
+        border-radius: 50%;
+        border-top-color: #fff;
+        animation: spin 0.6s linear infinite;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    /* Footer */
+    .login-footer {
+        text-align: center;
+        margin-top: 30px;
+        color: rgba(255, 255, 255, 0.9);
+        font-size: 0.9rem;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+
+    /* Responsive */
+    @media (max-width: 480px) {
+        .login-container {
+            padding: 15px;
+        }
+
+        #content {
+            padding: 30px 20px;
+        }
+
+        .login-logo h1 {
+            font-size: 2rem;
+        }
+
+        #content h2 {
+            font-size: 1.5rem;
+        }
+    }
+
+    /* Accessibility */
+    .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border-width: 0;
+    }
+</style>
+{% endblock %}
+
+{% block bodyclass %}{{ block.super }} login{% endblock %}
+
+{% block usertools %}{% endblock %}
+
+{% block nav-global %}{% endblock %}
+
+{% block content_title %}{% endblock %}
+
+{% block breadcrumbs %}{% endblock %}
+
+{% block content %}
+<div class="login-container">
+    <div class="login-logo">
+        {% if site_logo %}
+        <img src="{% static site_logo %}" alt="{{ site_header|default:'Django administration' }}">
+        {% endif %}
+        <h1>{{ site_header|default:'Twist ERP' }}</h1>
+        <p>{% trans 'Administration Portal' %}</p>
+    </div>
+
+    {% if form.errors and not form.non_field_errors %}
+    <p class="errornote">
+        {% if form.errors.items|length == 1 %}
+            {% trans "Please correct the error below." %}
+        {% else %}
+            {% trans "Please correct the errors below." %}
+        {% endif %}
+    </p>
+    {% endif %}
+
+    {% if form.non_field_errors %}
+    <p class="errornote">
+        {{ form.non_field_errors }}
+    </p>
+    {% endif %}
+
+    <div id="content">
+        <h2>{% trans 'Sign In' %}</h2>
+
+        <form action="{{ app_path }}" method="post" id="login-form">
+            {% csrf_token %}
+
+            <div class="form-row">
+                <label for="id_username" class="required">{{ form.username.label }}</label>
+                {{ form.username }}
+                {% if form.username.errors %}
+                    <span class="help_text error">{{ form.username.errors }}</span>
+                {% endif %}
+            </div>
+
+            <div class="form-row password-toggle">
+                <label for="id_password" class="required">{{ form.password.label }}</label>
+                {{ form.password }}
+                {% if form.password.errors %}
+                    <span class="help_text error">{{ form.password.errors }}</span>
+                {% endif %}
+            </div>
+
+            {% url 'admin_password_reset' as password_reset_url %}
+            {% if password_reset_url %}
+            <div class="password-reset-link">
+                <a href="{{ password_reset_url }}">{% trans 'Forgot your password?' %}</a>
+            </div>
+            {% endif %}
+
+            <input type="hidden" name="next" value="{{ next }}">
+
+            <div class="submit-row">
+                <input type="submit" value="{% trans 'Log in' %}" id="submit-btn">
+            </div>
+        </form>
+    </div>
+
+    <div class="login-footer">
+        {{ site_footer|default:'© 2025 Twist ERP Ltd. All rights reserved.' }}
+    </div>
+</div>
+
+<script>
+    // Add loading state on form submit
+    document.getElementById('login-form').addEventListener('submit', function() {
+        document.getElementById('submit-btn').classList.add('loading');
+    });
+
+    // Auto-focus on username field
+    document.addEventListener('DOMContentLoaded', function() {
+        document.getElementById('id_username').focus();
+    });
+</script>
+{% endblock %}

@@ -9,9 +9,12 @@ from django.views import View
 from .services.provisioning import CompanyGroupProvisioner, ProvisioningError
 
 
+from apps.metadata.models import MetadataDefinition
+
+
 class CompanyGroupProvisionForm(forms.Form):
     group_name = forms.CharField(label="Group name", max_length=255)
-    industry_pack_type = forms.CharField(label="Industry pack", max_length=50, required=False)
+    industry_pack_type = forms.ChoiceField(label="Industry pack", required=False)
     supports_intercompany = forms.BooleanField(label="Supports inter-company", required=False)
 
     company_name = forms.CharField(label="Default company name", max_length=255, required=False)
@@ -26,10 +29,12 @@ class AdminCompanyGroupProvisionView(View):
 
     def get(self, request):
         form = CompanyGroupProvisionForm()
+        _init_industry_pack_choices(form)
         return render(request, self.template_name, {"form": form})
 
     def post(self, request):
         form = CompanyGroupProvisionForm(request.POST)
+        _init_industry_pack_choices(form)
         if not form.is_valid():
             return render(request, self.template_name, {"form": form})
 
@@ -70,3 +75,18 @@ class AdminCompanyGroupProvisionView(View):
             url = reverse("admin:index")
         return redirect(url)
 
+
+def _init_industry_pack_choices(form: forms.Form) -> None:
+    """Populate industry pack choices from metadata definitions."""
+    packs = set()
+    try:
+        qs = MetadataDefinition.objects.filter(layer='INDUSTRY_PACK').values_list('summary', flat=True)
+        for summary in qs:
+            if isinstance(summary, dict):
+                p = summary.get('industry_pack') or summary.get('industry') or summary.get('pack')
+                if p:
+                    packs.add(str(p))
+    except Exception:
+        pass
+    choices = [('', '---------')] + [(p, p.title()) for p in sorted(packs)]
+    form.fields['industry_pack_type'].choices = choices

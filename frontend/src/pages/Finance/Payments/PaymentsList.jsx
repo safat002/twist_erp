@@ -29,6 +29,7 @@ import {
   fetchAccounts,
   fetchInvoices,
   fetchPayments,
+  approvePayment,
   postPayment,
 } from '../../../services/finance';
 
@@ -251,9 +252,24 @@ const PaymentsList = () => {
         record.status === 'POSTED' ? (
           <Tag color="green">Posted</Tag>
         ) : (
-          <Button type="link" onClick={() => handlePost(record)}>
-            Post
-          </Button>
+          <Space>
+            {record.status === 'DRAFT' && (
+              <Button type="link" onClick={async () => {
+                try {
+                  await approvePayment(record.id);
+                  message.success('Payment approved.');
+                  loadPayments(filterType === 'ALL' ? {} : { type: filterType });
+                } catch (error) {
+                  message.error(error?.response?.data?.detail || 'Unable to approve payment.');
+                }
+              }}>
+                Approve
+              </Button>
+            )}
+            <Button type="link" onClick={() => handlePost(record)}>
+              Post
+            </Button>
+          </Space>
         ),
     },
   ];

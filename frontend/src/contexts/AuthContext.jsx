@@ -12,7 +12,8 @@ const AuthContext = createContext();
 
 export const useAuth = () => useContext(AuthContext);
 
-const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL || 'http://localhost:8788/api/v1';
+// Match services/api.js: prefer explicit env, else same-origin API path
+const API_BASE_URL = (import.meta.env?.VITE_API_BASE_URL && String(import.meta.env.VITE_API_BASE_URL).trim()) || '/api/v1';
 
 const base64UrlDecode = (input) => {
   const normalized = input.replace(/-/g, '+').replace(/_/g, '/');
@@ -167,10 +168,11 @@ export const AuthProvider = ({ children }) => {
   }, [clearStoredTokens]);
 
   useEffect(() => {
-    const requestInterceptor = axios.interceptors.request.use(
+    const requestInterceptor = api.interceptors.request.use(
       (config) => {
-        if (authToken?.access) {
-          config.headers.Authorization = `Bearer ${authToken.access}`;
+        const token = localStorage.getItem('accessToken');
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`;
         }
         return config;
       },
@@ -178,7 +180,7 @@ export const AuthProvider = ({ children }) => {
     );
 
     return () => {
-      axios.interceptors.request.eject(requestInterceptor);
+      api.interceptors.request.eject(requestInterceptor);
     };
   }, [authToken]);
 

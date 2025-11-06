@@ -3,7 +3,6 @@ from django.utils.text import slugify
 
 from apps.ai_companion.services.telemetry import TelemetryService
 from apps.audit.utils import log_audit_event
-from apps.metadata.services import MetadataScope, create_metadata_version
 from .models import DashboardDefinition, DashboardLayout, DashboardWidgetDefinition
 
 
@@ -54,6 +53,7 @@ class DashboardDefinitionSerializer(serializers.ModelSerializer):
         read_only_fields = ['slug', 'status', 'version', 'metadata', 'created_at', 'updated_at']
 
     def create(self, validated_data):
+        from apps.metadata.services import MetadataScope, create_metadata_version
         request = self.context.get('request')
         user = getattr(request, 'user', None)
         company = getattr(request, 'company', None)

@@ -13,6 +13,8 @@ from apps.finance.models import Invoice
 from apps.metadata.models import MetadataDefinition
 from apps.metadata.services import MetadataScope, create_metadata_version
 from apps.workflows.models import WorkflowInstance
+from apps.workflows.services import WorkflowService
+from apps.users.models import UserCompanyRole
 
 from ..models import AIActionExecution, AIProactiveSuggestion
 from .telemetry import TelemetryService
@@ -122,6 +124,46 @@ def mark_receivable_followup(context: ActionContext, payload: Dict[str, Any]) ->
         "invoice_number": invoice.invoice_number,
     }
 
+
+@registry.register("workflow.approve")
+def approve_workflow_instance(context: ActionContext, payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Approve a workflow instance if the user is authorized (Phase 9/10 AI assist)."""
+    instance_id = payload.get("instance_id")
+    if not instance_id:
+        raise ActionExecutionError("instance_id is required.")
+
+    try:
+        instance = WorkflowInstance.objects.select_related("template", "company", "assigned_to").get(id=instance_id)
+    except WorkflowInstance.DoesNotExist as exc:
+        raise ActionExecutionError("Workflow instance not found.") from exc
+
+    # Scope company context
+    company = instance.company
+    if company and context.company and getattr(context.company, "id", None) != company.id:
+        raise ActionExecutionError("Active company does not match workflow instance company.")
+    context.company = company
+
+    # Authorization mirrors API logic: assignee or holder of approver_role in this company
+    if getattr(instance, "assigned_to_id", None) and instance.assigned_to_id != context.user.id:
+        raise ActionExecutionError("This workflow is assigned to another user.")
+
+    if getattr(instance, "approver_role_id", None):
+        has_role = UserCompanyRole.objects.filter(
+            user=context.user, company=company, role_id=instance.approver_role_id, is_active=True
+        ).exists()
+        if not has_role and not getattr(context.user, "is_superuser", False):
+            raise ActionExecutionError("You are not authorized to approve this workflow.")
+
+    allowed = set(WorkflowService.get_available_transitions(instance))
+    if allowed and "approved" not in allowed:
+        raise ActionExecutionError(f"Cannot approve from state '{instance.state}'.")
+
+    WorkflowService.trigger_transition(instance, "approved")
+    return {
+        "message": f"Workflow '{instance.template.name}' approved.",
+        "instance_id": instance.id,
+        "state": instance.state,
+    }
 
 @registry.register("inventory.raise_reorder_alert")
 def raise_reorder_alert(context: ActionContext, payload: Dict[str, Any]) -> Dict[str, Any]:

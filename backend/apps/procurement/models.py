@@ -12,6 +12,18 @@ User = settings.AUTH_USER_MODEL
 
 
 class Supplier(models.Model):
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Draft"
+        ACTIVE = "active", "Active"
+        INACTIVE = "inactive", "Inactive"
+        BLACKLISTED = "blacklisted", "Blacklisted"
+
+    class SupplierType(models.TextChoices):
+        LOCAL = "local", "Local"
+        IMPORT = "import", "Import"
+        SERVICE = "service", "Service"
+        SUB_CONTRACTOR = "sub_contractor", "Sub-Contractor"
+
     company = models.ForeignKey(
         "companies.Company",
         on_delete=models.PROTECT,
@@ -27,6 +39,10 @@ class Supplier(models.Model):
     phone = models.CharField(max_length=32, blank=True)
     address = models.TextField(blank=True)
     payment_terms = models.IntegerField(default=30, help_text="Payment terms in days")
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
+    supplier_type = models.CharField(max_length=20, choices=SupplierType.choices, default=SupplierType.LOCAL)
+    is_blocked = models.BooleanField(default=False)
+    block_reason = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
     payable_account = models.ForeignKey("finance.Account", on_delete=models.PROTECT)
 
@@ -103,10 +119,11 @@ class PurchaseRequisition(models.Model):
         return f"{number} ({self.get_status_display()})"
 
     def save(self, *args, **kwargs):
+        from apps.metadata.services.doc_numbers import get_next_doc_no
         is_new = self._state.adding
         super().save(*args, **kwargs)
         if is_new and not self.requisition_number:
-            generated = f"PR-{timezone.now().year}-{self.id:05d}"
+            generated = get_next_doc_no(company=self.company, doc_type="PR", prefix="PR", fy_format="YYYY", width=5)
             PurchaseRequisition.objects.filter(pk=self.pk).update(requisition_number=generated)
             self.requisition_number = generated
 
@@ -186,7 +203,7 @@ class PurchaseRequisitionLine(models.Model):
         blank=True,
     )
     product = models.ForeignKey(
-        "inventory.Product",
+        "inventory.Item",
         on_delete=models.PROTECT,
         related_name="purchase_requisition_lines",
         null=True,
@@ -351,6 +368,7 @@ class PurchaseOrder(models.Model):
         return f"{number} ({self.get_status_display()})"
 
     def save(self, *args, **kwargs):
+        from core.doc_numbers import get_next_doc_no
         is_new = self._state.adding
         if self.cost_center is None and self.requisition_id:
             self.cost_center = self.requisition.cost_center
@@ -358,7 +376,7 @@ class PurchaseOrder(models.Model):
             self.currency = self.company.currency_code or self.currency
         super().save(*args, **kwargs)
         if is_new and not self.order_number:
-            generated = f"PO-{timezone.now().year}-{self.id:05d}"
+            generated = get_next_doc_no(company=self.company, doc_type="PO", prefix="PO", fy_format="YYYY", width=5)
             PurchaseOrder.objects.filter(pk=self.pk).update(order_number=generated)
             self.order_number = generated
 
@@ -463,7 +481,7 @@ class PurchaseOrderLine(models.Model):
         related_name="purchase_order_lines",
     )
     product = models.ForeignKey(
-        "inventory.Product",
+        "inventory.Item",
         on_delete=models.PROTECT,
         related_name="purchase_order_lines",
         null=True,
@@ -568,3 +586,38 @@ class PurchaseOrderLine(models.Model):
         receipt_value = quantity * (self.unit_price or Decimal("0"))
         if self.budget_commitment:
             self.budget_commitment.consume(quantity, receipt_value, timestamp=timestamp or timezone.now())
+
+class PurchaseRequisitionDraft(models.Model):
+    """Lightweight PR draft to support simple UI flow before full budgeting integration."""
+    company = models.ForeignKey('companies.Company', on_delete=models.PROTECT, related_name='purchase_requisition_drafts')
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    requisition_number = models.CharField(max_length=50, blank=True, db_index=True)
+    request_date = models.DateField()
+    needed_by = models.DateField(null=True, blank=True)
+    purpose = models.TextField(blank=True)
+    status = models.CharField(max_length=20, default='SUBMITTED')
+
+    # JSON lines: [{item_id, item_name, quantity, uom, notes}]
+    lines = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['company', 'status']),
+            models.Index(fields=['company', 'requisition_number']),
+        ]
+
+    def __str__(self) -> str:
+        return self.requisition_number or f"PR-{self.pk}"
+
+    def save(self, *args, **kwargs):
+        is_new = self._state.adding
+        super().save(*args, **kwargs)
+        if is_new and not self.requisition_number:
+            from core.doc_numbers import get_next_doc_no
+            generated = get_next_doc_no(company=self.company, doc_type="PR", prefix="PR", fy_format="YYYY", width=5)
+            PurchaseRequisitionDraft.objects.filter(pk=self.pk).update(requisition_number=generated)
+            self.requisition_number = generated

@@ -30,16 +30,18 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useCompany } from '../../../contexts/CompanyContext';
-import {
-  createJournalVoucher,
-  deleteJournalVoucher,
-  fetchAccounts,
-  fetchJournalVouchers,
-  fetchJournals,
-  postJournalVoucher,
-  updateJournalVoucher,
-  processJournalVoucherDocument,
-} from '../../../services/finance';
+  import {
+    createJournalVoucher,
+    deleteJournalVoucher,
+    fetchAccounts,
+    fetchJournalVouchers,
+    fetchJournals,
+    submitJournalVoucher,
+    approveJournalVoucher,
+    postJournalVoucher,
+    updateJournalVoucher,
+    processJournalVoucherDocument,
+  } from '../../../services/finance';
 
 const JournalVouchersList = () => {
   const { currentCompany } = useCompany();
@@ -219,6 +221,26 @@ const JournalVouchersList = () => {
     }
   };
 
+  const handleSubmitReview = async (voucher) => {
+    try {
+      await submitJournalVoucher(voucher.id);
+      message.success('Voucher submitted for review.');
+      loadVouchers();
+    } catch (error) {
+      message.error(error?.response?.data?.detail || 'Unable to submit voucher.');
+    }
+  };
+
+  const handleApprove = async (voucher) => {
+    try {
+      await approveJournalVoucher(voucher.id);
+      message.success('Voucher approved and posted.');
+      loadVouchers();
+    } catch (error) {
+      message.error(error?.response?.data?.detail || 'Unable to approve voucher.');
+    }
+  };
+
   const columns = [
     {
       title: 'Voucher #',
@@ -273,18 +295,19 @@ const JournalVouchersList = () => {
       render: (_, record) => (
         <Space>
           <Button icon={<EditOutlined />} type="text" onClick={() => handleEdit(record)} />
-          {record.status === 'DRAFT' ? (
-            <Button
-              icon={<ThunderboltOutlined />}
-              type="text"
-              onClick={() => handlePost(record)}
-            >
-              Post
-            </Button>
-          ) : (
-            <Tag icon={<CheckCircleOutlined />} color="green">
-              Posted
-            </Tag>
+          {record.status === 'DRAFT' && (
+            <>
+              <Button type="link" onClick={() => handleSubmitReview(record)}>Submit</Button>
+              <Button icon={<ThunderboltOutlined />} type="text" onClick={() => handlePost(record)}>
+                Post
+              </Button>
+            </>
+          )}
+          {record.status === 'REVIEW' && (
+            <Button type="link" onClick={() => handleApprove(record)}>Approve</Button>
+          )}
+          {record.status === 'POSTED' && (
+            <Tag icon={<CheckCircleOutlined />} color="green">Posted</Tag>
           )}
           <Button
             icon={<DeleteOutlined />}

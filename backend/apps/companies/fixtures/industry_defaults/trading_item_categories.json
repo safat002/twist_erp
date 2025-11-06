@@ -1,0 +1,10 @@
+[
+  {"code": "MERCH", "name": "Merchandise", "parent_code": null, "level": 0},
+  {"code": "MERCH-ELEC", "name": "Electronics", "parent_code": "MERCH", "level": 1},
+  {"code": "MERCH-HOME", "name": "Home Goods", "parent_code": "MERCH", "level": 1},
+  {"code": "MERCH-FASH", "name": "Fashion and Apparel", "parent_code": "MERCH", "level": 1},
+
+  {"code": "PKG", "name": "Packaging Materials", "parent_code": null, "level": 0},
+
+  {"code": "CONS", "name": "Consumables", "parent_code": null, "level": 0}
+]

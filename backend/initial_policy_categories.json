@@ -1,0 +1,10 @@
+[
+  {"model":"policies.policycategory","pk":1,"fields":{"code":"hr","name":"HR","is_active":true}},
+  {"model":"policies.policycategory","pk":2,"fields":{"code":"finance","name":"Finance","is_active":true}},
+  {"model":"policies.policycategory","pk":3,"fields":{"code":"operations","name":"Operations","is_active":true}},
+  {"model":"policies.policycategory","pk":4,"fields":{"code":"quality","name":"Quality","is_active":true}},
+  {"model":"policies.policycategory","pk":5,"fields":{"code":"compliance","name":"Compliance","is_active":true}},
+  {"model":"policies.policycategory","pk":6,"fields":{"code":"safety","name":"Safety","is_active":true}},
+  {"model":"policies.policycategory","pk":7,"fields":{"code":"it","name":"IT","is_active":true}}
+]
+

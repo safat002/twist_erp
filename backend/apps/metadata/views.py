@@ -15,7 +15,6 @@ from .serializers import (
     MetadataFieldSerializer,
     MetadataResolveSerializer,
 )
-from .services import MetadataScope, create_metadata_version, resolve_metadata
 
 
 class MetadataDefinitionViewSet(viewsets.ModelViewSet):
@@ -35,6 +34,7 @@ class MetadataDefinitionViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='fields')
     def add_field(self, request, pk=None):
+        from .services import create_metadata_version
         metadata = self.get_object()
         serializer = MetadataFieldSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -71,6 +71,7 @@ class MetadataResolveView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        from .services import resolve_metadata
         serializer = MetadataResolveSerializer(data=request.query_params)
         serializer.is_valid(raise_exception=True)
         payload = serializer.validated_data
@@ -92,6 +93,7 @@ class MetadataResolveView(APIView):
 
 
 def _scope_from_definition(metadata: MetadataDefinition) -> MetadataScope:
+    from .services import MetadataScope
     if metadata.scope_type == 'COMPANY':
         return MetadataScope.for_company(metadata.company)
     if metadata.scope_type == 'GROUP':

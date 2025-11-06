@@ -36,11 +36,30 @@ class WorkflowService:
         except Exception:
             pass
 
+        # Determine approver role and optional assignee
+        approver_role = getattr(template, "approver_role", None)
+        assigned_to = None
+        if approver_role and company:
+            try:
+                from apps.users.models import UserCompanyRole
+                ucr = (
+                    UserCompanyRole.objects.select_related("user")
+                    .filter(company=company, role=approver_role, is_active=True)
+                    .order_by("assigned_at")
+                    .first()
+                )
+                if ucr:
+                    assigned_to = ucr.user
+            except Exception:
+                assigned_to = None
+
         instance = WorkflowInstance.objects.create(
             template=template,
             state=initial,
             context=ctx,
             company=company,
+            approver_role=approver_role,
+            assigned_to=assigned_to,
         )
         return instance
 

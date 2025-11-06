@@ -40,6 +40,7 @@ import 'react-resizable/css/styles.css';
 import PageHeader from '../../components/Common/PageHeader';
 import StatCard from '../../components/Common/StatCard';
 import DataTable from '../../components/Common/DataTable';
+import DashboardToggle from '../../components/DashboardToggle';
 import api from '../../services/api';
 import { trackMetadataInterest } from '../../services/ai';
 
@@ -244,8 +245,6 @@ const handleSaveLayout = async () => {
   }
 };
 
-  
-
   const widgetCards = useMemo(
     () =>
       widgets.map((widget) => {
@@ -335,10 +334,53 @@ const handleSaveLayout = async () => {
               )}
             />
           </Card>
+          <Card title="My Calendar" style={{ marginTop: 16 }} bodyStyle={{ paddingTop: 8 }}>
+            <CalendarEvents />
+          </Card>
         </Col>
       </Row>
     </div>
   );
+};
+
+const getWidgetFeature = (widgetId) => {
+  if (!widgetId) return { module: 'dashboard', feature: 'module', label: 'Dashboard' };
+
+  const id = widgetId.toLowerCase();
+
+  // Finance widgets
+  if (id.includes('revenue') || id.includes('receivable') || id.includes('payable') ||
+      id.includes('cashflow') || id.includes('invoice') || id.includes('payment')) {
+    return { module: 'finance', feature: 'module', label: 'Finance' };
+  }
+
+  // Sales widgets
+  if (id.includes('sales') || id.includes('order') || id.includes('customer')) {
+    return { module: 'sales', feature: 'module', label: 'Sales' };
+  }
+
+  // Inventory widgets
+  if (id.includes('inventory') || id.includes('stock') || id.includes('product')) {
+    return { module: 'inventory', feature: 'module', label: 'Inventory' };
+  }
+
+  // Procurement widgets
+  if (id.includes('procurement') || id.includes('purchase') || id.includes('supplier')) {
+    return { module: 'procurement', feature: 'module', label: 'Procurement' };
+  }
+
+  // HR widgets
+  if (id.includes('hr') || id.includes('employee') || id.includes('payroll')) {
+    return { module: 'hr', feature: 'module', label: 'HR' };
+  }
+
+  // Production widgets
+  if (id.includes('production') || id.includes('manufacturing') || id.includes('bom')) {
+    return { module: 'production', feature: 'module', label: 'Production' };
+  }
+
+  // Default to dashboard
+  return { module: 'dashboard', feature: 'module', label: 'Dashboard' };
 };
 
 const renderWidget = (widget, currency) => {
@@ -354,6 +396,7 @@ const renderWidget = (widget, currency) => {
         widget.id.includes('payables');
       const displayValue = isCurrency ? formatCurrency(numericValue, currency) : formatNumber(numericValue);
       const suffix = !isCurrency ? widget.data?.suffix : undefined;
+      const featureInfo = getWidgetFeature(widget.id);
       return (
         <div className="drag-handle" style={{ height: '100%' }}>
           <StatCard
@@ -364,6 +407,7 @@ const renderWidget = (widget, currency) => {
             trendLabel="change"
             description={description}
             icon={icon}
+            extra={<DashboardToggle module={featureInfo.module} feature={featureInfo.feature} label={featureInfo.label} />}
           />
         </div>
       );
@@ -373,8 +417,18 @@ const renderWidget = (widget, currency) => {
       const chartData =
         chartType === 'bar' ? buildCashflowDataset(series) : buildLineDataset(series, title, '#1677ff');
       const ChartComponent = chartType === 'bar' ? Bar : Line;
+      const featureInfo = getWidgetFeature(widget.id);
       return (
-        <Card title={<span className="drag-handle">{title}</span>} extra={description} style={{ height: '100%' }}>
+        <Card
+          title={<span className="drag-handle">{title}</span>}
+          extra={
+            <Space>
+              {description && <Text type="secondary">{description}</Text>}
+              <DashboardToggle module={featureInfo.module} feature={featureInfo.feature} label={featureInfo.label} />
+            </Space>
+          }
+          style={{ height: '100%' }}
+        >
           <div style={{ height: '260px' }}>
             <ChartComponent
               data={chartData}
@@ -401,6 +455,7 @@ const renderWidget = (widget, currency) => {
           render: (value) => formatCurrency(value, currency),
         },
       ];
+      const featureInfo = getWidgetFeature(widget.id);
       return (
         <div className="drag-handle" style={{ height: '100%' }}>
           <DataTable
@@ -408,16 +463,23 @@ const renderWidget = (widget, currency) => {
             dataSource={rows.map((row, index) => ({ key: index, ...row }))}
             columns={columns}
             pagination={{ pageSize: 5 }}
+            extra={<DashboardToggle module={featureInfo.module} feature={featureInfo.feature} label={featureInfo.label} />}
           />
         </div>
       );
     }
     case 'list': {
       const items = data?.items || [];
+      const featureInfo = getWidgetFeature(widget.id);
       return (
         <Card
           title={<span className="drag-handle">{title}</span>}
-          extra={description}
+          extra={
+            <Space>
+              {description && <Text type="secondary">{description}</Text>}
+              <DashboardToggle module={featureInfo.module} feature={featureInfo.feature} label={featureInfo.label} />
+            </Space>
+          }
           bodyStyle={{ paddingTop: 0 }}
           style={{ height: '100%' }}
         >
@@ -466,6 +528,42 @@ const selectKpiIcon = (widgetId) => {
     return <AlertOutlined style={{ color: '#faad14' }} />;
   }
   return <RiseOutlined style={{ color: '#722ed1' }} />;
+};
+
+const CalendarEvents = () => {
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      const { data } = await api.get('/api/v1/tasks/calendar/events/', { params: { days: 7 } });
+      setEvents((data?.results || []).slice(0, 10));
+    } catch (e) {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <Spin />;
+  if (!events.length) return <Text type="secondary">No upcoming events.</Text>;
+
+  return (
+    <List
+      dataSource={events}
+      renderItem={(ev) => (
+        <List.Item key={ev.id}>
+          <Space direction="vertical" size={0} style={{ width: '100%' }}>
+            <Text strong ellipsis>{ev.title}</Text>
+            <Text type="secondary">{new Date(ev.start).toLocaleString()}</Text>
+          </Space>
+        </List.Item>
+      )}
+    />
+  );
 };
 
 export default Dashboard;

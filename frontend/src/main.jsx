@@ -16,3 +16,12 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     </AuthProvider>
   </React.StrictMode>,
 );
+
+// Register a very simple service worker for PWA/offline shell (Phase 6 Mobile)
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/service-worker.js').catch(() => {
+      // silent fail; PWA is optional
+    });
+  });
+}

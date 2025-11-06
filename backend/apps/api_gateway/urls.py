@@ -12,6 +12,7 @@ urlpatterns = [
     path('v1/metadata/', include('apps.metadata.urls')),
     path('v1/tasks/', include('apps.tasks.urls')),
     path('v1/notifications/', include('apps.notifications.urls')),
+    path('v1/admin-settings/', include('apps.admin_settings.urls')),  # Feature toggles
     # Phase 4-6 modules
     path('v1/forms/', include('apps.form_builder.urls')),
     path('v1/workflows/', include('apps.workflows.urls')),
@@ -22,6 +23,9 @@ urlpatterns = [
     path('v1/hr/', include('apps.hr.urls')),
     path('v1/projects/', include('apps.projects.urls')),
     path('v1/report-builder/', include('apps.report_builder.urls')),
+    path('v1/policies/', include('apps.policies.urls')),
+    path('v1/ngo/', include('apps.ngo.urls')),
+    path('v1/microfinance/', include('apps.microfinance.urls')),
     path('v1/procurement/', include('apps.procurement.urls')),
     path('v1/inventory/', include('apps.inventory.urls')),
     path('v1/production/', include('apps.production.urls')),

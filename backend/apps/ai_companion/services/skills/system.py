@@ -8,7 +8,7 @@ def _legacy_chat(message: str):
         from ..ai_service_v2 import chat as legacy_chat  # noqa
     except Exception:
         return {
-            "message": "I'm still learning. Could you try rephrasing?",
+            "message": "I'm still learning and not quite sure how to help with that yet. Mind trying a different way of asking?",
             "intent": "fallback",
             "confidence": None,
             "sources": None,
@@ -29,14 +29,14 @@ class SystemFallbackSkill(BaseSkill):
         greetings = {"hi", "hello", "hey", "good morning", "good afternoon", "good evening"}
         if lowered in greetings or any(lowered.startswith(greet) for greet in greetings):
             return SkillResponse(
-                message="Hi there! How can I help you in Twist ERP today?",
+                message="Hey! What can I help you with in Twist ERP today?",
                 intent="greeting",
                 confidence=0.4,
             )
 
         result = _legacy_chat(message)
         return SkillResponse(
-            message=result.get("message", "I'm still learning. Could you rephrase that?"),
+            message=result.get("message", "I'm not quite sure how to help with that. Want to try asking in a different way?"),
             intent=result.get("intent", "fallback"),
             confidence=result.get("confidence"),
             sources=result.get("sources"),

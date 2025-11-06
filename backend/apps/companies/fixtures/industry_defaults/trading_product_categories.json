@@ -1,0 +1,5 @@
+[
+  {"code": "PROD", "name": "Trading Products", "parent_code": null, "level": 0, "is_featured": true, "description": "Main product categories"},
+  {"code": "PROD-CAT1", "name": "Product Category 1", "parent_code": "PROD", "level": 1, "is_featured": false},
+  {"code": "PROD-CAT2", "name": "Product Category 2", "parent_code": "PROD", "level": 1, "is_featured": false}
+]

@@ -181,6 +181,11 @@ class AIServiceV2:
         return True
 
     def _load_embedding_model(self) -> bool:
+        # Safety check: Never load models in mock mode
+        if self._mode == "mock":
+            logger.info("Skipping embedding model load in mock mode")
+            return True
+
         if self.embeddings is not None:
             return True
 
@@ -207,6 +212,11 @@ class AIServiceV2:
             return False
 
     def _load_generator_model(self) -> bool:
+        # Safety check: Never load models in mock mode
+        if self._mode == "mock":
+            logger.info("Skipping generator model load in mock mode")
+            return True
+
         if self.generator is not None:
             return True
 
@@ -317,11 +327,11 @@ class AIServiceV2:
         if not self._ensure_ready():
             if not self._enabled:
                 return {
-                    "message": "The AI service is currently disabled.",
+                    "message": "Hey! I'm currently switched off. Your admin can turn me back on whenever you need me.",
                     "intent": "fallback",
                 }
             return {
-                "message": "The AI service is not available right now.",
+                "message": "Oops, I'm having trouble getting started right now. Give me a moment and try again?",
                 "intent": "fallback",
             }
 
@@ -332,14 +342,14 @@ class AIServiceV2:
                 store = self.vector_stores.get("global") or self._load_vector_store("global")
             if store is None:
                 return {
-                    "message": "I could not find anything relevant in the knowledge base yet.",
+                    "message": "Hmm, I don't have any knowledge base loaded yet. Could you ask me something else or try again later?",
                     "intent": "fallback",
                 }
 
             docs = store.similarity_search(message, k=3)
             if not docs:
                 return {
-                    "message": "I could not find anything relevant in the knowledge base yet.",
+                    "message": "I searched my knowledge base but couldn't find anything helpful about that. Want to try rephrasing your question?",
                     "intent": "fallback",
                 }
 
@@ -348,8 +358,9 @@ class AIServiceV2:
                 for doc in docs
             )
             prompt = (
-                "You are a helpful assistant trained on Twist ERP documentation. "
-                "Use the context below to answer the question. If the answer is not present, say you are unsure.\n\n"
+                "You're a friendly AI assistant helping people use Twist ERP. "
+                "I'll give you some context from the documentation - use it to answer naturally and conversationally. "
+                "If you're not sure about something, just say so honestly.\n\n"
                 f"Context:\n{context}\n\nQuestion: {message}\nAnswer:"
             )
             prompt = self._truncate_prompt(prompt)

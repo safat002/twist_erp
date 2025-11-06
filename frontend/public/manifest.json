@@ -1,0 +1,13 @@
+{
+  "name": "Twist ERP",
+  "short_name": "TwistERP",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1677ff",
+  "description": "Twist ERP progressive web app shell",
+  "icons": [
+    { "src": "/favicon.ico", "sizes": "64x64 32x32 16x16", "type": "image/x-icon" }
+  ]
+}
+

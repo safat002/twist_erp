@@ -1,0 +1,12 @@
+[
+  {"code": "OFFICE", "name": "Office Supplies", "parent_code": null, "level": 0},
+  {"code": "OFFICE-STAT", "name": "Stationery", "parent_code": "OFFICE", "level": 1},
+  {"code": "OFFICE-PRINT", "name": "Printing Supplies", "parent_code": "OFFICE", "level": 1},
+
+  {"code": "IT", "name": "IT Equipment and Supplies", "parent_code": null, "level": 0},
+  {"code": "IT-HARD", "name": "Hardware", "parent_code": "IT", "level": 1},
+  {"code": "IT-ACC", "name": "Accessories", "parent_code": "IT", "level": 1},
+
+  {"code": "CONS", "name": "Consumables", "parent_code": null, "level": 0},
+  {"code": "CONS-CLEAN", "name": "Cleaning Supplies", "parent_code": "CONS", "level": 1}
+]

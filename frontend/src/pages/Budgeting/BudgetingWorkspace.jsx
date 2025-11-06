@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Badge,
@@ -9,6 +9,7 @@ import {
   Form,
   Input,
   Modal,
+  Switch,
   Progress,
   Row,
   Select,
@@ -53,20 +54,34 @@ import {
   updateBudget,
   updateBudgetLine,
   updateCostCenter,
+  // new endpoints for enhanced workflow
+  openEntry,
+  submitForApproval,
+  requestFinalApproval,
+  activateBudget,
+  startReviewPeriod,
+  closeReviewPeriod,
+  computeBudgetForecasts,
+  cloneBudget,
 } from '../../services/budget';
 import { searchUsers } from '../../services/users';
 import { useCompany } from '../../contexts/CompanyContext';
+import EntryPeriodStatus from '../../components/Budgeting/EntryPeriodStatus';
+import ApprovalTimeline from '../../components/Budgeting/ApprovalTimeline';
+import ReviewPeriodStatus from '../../components/Budgeting/ReviewPeriodStatus';
 
 const { Title, Text } = Typography;
 
 const STATUS_COLORS = {
   DRAFT: 'default',
-  PROPOSED: 'geekblue',
-  UNDER_REVIEW: 'purple',
+  ENTRY_OPEN: 'green',
+  PENDING_CC_APPROVAL: 'geekblue',
+  CC_APPROVED: 'purple',
+  PENDING_FINAL_APPROVAL: 'gold',
+  APPROVED: 'blue',
   ACTIVE: 'green',
-  LOCKED: 'gold',
+  EXPIRED: 'volcano',
   CLOSED: 'magenta',
-  ARCHIVED: 'red',
 };
 
 const PROCUREMENT_OPTIONS = [
@@ -98,12 +113,14 @@ const BudgetingWorkspace = () => {
   const [lineModalOpen, setLineModalOpen] = useState(false);
   const [overrideModalOpen, setOverrideModalOpen] = useState(false);
   const [usageModalOpen, setUsageModalOpen] = useState(false);
+  const [cloneModalOpen, setCloneModalOpen] = useState(false);
 
   const [costCenterForm] = Form.useForm();
   const [budgetForm] = Form.useForm();
   const [lineForm] = Form.useForm();
   const [overrideForm] = Form.useForm();
   const [usageForm] = Form.useForm();
+  const [cloneForm] = Form.useForm();
 
   const [userOptions, setUserOptions] = useState([]);
   const [userLookupLoading, setUserLookupLoading] = useState(false);
@@ -327,12 +344,29 @@ const handleBudgetSave = async () => {
   try {
     const values = await budgetForm.validateFields();
     const [periodStart, periodEnd] = values.period || [];
+    const [entryStart, entryEnd] = values.entry_window || [];
+    const [reviewStart, reviewEnd] = values.review_window || [];
+    const [impactStart, impactEnd] = values.impact_window || [];
     const payload = {
       ...values,
       period_start: periodStart ? periodStart.format('YYYY-MM-DD') : undefined,
       period_end: periodEnd ? periodEnd.format('YYYY-MM-DD') : undefined,
+      entry_start_date: entryStart ? entryStart.format('YYYY-MM-DD') : undefined,
+      entry_end_date: entryEnd ? entryEnd.format('YYYY-MM-DD') : undefined,
+      review_start_date: reviewStart ? reviewStart.format('YYYY-MM-DD') : undefined,
+      review_end_date: reviewEnd ? reviewEnd.format('YYYY-MM-DD') : undefined,
+      budget_impact_start_date: impactStart ? impactStart.format('YYYY-MM-DD') : undefined,
+      budget_impact_end_date: impactEnd ? impactEnd.format('YYYY-MM-DD') : undefined,
+      // Booleans default to false if undefined
+      entry_enabled: values.entry_enabled === undefined ? true : values.entry_enabled,
+      review_enabled: !!values.review_enabled,
+      budget_impact_enabled: !!values.budget_impact_enabled,
+      auto_approve_if_not_approved: !!values.auto_approve_if_not_approved,
     };
     delete payload.period;
+    delete payload.entry_window;
+    delete payload.review_window;
+    delete payload.impact_window;
     if (values.id) {
       await updateBudget(values.id, payload);
     } else {
@@ -346,7 +380,15 @@ const handleBudgetSave = async () => {
     if (error?.errorFields) {
       return;
     }
-    message.error(error?.response?.data?.detail || 'Failed to save budget');
+    const data = error?.response?.data;
+    let msg = data?.detail;
+    if (!msg && data && typeof data === 'object') {
+      try {
+        const first = Object.values(data)[0];
+        if (Array.isArray(first) && first.length) msg = first[0];
+      } catch (_) {}
+    }
+    message.error(msg || 'Failed to save budget');
   }
 };
 
@@ -427,9 +469,30 @@ const handleOverrideSave = async () => {
         <Space direction="vertical" size={0}>
           <Text strong>{value || 'Untitled Budget'}</Text>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            {record.cost_center_name || record.cost_center}
+            {record.cost_center_name || record.cost_center || 'Company-wide'}
           </Text>
         </Space>
+      ),
+    },
+    {
+      title: 'Entry Window',
+      key: 'entry_window',
+      render: (_, r) => (
+        <EntryPeriodStatus entryStartDate={r.entry_start_date} entryEndDate={r.entry_end_date} status={r.status} />
+      ),
+    },
+    {
+      title: 'Review',
+      key: 'review_window',
+      render: (_, r) => (
+        <ReviewPeriodStatus
+          entryEndDate={r.entry_end_date}
+          gracePeriodDays={r.grace_period_days}
+          reviewStartDate={r.review_start_date}
+          reviewEndDate={r.review_end_date}
+          reviewEnabled={r.review_enabled}
+          status={r.status}
+        />
       ),
     },
     {
@@ -487,11 +550,20 @@ const handleOverrideSave = async () => {
               budgetForm.setFieldsValue({
                 id: record.id,
                 name: record.name,
-                cost_center: record.cost_center,
                 budget_type: record.budget_type,
                 amount: record.amount,
                 threshold_percent: record.threshold_percent,
                 period: [start, end],
+                entry_window: [record.entry_start_date ? dayjs(record.entry_start_date) : start, record.entry_end_date ? dayjs(record.entry_end_date) : end],
+                entry_enabled: record.entry_enabled !== false,
+                grace_period_days: record.grace_period_days,
+                duration_type: record.duration_type || 'monthly',
+                custom_duration_days: record.custom_duration_days,
+                review_window: [record.review_start_date ? dayjs(record.review_start_date) : null, record.review_end_date ? dayjs(record.review_end_date) : null],
+                review_enabled: !!record.review_enabled,
+                impact_window: [record.budget_impact_start_date ? dayjs(record.budget_impact_start_date) : null, record.budget_impact_end_date ? dayjs(record.budget_impact_end_date) : null],
+                budget_impact_enabled: !!record.budget_impact_enabled,
+                auto_approve_if_not_approved: !!record.auto_approve_if_not_approved,
               });
               setBudgetModalOpen(true);
             }}
@@ -514,6 +586,23 @@ const handleOverrideSave = async () => {
             type="link"
             onClick={() => {
               setActiveBudget(record);
+              cloneForm.resetFields();
+              cloneForm.setFieldsValue({
+                new_name: record.name ? record.name + ' (Clone)' : undefined,
+                new_period: [record.period_start ? dayjs(record.period_start) : dayjs(), record.period_end ? dayjs(record.period_end) : dayjs()],
+                clone_lines: true,
+                apply_adjustment_factor: 1,
+                use_actual_consumption: false,
+              });
+              setCloneModalOpen(true);
+            }}
+          >
+            Clone
+          </Button>
+          <Button
+            type="link"
+            onClick={() => {
+              setActiveBudget(record);
               ensureBudgetLines(record.id);
               usageForm.resetFields();
               usageForm.setFieldsValue({
@@ -527,17 +616,30 @@ const handleOverrideSave = async () => {
             Usage
           </Button>
           {record.status === 'DRAFT' && (
-            <Button type="link" onClick={() => submitBudget(record.id)}>Submit</Button>
+            <Space>
+              <Button type="link" onClick={() => openEntry(record.id)}>Open Entry</Button>
+              <Button type="link" onClick={() => submitForApproval(record.id)}>Submit for CC Approval</Button>
+            </Space>
           )}
-          {record.status === 'PROPOSED' && (
-            <Button type="link" onClick={() => approveBudget(record.id)}>Approve</Button>
+          {record.status === 'ENTRY_OPEN' && (
+            <Button type="link" onClick={() => submitForApproval(record.id)}>Submit for CC Approval</Button>
           )}
-          {record.status === 'ACTIVE' && (
-            <Button type="link" onClick={() => lockBudget(record.id)}>Lock</Button>
+          {(record.status === 'ENTRY_OPEN' || record.status === 'ENTRY_CLOSED_REVIEW_PENDING') && (
+            <Button type="link" onClick={() => startReviewPeriod(record.id)}>Start Review</Button>
           )}
-          {record.status === 'LOCKED' && (
-            <Button type="link" onClick={() => closeBudget(record.id)}>Close</Button>
+          {record.status === 'REVIEW_OPEN' && (
+            <Button type="link" onClick={() => closeReviewPeriod(record.id)}>Close Review</Button>
           )}
+          {record.status === 'PENDING_MODERATOR_REVIEW' && (
+            <Button type="link" href="/budgets/moderator">Moderate</Button>
+          )}
+          {record.status === 'CC_APPROVED' && (
+            <Button type="link" onClick={() => requestFinalApproval(record.id)}>Request Final Approval</Button>
+          )}
+          {record.status === 'APPROVED' && (
+            <Button type="link" onClick={() => activateBudget(record.id)}>Activate</Button>
+          )}
+          <Button type="link" onClick={async () => { try { await computeBudgetForecasts(record.id); message.success("Forecasts computed"); ensureBudgetLines(record.id); } catch (e) { message.error("Failed to compute forecasts"); } }}>Forecasts</Button>
           <Button type="link" onClick={() => recalculateBudget(record.id)}>Recalc</Button>
         </Space>
       ),
@@ -693,7 +795,20 @@ const handleOverrideSave = async () => {
           </Tabs.TabPane>
 
           <Tabs.TabPane tab="Budgets" key="budgets">
-            <Table rowKey="id" dataSource={budgets} columns={budgetColumns} pagination={{ pageSize: 10 }} />
+            <Table
+              rowKey="id"
+              dataSource={budgets}
+              columns={budgetColumns}
+              pagination={{ pageSize: 10 }}
+              expandable={{
+                expandedRowRender: (record) => (
+                  <div>
+                    <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>Approvals</Text>
+                    <ApprovalTimeline approvals={record.approvals || []} />
+                  </div>
+                ),
+              }}
+            />
             {activeBudget ? (
               <Card title={'Lines · ' + (activeBudget.name || activeBudget.id)} style={{ marginTop: 16 }}>
                 <Table
@@ -711,6 +826,22 @@ const handleOverrideSave = async () => {
                       ),
                     },
                     {
+                      title: 'Original',
+                      key: 'original',
+                      render: (_, r) => (
+                        Number(r.original_value_limit || 0).toLocaleString() + ' (' + Number(r.original_qty_limit || 0) + ' units)'
+                      ),
+                    },
+                    {
+                      title: 'Variance',
+                      key: 'variance',
+                      render: (_, r) => {
+                        const v = Number(r.value_variance || 0);
+                        const color = v === 0 ? 'default' : (v > 0 ? 'red' : 'green');
+                        return <Tag color={color}>{v.toLocaleString()}</Tag>;
+                      },
+                    },
+                    {
                       title: 'Consumed',
                       key: 'consumed',
                       render: (_, record) => (
@@ -721,6 +852,18 @@ const handleOverrideSave = async () => {
                             size="small"
                             status={record.value_limit > 0 && record.consumed_value / record.value_limit >= 0.95 ? 'exception' : 'active'}
                           />
+                        </Space>
+                      ),
+                    },
+                    {
+                      title: 'Flags',
+                      key: 'flags',
+                      render: (_, r) => (
+                        <Space size={4} wrap>
+                          {r.sent_back_for_review ? <Tag color="orange">Sent Back</Tag> : null}
+                          {r.is_held_for_review ? <Tag color="gold">Held</Tag> : null}
+                          {r.moderator_remarks ? <Tag color="blue">Remark</Tag> : null}
+                          {r.will_exceed_budget ? <Tag color="red">Forecast Exceed</Tag> : null}
                         </Space>
                       ),
                     },
@@ -806,6 +949,46 @@ const handleOverrideSave = async () => {
         </Modal>
 
         <Modal
+          title={activeBudget ? `Clone Budget Â· ${activeBudget.name || activeBudget.id}` : 'Clone Budget'}
+          open={cloneModalOpen}
+          onCancel={() => { setCloneModalOpen(false); cloneForm.resetFields(); }}
+          onOk={async () => {
+            try {
+              const v = await cloneForm.validateFields();
+              const [npStart, npEnd] = v.new_period || [];
+              const payload = {
+                new_name: v.new_name,
+                new_period_start: npStart ? npStart.format('YYYY-MM-DD') : undefined,
+                new_period_end: npEnd ? npEnd.format('YYYY-MM-DD') : undefined,
+                clone_lines: v.clone_lines !== false,
+                apply_adjustment_factor: v.apply_adjustment_factor,
+                use_actual_consumption: !!v.use_actual_consumption,
+              };
+              await cloneBudget(activeBudget.id, payload);
+              message.success('Budget cloned');
+              setCloneModalOpen(false);
+              cloneForm.resetFields();
+              loadWorkspace();
+            } catch (e) {
+              if (e?.errorFields) return;
+              message.error(e?.response?.data?.detail || 'Failed to clone');
+            }
+          }}
+          okText="Clone"
+          destroyOnClose
+        >
+          <Form layout="vertical" form={cloneForm}>
+            <Form.Item label="New Name" name="new_name"><Input placeholder="Optional new name" /></Form.Item>
+            <Form.Item label="New Period" name="new_period" rules={[{ required: true, message: 'Select new period' }]}>
+              <DatePicker.RangePicker allowClear={false} format="YYYY-MM-DD" style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item label="Clone Lines" name="clone_lines" valuePropName="checked" initialValue={true}><Switch /></Form.Item>
+            <Form.Item label="Adjustment Factor" name="apply_adjustment_factor" tooltip="e.g., 1.1 to increase by 10%"><Input type="number" step={0.01} min={0} /></Form.Item>
+            <Form.Item label="Use Actual Consumption" name="use_actual_consumption" valuePropName="checked"><Switch /></Form.Item>
+          </Form>
+        </Modal>
+
+        <Modal
           title="Budget"
           open={budgetModalOpen}
           onCancel={() => {
@@ -830,15 +1013,7 @@ const handleOverrideSave = async () => {
             <Form.Item label="Name" name="name" rules={[{ required: true }]}>
               <Input placeholder="FY25 Operations" />
             </Form.Item>
-            <Form.Item label="Cost Center" name="cost_center" rules={[{ required: true }]}>
-              <Select
-                placeholder="Select cost center"
-                options={costCenters.map((cc) => ({
-                  value: cc.id,
-                  label: `${cc.code} - ${cc.name || 'Unnamed'}`,
-                }))}
-              />
-            </Form.Item>
+            {/* Company-wide budget: no cost center selection */}
             <Form.Item label="Budget Type" name="budget_type">
               <Select
                 options={[
@@ -851,6 +1026,42 @@ const handleOverrideSave = async () => {
             </Form.Item>
             <Form.Item label="Period" name="period" rules={[{ required: true, message: 'Select a budget period' }]}>
               <DatePicker.RangePicker allowClear={false} format="YYYY-MM-DD" style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item label="Entry Window" name="entry_window" rules={[{ required: true, message: 'Select entry start/end dates' }]}>
+              <DatePicker.RangePicker allowClear={false} format="YYYY-MM-DD" style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item label="Entry Enabled" name="entry_enabled" valuePropName="checked" initialValue={true}>
+              <Switch />
+            </Form.Item>
+            <Form.Item label="Duration Type" name="duration_type" initialValue="monthly">
+              <Select options={[
+                { value: 'monthly', label: 'Monthly' },
+                { value: 'quarterly', label: 'Quarterly' },
+                { value: 'half_yearly', label: 'Half-Yearly' },
+                { value: 'yearly', label: 'Yearly' },
+                { value: 'custom', label: 'Custom' },
+              ]} />
+            </Form.Item>
+            <Form.Item label="Custom Duration (days)" name="custom_duration_days">
+              <Input type="number" min={1} />
+            </Form.Item>
+            <Form.Item label="Grace Period (days)" name="grace_period_days" initialValue={3}>
+              <Input type="number" min={0} />
+            </Form.Item>
+            <Form.Item label="Review Window" name="review_window">
+              <DatePicker.RangePicker allowClear format="YYYY-MM-DD" style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item label="Review Enabled" name="review_enabled" valuePropName="checked">
+              <Switch />
+            </Form.Item>
+            <Form.Item label="Impact Window" name="impact_window">
+              <DatePicker.RangePicker allowClear format="YYYY-MM-DD" style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item label="Budget Impact Enabled" name="budget_impact_enabled" valuePropName="checked">
+              <Switch />
+            </Form.Item>
+            <Form.Item label="Auto-Approve at Start" name="auto_approve_if_not_approved" valuePropName="checked">
+              <Switch />
             </Form.Item>
             <Form.Item label="Threshold %" name="threshold_percent">
               <Input type="number" min={50} max={100} />
@@ -939,7 +1150,7 @@ const handleOverrideSave = async () => {
             <Form.Item label="Budget Line" name="budget_line">
               <Select
                 allowClear
-                placeholder="Optional – link to a specific budget line"
+                placeholder="Optional â€“ link to a specific budget line"
                 options={(activeBudget ? (budgetLines[activeBudget.id] || []) : []).map((line) => {
                   const remaining =
                     line.remaining_value ??
@@ -1028,3 +1239,9 @@ const handleOverrideSave = async () => {
 };
 
 export default BudgetingWorkspace;
+
+
+
+
+
+

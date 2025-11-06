@@ -1,9 +1,21 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL || 'http://localhost:8788/api/v1';
+// Helper to read cookie value (for CSRF)
+function getCookie(name) {
+  if (typeof document === 'undefined') return null;
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return parts.pop().split(';').shift();
+  return null;
+}
+
+// Base API root used for auth and normalization
+const API_BASE_URL = (import.meta.env?.VITE_API_BASE_URL && String(import.meta.env.VITE_API_BASE_URL).trim()) || '/api/v1';
 
 const api = axios.create({
-  withCredentials: true,
+  withCredentials: false,
+  xsrfCookieName: 'csrftoken',
+  xsrfHeaderName: 'X-CSRFToken',
   headers: {
     'X-Requested-With': 'XMLHttpRequest',
   },
@@ -21,6 +33,45 @@ api.interceptors.request.use(
       // eslint-disable-next-line no-param-reassign
       config.headers['X-Company-ID'] = companyId;
     }
+
+    // Normalize URL to avoid double /api/v1 and to prefix missing base
+    try {
+      let url = config.url || '';
+      if (typeof url === 'string' && !/^https?:\/\//i.test(url)) {
+        const base = String(API_BASE_URL || '/api/v1').replace(/\/$/, '');
+
+        // If already starts with /api or /api/v1 keep as-is, else prefix base
+        if (/^\/(api|api\/v1)\//.test(url)) {
+          // no-op
+        } else if (url.startsWith('/')) {
+          url = `${base}${url}`;
+        } else {
+          url = `${base}/${url}`;
+        }
+
+        // Collapse accidental double prefixes and duplicate slashes (but not protocol)
+        url = url.replace(/\/api\/v1\/api\/v1\/?/g, '/api/v1/');
+        url = url.replace(/([^:])\/\/+/, '$1/');
+
+        // eslint-disable-next-line no-param-reassign
+        config.url = url;
+      }
+    } catch (_) {
+      // leave config.url unchanged on any normalization error
+    }
+
+    // Attach CSRF token for unsafe methods when available (SessionAuthentication)
+    try {
+      const method = (config.method || 'get').toLowerCase();
+      if (!['get', 'head', 'options'].includes(method)) {
+        const csrf = getCookie('csrftoken');
+        if (csrf && !config.headers['X-CSRFToken']) {
+          // eslint-disable-next-line no-param-reassign
+          config.headers['X-CSRFToken'] = csrf;
+        }
+      }
+    } catch (_) {}
+
     return config;
   },
   (error) => Promise.reject(error),

@@ -17,6 +17,7 @@ import {
 import { Column } from '@ant-design/plots';
 
 import { fetchBudgets } from '../../services/budget';
+import { fetchBudgetAlerts } from '../../services/budget';
 import { useCompany } from '../../contexts/CompanyContext';
 
 const { Title, Text } = Typography;
@@ -57,6 +58,8 @@ const BudgetMonitor = () => {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [alertsLoading, setAlertsLoading] = useState(false);
+  const [alerts, setAlerts] = useState([]);
 
   useEffect(() => {
     const load = async () => {
@@ -182,13 +185,61 @@ const BudgetMonitor = () => {
         key: 'status',
         render: (value) => <Tag color={STATUS_COLORS[value] || 'default'}>{value}</Tag>,
       },
+      {
+        title: 'Options',
+        key: 'options',
+        render: (_, r) => (
+          <Space size={4}>
+            {r.auto_approve_if_not_approved ? <Tag color="blue">Auto</Tag> : null}
+          </Space>
+        ),
+      },
     ],
     [],
   );
 
+  const loadAlerts = async () => {
+    setAlertsLoading(true);
+    try {
+      const rows = filteredRows.slice(0, 10); // avoid over-fetching
+      const results = await Promise.all(
+        rows.map(async (r) => {
+          try {
+            const { data } = await fetchBudgetAlerts(r.id);
+            return (data?.alerts || []).map((a) => ({ ...a, budget_id: r.id, budget_name: r.name }));
+          } catch (_) {
+            return [];
+          }
+        }),
+      );
+      setAlerts(results.flat());
+    } finally {
+      setAlertsLoading(false);
+    }
+  };
+
   const totalLimit = progressData.reduce((acc, row) => acc + row.limit, 0);
   const totalConsumed = progressData.reduce((acc, row) => acc + row.value, 0);
   const usagePercent = totalLimit > 0 ? Math.round((totalConsumed / totalLimit) * 100) : 0;
+
+  const submissionStats = useMemo(() => {
+    const total = rows.length;
+    const submittedStatuses = new Set([
+      'PENDING_CC_APPROVAL',
+      'CC_APPROVED',
+      'PENDING_MODERATOR_REVIEW',
+      'MODERATOR_REVIEWED',
+      'PENDING_FINAL_APPROVAL',
+      'APPROVED',
+      'AUTO_APPROVED',
+      'ACTIVE',
+      'CLOSED',
+    ]);
+    const submitted = rows.filter((r) => submittedStatuses.has(r.status)).length;
+    const notStarted = rows.filter((r) => r.status === 'DRAFT' || r.status === 'ENTRY_OPEN').length;
+    const percent = total > 0 ? Math.round((submitted / total) * 100) : 0;
+    return { total, submitted, notStarted, percent };
+  }, [rows]);
 
   return (
     <Spin spinning={loading} tip="Loading budget monitor">
@@ -212,6 +263,16 @@ const BudgetMonitor = () => {
         </Space>
 
         <Row gutter={16}>
+          <Col span={8}>
+            <Card>
+              <Statistic title="Submission Progress" value={submissionStats.percent} suffix="%" />
+              <Space size={4} style={{ marginTop: 8 }}>
+                <Tag color="green">Submitted: {submissionStats.submitted}</Tag>
+                <Tag color="red">Not Started: {submissionStats.notStarted}</Tag>
+                <Tag>Total: {submissionStats.total}</Tag>
+              </Space>
+            </Card>
+          </Col>
           <Col span={8}>
             <Card>
               <Statistic title="Total Limit" value={formatCurrency(totalLimit)} />
@@ -262,6 +323,51 @@ const BudgetMonitor = () => {
 
         <Card title="Budgets">
           <Table rowKey="id" dataSource={filteredRows} columns={columns} pagination={{ pageSize: 10 }} />
+        </Card>
+
+        <Card title="Alerts" extra={<a onClick={loadAlerts}>Load Alerts</a>}>
+          <Spin spinning={alertsLoading}>
+            {alerts.length ? (
+              <Table
+                size="small"
+                rowKey={(r, idx) => String(idx)}
+                dataSource={alerts}
+                pagination={{ pageSize: 8 }}
+                columns={[
+                  { title: 'Budget', dataIndex: 'budget_name' },
+                  { title: 'Type', dataIndex: 'type', render: (v) => <Tag color={v === 'utilization_threshold' ? 'orange' : 'red'}>{v}</Tag> },
+                  { title: 'Message', dataIndex: 'message' },
+                ]}
+              />
+            ) : (
+              <Empty description="No alerts loaded" />
+            )}
+          </Spin>
+        </Card>
+
+        <Card title="Bottlenecks (stuck > 5 days)">
+          {rows && rows.length ? (
+            <Table
+              size="small"
+              rowKey="id"
+              pagination={{ pageSize: 5 }}
+              dataSource={rows
+                .filter((r) => ['PENDING_CC_APPROVAL','CC_APPROVED','PENDING_MODERATOR_REVIEW','MODERATOR_REVIEWED','PENDING_FINAL_APPROVAL'].includes(r.status))
+                .filter((r) => {
+                  const updated = r.updated_at ? new Date(r.updated_at) : null;
+                  if (!updated) return false;
+                  const days = Math.floor((Date.now() - updated.getTime()) / (1000*60*60*24));
+                  return days > 5;
+                })}
+              columns={[
+                { title: 'Budget', dataIndex: 'name' },
+                { title: 'Stage', dataIndex: 'status', render: (v) => <Tag color={STATUS_COLORS[v] || 'default'}>{formatStatusLabel(v)}</Tag> },
+                { title: 'Updated', dataIndex: 'updated_at' },
+              ]}
+            />
+          ) : (
+            <Empty description="No bottlenecks" />
+          )}
         </Card>
       </Space>
     </Spin>

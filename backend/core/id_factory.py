@@ -213,6 +213,60 @@ class IDFactory:
         return f"{app_label}{IDFactory.MENU_SEP}{base}"
 
     # ================================================================
+    # MASTER DATA CODE GENERATION (Customers, Suppliers, etc.)
+    # ================================================================
+
+    @staticmethod
+    def make_master_code(prefix: str, company, model_cls, code_field: str = "code", width: int = 5) -> str:
+        """
+        Generate a sequential master code per company with a fixed prefix.
+
+        Example patterns:
+          CUST-{COMPANY}-{00001}
+          SUP-{COMPANY}-{00001}
+
+        Args:
+            prefix: Code prefix (e.g., 'CUST', 'SUP')
+            company: Company instance (must have .code or .id)
+            model_cls: Django model class containing a CharField `code` and FK `company`
+            code_field: Name of the code field (default: 'code')
+            width: Numeric width for zero-padding (default: 5)
+
+        Returns:
+            Generated unique code string
+        """
+        comp_part = getattr(company, "code", None) or str(getattr(company, "id", "0"))
+        base = f"{prefix}-{comp_part}-"
+
+        # Fetch existing codes for this company and prefix
+        existing = (
+            model_cls.objects
+            .filter(company=company, **{f"{code_field}__startswith": base})
+            .values_list(code_field, flat=True)
+        )
+        max_seq = 0
+        for code in existing:
+            if isinstance(code, str) and code.startswith(base):
+                tail = code[len(base):]
+                if tail.isdigit():
+                    try:
+                        num = int(tail)
+                        if num > max_seq:
+                            max_seq = num
+                    except ValueError:
+                        continue
+        next_seq = max_seq + 1
+        return f"{base}{next_seq:0{width}d}"
+
+    @staticmethod
+    def make_customer_code(company, model_cls, width: int = 5) -> str:
+        return IDFactory.make_master_code("CUST", company, model_cls, width=width)
+
+    @staticmethod
+    def make_supplier_code(company, model_cls, width: int = 5) -> str:
+        return IDFactory.make_master_code("SUP", company, model_cls, width=width)
+
+    # ================================================================
     # METADATA TABLE/COLUMN NAMES
     # ================================================================
 
@@ -518,3 +572,11 @@ def make_table_name(app_label: str, model_name: str) -> str:
 def make_doc_type(app_label: str, model_name: str) -> str:
     """Shortcut to IDFactory.make_doc_type"""
     return IDFactory.make_doc_type(app_label, model_name)
+
+# Master code shortcuts
+def make_customer_code(company, model_cls, width: int = 5) -> str:
+    return IDFactory.make_customer_code(company, model_cls, width)
+
+
+def make_supplier_code(company, model_cls, width: int = 5) -> str:
+    return IDFactory.make_supplier_code(company, model_cls, width)

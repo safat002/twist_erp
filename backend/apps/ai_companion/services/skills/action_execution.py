@@ -31,16 +31,20 @@ class ActionExecutionSkill(BaseSkill):
         """Detect action requests"""
         lowered = message.lower()
 
+        # Don't handle "how to" or "what is" questions - those are for conversation skill
+        if any(phrase in lowered for phrase in ["how to", "how do i", "how can i", "what is", "explain", "tell me about", "show me how"]):
+            return False
+
         # Action verbs
         action_verbs = [
-            "approve", "reject", "create", "delete", "update", "post", "issue",
+            "approve", "reject", "create", "add", "make", "delete", "update", "post", "issue",
             "pay", "send", "cancel", "close", "complete", "submit"
         ]
 
         # Action targets
         action_targets = [
             "po", "purchase order", "so", "sales order", "invoice", "bill",
-            "payment", "voucher", "grn", "stock", "transfer"
+            "payment", "voucher", "grn", "stock", "transfer", "customer"
         ]
 
         has_action_verb = any(verb in lowered for verb in action_verbs)
@@ -76,7 +80,7 @@ class ActionExecutionSkill(BaseSkill):
 
             if not result.success:
                 return SkillResponse(
-                    message=f"❌ {result.message}",
+                    message=f"Oops! {result.message}",
                     intent="action_error",
                     confidence=0.9
                 )
@@ -84,7 +88,7 @@ class ActionExecutionSkill(BaseSkill):
             if result.requires_confirmation:
                 # Return confirmation request
                 return SkillResponse(
-                    message=f"{result.message}\n\nReply with 'confirm' to proceed or 'cancel' to abort.",
+                    message=f"{result.message}\n\nJust reply with 'confirm' to go ahead, or 'cancel' if you change your mind.",
                     intent="action_confirmation_required",
                     confidence=0.9,
                     actions=[
@@ -108,7 +112,7 @@ class ActionExecutionSkill(BaseSkill):
         except Exception as e:
             logger.exception(f"Action execution skill error: {e}")
             return SkillResponse(
-                message=f"Sorry, I encountered an error: {str(e)}",
+                message=f"Uh oh, something went wrong: {str(e)}. Want to try that again?",
                 intent="error",
                 confidence=0.5
             )
@@ -133,7 +137,7 @@ class ActionExecutionSkill(BaseSkill):
         # Check if user is canceling
         if any(word in lowered for word in ["cancel", "no", "abort", "stop", "nevermind"]):
             return SkillResponse(
-                message="Action canceled.",
+                message="No problem, I've canceled that action.",
                 intent="action_canceled",
                 confidence=1.0
             )
@@ -142,7 +146,7 @@ class ActionExecutionSkill(BaseSkill):
         token = context.extra.get("pending_confirmation_token")
         if not token:
             return SkillResponse(
-                message="No pending action to confirm.",
+                message="I don't see any pending action to confirm. What would you like me to do?",
                 intent="error",
                 confidence=0.9
             )
@@ -157,34 +161,38 @@ class ActionExecutionSkill(BaseSkill):
         """
         Use Gemini to understand what action user wants to perform.
         """
-        prompt = f"""You are analyzing an action request for an ERP system.
+        prompt = f"""Hey! You're helping me understand what action someone wants to do in an ERP system.
 
-**Available Actions:**
+Here's what they can ask me to do:
+
 1. **approve_purchase_order** - Approve a purchase order
-   - Required params: po_id (int)
-   - Optional params: notes (string)
+   - Needs: po_id (number)
+   - Optional: notes (text)
 
 2. **reject_purchase_order** - Reject a purchase order
-   - Required params: po_id (int), reason (string)
+   - Needs: po_id (number), reason (why they're rejecting it)
 
 3. **create_sales_order** - Create a new sales order
-   - Required params: customer_id (int), items (array)
-   - Optional params: notes (string)
+   - Needs: customer_id (number), items (list of stuff)
+   - Optional: notes (text)
 
-4. **post_ar_invoice** - Post an AR invoice to general ledger
-   - Required params: invoice_id (int)
+4. **create_customer** - Create a new customer
+   - Optional: name (text), email (text), phone (text)
 
-5. **issue_payment** - Issue a payment to supplier/vendor
-   - Required params: bill_id (int), amount (decimal), payment_method (string)
+5. **post_ar_invoice** - Post an invoice to the books
+   - Needs: invoice_id (number)
 
-**User Request:**
+6. **issue_payment** - Pay a supplier
+   - Needs: bill_id (number), amount (money), payment_method (how they're paying)
+
+**What they said:**
 "{message}"
 
-**Current Context:**
-- Current Page: {context.current_page or 'unknown'}
-- Current Module: {context.module or 'unknown'}
+**Where they are:**
+- Page: {context.current_page or 'unknown'}
+- Module: {context.module or 'unknown'}
 
-Analyze this request and return a JSON object:
+Figure out what they want and give me back JSON like this:
 {{
   "action_type": "one_of_the_above",
   "params": {{
@@ -197,13 +205,16 @@ Analyze this request and return a JSON object:
 - "Approve PO 123" → {{"action_type": "approve_purchase_order", "params": {{"po_id": 123}}, "confidence": 0.95}}
 - "Reject purchase order #456 because the price is too high" → {{"action_type": "reject_purchase_order", "params": {{"po_id": 456, "reason": "price is too high"}}, "confidence": 0.9}}
 - "Create SO for customer 789" → {{"action_type": "create_sales_order", "params": {{"customer_id": 789}}, "confidence": 0.8}}
+- "Make a sales order" → {{"action_type": "create_sales_order", "params": {{}}, "confidence": 0.7}}
+- "Create a customer" → {{"action_type": "create_customer", "params": {{}}, "confidence": 0.9}}
+- "Add customer named ABC Company" → {{"action_type": "create_customer", "params": {{"name": "ABC Company"}}, "confidence": 0.85}}
 
-**Important:**
-- Extract IDs from the message (look for numbers after "PO", "#", "order", etc.)
-- If ID is not clear, set confidence lower
-- Try to extract all relevant parameters
+**Tips:**
+- Pull out ID numbers (they usually come after "PO", "#", "order", etc.)
+- If you can't find an ID, that's okay - just set confidence lower
+- Grab all the info you can find
 
-Return ONLY valid JSON, no markdown."""
+Just give me the JSON, nothing else."""
 
         # Call Gemini
         config = AIConfiguration.get_config()
@@ -273,11 +284,23 @@ Return ONLY valid JSON, no markdown."""
                 } if first_number else {},
                 "confidence": 0.6 if first_number else 0.3
             }
-        elif "create" in lowered and ("so" in lowered or "sales" in lowered):
+        elif ("create" in lowered or "add" in lowered or "make" in lowered) and ("po" in lowered or "purchase" in lowered):
+            return {
+                "action_type": "create_purchase_order",
+                "params": {"supplier_id": first_number} if first_number else {},
+                "confidence": 0.5
+            }
+        elif ("create" in lowered or "add" in lowered) and ("so" in lowered or "sales" in lowered):
             return {
                 "action_type": "create_sales_order",
                 "params": {"customer_id": first_number} if first_number else {},
                 "confidence": 0.5
+            }
+        elif ("create" in lowered or "add" in lowered) and ("customer" in lowered):
+            return {
+                "action_type": "create_customer",
+                "params": {},
+                "confidence": 0.4
             }
         else:
             return {
@@ -290,7 +313,7 @@ Return ONLY valid JSON, no markdown."""
         """Format action execution result into response"""
         if result.success:
             return SkillResponse(
-                message=f"✅ {result.message}",
+                message=f"Done! {result.message}",
                 intent="action_success",
                 confidence=1.0,
                 sources=[{
@@ -300,7 +323,7 @@ Return ONLY valid JSON, no markdown."""
             )
         else:
             return SkillResponse(
-                message=f"❌ {result.message}",
+                message=f"Hmm, that didn't work. {result.message}",
                 intent="action_failed",
                 confidence=1.0
             )

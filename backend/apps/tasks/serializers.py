@@ -3,6 +3,7 @@ from __future__ import annotations
 from rest_framework import serializers
 
 from .models import TaskItem
+from apps.companies.models import Company
 
 
 class TaskItemSerializer(serializers.ModelSerializer):
@@ -42,6 +43,24 @@ class TaskItemSerializer(serializers.ModelSerializer):
         company = getattr(request, "company", None)
         if not company and request and request.user.is_authenticated:
             company = request.user.companies.filter(is_active=True).first()
+        # Try header X-Company-ID
+        if not company and request is not None:
+            try:
+                header_id = request.META.get("HTTP_X_COMPANY_ID") or request.headers.get("X-Company-ID")
+            except Exception:
+                header_id = None
+            if header_id:
+                try:
+                    company = Company.objects.get(pk=header_id)
+                except Company.DoesNotExist:
+                    company = None
+        if not company and hasattr(request, "session"):
+            company_id = request.session.get("active_company_id")
+            if company_id:
+                try:
+                    company = Company.objects.get(pk=company_id)
+                except Company.DoesNotExist:
+                    company = None
         if not company:
             raise serializers.ValidationError({"company": "Active company context is required."})
         validated_data["company"] = company

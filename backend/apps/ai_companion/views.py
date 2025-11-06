@@ -89,13 +89,26 @@ class AIChatView(APIView):
             "preferred_skill": context.get("skill"),
         }
 
-        result = orchestrator.chat(
-            message=message,
-            user=request.user,
-            company=company,
-            conversation_id=conversation_id,
-            metadata=metadata,
-        )
+        try:
+            result = orchestrator.chat(
+                message=message,
+                user=request.user,
+                company=company,
+                conversation_id=conversation_id,
+                metadata=metadata,
+            )
+        except Exception as e:
+            logger.exception("AI chat orchestration failed: %s", e)
+            # Soft-fail with a friendly response so the UI doesn't break
+            return Response(
+                {
+                    "message": "I'm having trouble responding right now. Please try again in a minute.",
+                    "intent": "error",
+                    "confidence": 0.0,
+                    "skill": "system_fallback",
+                },
+                status=status.HTTP_200_OK,
+            )
         try:
             truncated_message = message.strip()
             if len(truncated_message) > 500:

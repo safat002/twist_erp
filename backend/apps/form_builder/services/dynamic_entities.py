@@ -14,7 +14,6 @@ from django.utils.text import slugify
 from rest_framework import serializers
 
 from shared.models import CompanyAwareModel
-from apps.metadata.services import MetadataScope, create_metadata_version
 from ..models import DynamicEntity, FormTemplate
 
 logger = logging.getLogger(__name__)
@@ -41,6 +40,7 @@ class RuntimeEntity:
 
 
 def generate_dynamic_entity(template: FormTemplate, user=None, scope: Optional[MetadataScope] = None) -> RuntimeEntity:
+    from apps.metadata.services import MetadataScope, create_metadata_version
     if not template.schema:
         raise ValueError("Template schema is empty. Add fields before generating an entity.")
 

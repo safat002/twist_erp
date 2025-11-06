@@ -64,7 +64,7 @@ class UserLookupView(generics.ListAPIView):
 
 
 class CurrentUserProfileView(generics.RetrieveUpdateAPIView):
-    serializer_class = UserProfileSerializer
+    serializer_class = UserSerializer
     permission_classes = [IsAuthenticated]
 
     def get_object(self):

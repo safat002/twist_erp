@@ -1,0 +1,154 @@
+[
+  {
+    "title": "What is Twist ERP",
+    "content": "Twist ERP is a comprehensive enterprise resource planning system that manages all aspects of your business including Sales, Procurement, Inventory, Finance, Production, HR, Assets, and Projects. It features multi-company support, automatic journal posting, budget controls, and complete audit trails. All modules are fully integrated - when you receive goods, it automatically updates inventory, posts to the general ledger, and updates purchase order status."
+  },
+  {
+    "title": "How to Create a Customer",
+    "content": "To create a customer:\n1. Go to Sales > Customers\n2. Click 'New Customer'\n3. Fill in required fields:\n   - Code: Unique customer code (e.g., CUST001)\n   - Name: Customer's full name\n   - Customer Type: Local or Export\n   - Receivable Account: Select the AR account\n4. Optional fields: Email, Phone, Address, Payment Terms, Credit Limit\n5. Click 'Save'\n\nThe customer starts in LEAD status. Once they place their first order, status changes to CUSTOMER."
+  },
+  {
+    "title": "How to Create a Sales Order",
+    "content": "To create a sales order:\n1. Go to Sales > Sales Orders\n2. Click 'New Order'\n3. Select a customer (required)\n4. Set order date and expected delivery date\n5. Add order lines:\n   - Select product\n   - Enter quantity\n   - Set unit price (auto-fills from product price)\n   - Price and total calculate automatically\n6. Review order total (subtotal + tax - discount)\n7. Click 'Save' - order is created in DRAFT status\n8. Click 'Confirm' to confirm the order\n9. Status changes to CONFIRMED\n\nSales orders are auto-numbered as SO-YYYY-00001 format."
+  },
+  {
+    "title": "Sales Order Workflow",
+    "content": "Sales order workflow:\n1. DRAFT: Initial creation, can be edited\n2. CONFIRMED: Order confirmed, ready for fulfillment\n3. PARTIAL: Some items delivered\n4. DELIVERED: All items delivered via delivery orders\n5. INVOICED: Invoice created for the order\n6. CANCELLED: Order cancelled\n\nTo fulfill an order, create a Delivery Order linked to the sales order. This will reduce inventory and update the order status."
+  },
+  {
+    "title": "How to Create an Invoice",
+    "content": "To create an invoice:\n1. Go to Finance > Invoices\n2. Click 'New Invoice'\n3. Select invoice type:\n   - AR (Accounts Receivable): For customer invoices\n   - AP (Accounts Payable): For supplier bills\n4. Select partner (customer or supplier)\n5. Add invoice lines with products, quantities, and prices\n6. Review total amount\n7. Click 'Save' - invoice created in DRAFT status\n8. Click 'Post' to post the invoice\n\nWhen posted:\n- AR Invoice: DR Accounts Receivable, CR Revenue\n- AP Invoice: DR Expense, CR Accounts Payable\n\nInvoice status: DRAFT → POSTED → PARTIAL → PAID"
+  },
+  {
+    "title": "How to Create a Supplier",
+    "content": "To create a supplier:\n1. Go to Procurement > Suppliers\n2. Click 'New Supplier'\n3. Fill in required fields:\n   - Code: Unique supplier code (e.g., SUPP001)\n   - Name: Supplier's full name\n   - Supplier Type: Local, Foreign, or Service\n   - Payable Account: Select the AP account\n4. Optional: Email, Phone, Address, Payment Terms, Credit Terms\n5. Click 'Save'\n\nSuppliers are used in purchase requisitions and purchase orders."
+  },
+  {
+    "title": "How to Create a Purchase Requisition",
+    "content": "To create a purchase requisition (PR):\n1. Go to Procurement > Purchase Requisitions\n2. Click 'New Requisition'\n3. Enter requisition date\n4. Add requisition lines:\n   - Select product\n   - Enter quantity needed\n   - Set estimated unit price\n   - Select budget line (if budget control enabled)\n5. Click 'Save' - PR created in DRAFT status\n6. Click 'Submit' to submit for approval\n7. Approver reviews and clicks 'Approve'\n\nWhen approved, budget is RESERVED. PR can then be converted to Purchase Order.\n\nPR workflow: DRAFT → PENDING → APPROVED → ORDERED or REJECTED/CANCELLED"
+  },
+  {
+    "title": "How to Create a Purchase Order",
+    "content": "To create a purchase order (PO):\n1. Go to Procurement > Purchase Orders\n2. Click 'New PO'\n3. Select supplier (required)\n4. Set order date and expected delivery date\n5. Add PO lines:\n   - Select product\n   - Enter quantity\n   - Set unit price\n6. Review total amount\n7. Click 'Save' - PO created in DRAFT status\n8. Click 'Submit' for approval\n9. Once approved, status becomes APPROVED\n10. Send PO to supplier\n\nWhen PO is created from a PR, budget status changes from RESERVED to CONVERTED.\n\nPO workflow: DRAFT → PENDING → APPROVED → PARTIAL/RECEIVED → COMPLETED or CANCELLED"
+  },
+  {
+    "title": "How to Receive Goods (GRN)",
+    "content": "To create a Goods Receipt Note (GRN):\n1. Go to Procurement > Goods Receipts\n2. Click 'New Receipt'\n3. Select the related Purchase Order\n4. Enter receipt date\n5. Add receipt lines:\n   - Select PO line\n   - Enter received quantity (can be less than ordered)\n   - Enter unit price\n6. Set QC status: Pending, On Hold, Passed, or Rejected\n7. Click 'Save' - GRN created in DRAFT status\n8. Review and click 'Post'\n\nWhen GRN is posted:\n- Inventory increases\n- Budget status changes to CONSUMED\n- PO received quantity updates\n- Journal entry created: DR Inventory, CR GRNI (Goods Received Not Invoiced)\n- If PO fully received, status becomes RECEIVED\n\nThis is the three-way matching: PO ↔ GRN ↔ Supplier Invoice"
+  },
+  {
+    "title": "Purchase Requisition to Payment Workflow",
+    "content": "Complete procurement workflow:\n\n1. CREATE REQUISITION\n   - Employee creates PR for needed items\n   - Budget status: RESERVED\n   - Status: DRAFT → PENDING → APPROVED\n\n2. CREATE PURCHASE ORDER\n   - Convert approved PR to PO\n   - Budget status: CONVERTED\n   - Status: DRAFT → PENDING → APPROVED\n   - Send PO to supplier\n\n3. RECEIVE GOODS\n   - Create GRN when goods arrive\n   - Quality check items\n   - Post GRN\n   - Budget status: CONSUMED\n   - Inventory increases\n   - Journal: DR Inventory, CR GRNI\n\n4. RECEIVE SUPPLIER INVOICE\n   - Create AP invoice\n   - Match to GRN and PO (three-way matching)\n   - Post invoice\n   - Journal: DR GRNI, CR Accounts Payable\n\n5. MAKE PAYMENT\n   - Create payment for invoice\n   - Post payment\n   - Journal: DR Accounts Payable, CR Cash/Bank"
+  },
+  {
+    "title": "How to Manage Inventory",
+    "content": "Inventory management in Twist ERP:\n\n**Stock Movements:**\n- RECEIPT: Stock coming in (from GRN, production)\n- ISSUE: Stock going out (to sales, production)\n- TRANSFER: Between warehouses\n- ADJUSTMENT: Stock count adjustments\n\n**To check stock levels:**\n1. Go to Inventory > Stock Levels\n2. Filter by product or warehouse\n3. View available quantity, allocated quantity, and on-hand quantity\n\n**To transfer stock:**\n1. Go to Inventory > Stock Movements\n2. Click 'New Transfer'\n3. Select movement type: TRANSFER\n4. Select source warehouse and destination warehouse\n5. Add products and quantities\n6. Click 'Post'\n\n**To adjust stock:**\n1. Go to Inventory > Stock Movements\n2. Click 'New Adjustment'\n3. Select movement type: ADJUSTMENT\n4. Select warehouse\n5. Enter products with actual counted quantities\n6. System calculates difference and adjusts\n7. Click 'Post'\n\nAll stock movements create entries in the Stock Ledger for audit trail."
+  },
+  {
+    "title": "How to Create a Delivery Order",
+    "content": "To create a delivery order:\n1. Go to Inventory > Delivery Orders\n2. Click 'New Delivery'\n3. Select related sales order (optional but recommended)\n4. Select warehouse to deliver from\n5. Add delivery lines:\n   - Select product\n   - Enter quantity to deliver\n6. Click 'Save' - created in DRAFT status\n7. Review and click 'Post'\n\nWhen posted:\n- Stock decreases in the warehouse\n- Stock movement created (ISSUE type)\n- If linked to sales order, SO status updates\n- Journal entry: DR Cost of Goods Sold, CR Inventory"
+  },
+  {
+    "title": "How Chart of Accounts Works",
+    "content": "Chart of Accounts structure:\n\n**Account Types:**\n- ASSET: Resources owned (Cash, Inventory, AR, Equipment)\n- LIABILITY: Obligations (AP, Loans, Accrued Expenses)\n- EQUITY: Owner's stake (Capital, Retained Earnings)\n- REVENUE: Income from sales and services\n- EXPENSE: Costs of doing business\n\n**Account Numbering:**\n- 1000-1999: Assets\n- 2000-2999: Liabilities\n- 3000-3999: Equity\n- 4000-4999: Revenue\n- 5000-5999: Cost of Goods Sold\n- 6000-6999: Operating Expenses\n\n**Control Accounts:**\nSpecial accounts that cannot be posted to directly:\n- Accounts Receivable (1200)\n- Accounts Payable (2100)\n- Inventory (1300)\n\nThese are updated automatically through sub-ledgers (invoices, stock movements)."
+  },
+  {
+    "title": "How to Create a Journal Entry",
+    "content": "To create a manual journal entry:\n1. Go to Finance > Journal Entries\n2. Click 'New Entry'\n3. Select journal type (General Journal, Adjustment, etc.)\n4. Enter date and reference\n5. Add journal lines:\n   - Select account\n   - Enter debit amount OR credit amount\n   - Add description\n6. Ensure total debits = total credits\n7. Click 'Save' - created in DRAFT status\n8. Review and click 'Post'\n\n**Important rules:**\n- Debits MUST equal Credits\n- Cannot post to control accounts directly\n- Cannot have negative amounts\n- Once posted, entries are immutable\n\n**Common entries:**\n- Depreciation: DR Depreciation Expense, CR Accumulated Depreciation\n- Accruals: DR Expense, CR Accrued Liability\n- Prepayments: DR Prepaid Asset, CR Cash"
+  },
+  {
+    "title": "How to Record Payments",
+    "content": "To record a payment:\n1. Go to Finance > Payments\n2. Click 'New Payment'\n3. Select payment type:\n   - PAYMENT: Money going out (to suppliers)\n   - RECEIPT: Money coming in (from customers)\n4. Select partner (customer or supplier)\n5. Select bank account\n6. Enter amount\n7. Allocate to invoices (optional but recommended)\n8. Click 'Save' - created in DRAFT status\n9. Click 'Post'\n\nWhen posted:\n- PAYMENT: DR Accounts Payable, CR Cash/Bank\n- RECEIPT: DR Cash/Bank, CR Accounts Receivable\n- Invoice status updates: POSTED → PARTIAL → PAID\n\n**Payment allocation:**\nYou can allocate one payment to multiple invoices or partially pay an invoice."
+  },
+  {
+    "title": "How Budget Control Works",
+    "content": "Budget control process:\n\n**Setup:**\n1. Create budget for fiscal period\n2. Define budget lines by category/department/account\n3. Set budget amounts\n4. Activate budget\n\n**Three-Stage Control:**\n1. ALLOCATED: Budget amount set\n2. RESERVED: When PR is approved, amount reserved\n3. CONVERTED: When PO is created, reserved becomes converted\n4. CONSUMED: When GRN is posted, converted becomes consumed\n\n**Over-Budget Prevention:**\n- System checks available budget before approving PR\n- Cannot approve PR if insufficient budget\n- Cannot create PO if PR not approved\n- Real-time budget tracking\n\n**Budget Variance:**\n- Actual vs Budget reports\n- Commitment tracking (Reserved + Converted)\n- Utilization percentage\n\nTo check budget: Go to Budgeting > Budget Lines, view committed and available amounts."
+  },
+  {
+    "title": "How to Create a Bill of Materials (BOM)",
+    "content": "To create a BOM:\n1. Go to Production > Bill of Materials\n2. Click 'New BOM'\n3. Enter BOM details:\n   - Name/Description\n   - Select finished product\n   - Set quantity produced\n   - Select BOM type (Manufacturing, Kit, etc.)\n4. Add BOM components:\n   - Select raw material/component\n   - Enter quantity needed per finished product\n   - Set unit of measure\n5. Click 'Save'\n\nBOMs define the recipe for manufacturing. When you create a work order, BOM components automatically populate as required materials."
+  },
+  {
+    "title": "How to Create a Work Order",
+    "content": "To create a work order:\n1. Go to Production > Work Orders\n2. Click 'New Work Order'\n3. Select BOM (Bill of Materials)\n4. Enter quantity to produce\n5. Set planned start and end dates\n6. Components auto-fill from BOM\n7. Click 'Save' - created in PLANNED status\n8. Click 'Release' to start production\n9. Status changes to RELEASED\n\n**Work Order Workflow:**\n1. PLANNED: Work order created\n2. RELEASED: Ready for production\n3. IN_PROGRESS: Production started\n4. COMPLETED: Production finished\n5. CLOSED: Work order closed\n6. CANCELLED: Work order cancelled\n\n**During Production:**\n- Issue materials (reduces inventory)\n- Record production receipts (increases finished goods)\n- All transactions post to general ledger automatically"
+  },
+  {
+    "title": "How to Issue Materials for Production",
+    "content": "To issue materials for production:\n1. Go to Production > Material Issues\n2. Click 'New Issue'\n3. Select work order\n4. Add issue lines:\n   - Select component (from BOM)\n   - Enter quantity to issue\n   - Select warehouse\n5. Click 'Save'\n6. Click 'Post'\n\nWhen posted:\n- Inventory decreases\n- Stock movement created (ISSUE type)\n- Journal entry: DR Work in Progress, CR Inventory\n- Work order component quantity updated"
+  },
+  {
+    "title": "How to Receive Finished Goods",
+    "content": "To receive finished goods from production:\n1. Go to Production > Production Receipts\n2. Click 'New Receipt'\n3. Select work order\n4. Enter quantity produced\n5. Select warehouse to receive into\n6. Click 'Save'\n7. Click 'Post'\n\nWhen posted:\n- Finished goods inventory increases\n- Stock movement created (RECEIPT type)\n- Journal entry: DR Finished Goods Inventory, CR Work in Progress\n- Work order produced quantity updated\n- If fully produced, work order status becomes COMPLETED"
+  },
+  {
+    "title": "Production Workflow Complete",
+    "content": "Complete production workflow:\n\n1. CREATE BOM\n   - Define finished product recipe\n   - List all components and quantities\n\n2. CREATE WORK ORDER\n   - Select BOM and quantity to produce\n   - Status: PLANNED\n   - Components auto-populate\n\n3. RELEASE WORK ORDER\n   - Status: RELEASED\n   - Ready for production floor\n\n4. ISSUE MATERIALS\n   - Issue raw materials from inventory\n   - Journal: DR WIP, CR Inventory\n   - Status: IN_PROGRESS\n\n5. RECEIVE FINISHED GOODS\n   - Receive completed products\n   - Journal: DR Finished Goods, CR WIP\n\n6. CLOSE WORK ORDER\n   - Status: COMPLETED\n   - Calculate production costs\n   - Update product costs"
+  },
+  {
+    "title": "How to Manage Employees",
+    "content": "To create an employee:\n1. Go to HR > Employees\n2. Click 'New Employee'\n3. Fill in personal details:\n   - Employee code (unique)\n   - First name, last name\n   - Email, phone\n   - Date of birth\n4. Fill in employment details:\n   - Department\n   - Employment grade\n   - Hire date\n   - Employment type (Full-time, Part-time, Contract)\n   - Employment status (Active, Probation, Resigned, Terminated)\n5. Set salary structure:\n   - Base salary\n   - Allowances (housing, transport, meal, other)\n   - Deductions (tax, pension, insurance)\n6. Click 'Save'\n\nEmployees are used in payroll processing and attendance tracking."
+  },
+  {
+    "title": "How Payroll Works",
+    "content": "Payroll processing:\n\n**Salary Components:**\n- Base salary\n- Allowances: Housing, Transport, Meal, Other\n- Deductions: Tax, Pension, Insurance\n- Gross salary = Base + All allowances\n- Net salary = Gross - All deductions\n\n**Monthly Payroll:**\n1. Review employee salary structures\n2. Process monthly attendance\n3. Calculate gross and net salaries\n4. Generate payroll journal\n5. Post to general ledger:\n   - DR Salary Expense\n   - CR Salary Payable, Tax Payable, Pension Payable\n6. Process salary payments:\n   - DR Salary Payable\n   - CR Cash/Bank"
+  },
+  {
+    "title": "How to Manage Assets",
+    "content": "To create an asset:\n1. Go to Assets > Assets\n2. Click 'New Asset'\n3. Enter asset details:\n   - Code (unique)\n   - Name/Description\n   - Asset category (Vehicle, Equipment, Building, etc.)\n   - Acquisition date\n   - Cost (purchase price)\n4. Set depreciation:\n   - Depreciation method (Straight Line or Declining Balance)\n   - Useful life in years\n   - Salvage value\n5. Link to GL accounts:\n   - Asset account\n   - Accumulated depreciation account\n   - Depreciation expense account\n6. Click 'Save'\n\n**Asset Status:**\n- ACTIVE: In use, depreciating\n- IDLE: Not in use\n- MAINTENANCE: Under maintenance\n- DISPOSED: Sold or scrapped"
+  },
+  {
+    "title": "How Depreciation Works",
+    "content": "Depreciation calculation:\n\n**Straight Line Method:**\nMonthly depreciation = (Cost - Salvage Value) / (Useful Life in months)\n\nExample: $120,000 cost, $20,000 salvage, 10 years life\nMonthly = ($120,000 - $20,000) / (10 × 12) = $833.33\n\n**Declining Balance Method:**\nRate = (100 / Useful Life) × Declining Factor\nMonthly depreciation = Book Value × (Rate / 12)\n\n**To run depreciation:**\n1. Go to Assets > Depreciation\n2. Click 'Run Depreciation'\n3. Select period (month/year)\n4. Click 'Calculate'\n5. Review depreciation amounts\n6. Click 'Post'\n\nWhen posted:\n- Journal entry: DR Depreciation Expense, CR Accumulated Depreciation\n- Book value decreases\n- Cannot modify once posted"
+  },
+  {
+    "title": "How to Dispose of Assets",
+    "content": "To dispose of an asset:\n1. Go to Assets > Asset Disposal\n2. Click 'New Disposal'\n3. Select asset to dispose\n4. Enter disposal details:\n   - Disposal date\n   - Disposal type (Sale, Scrap, Transfer)\n   - Sale proceeds (if sold)\n5. Review calculated values:\n   - Book value at disposal\n   - Gain or loss = Proceeds - Book Value\n6. Click 'Save'\n7. Click 'Post'\n\nWhen posted:\n- Asset status changes to DISPOSED\n- Journal entries:\n  - DR Accumulated Depreciation (clear balance)\n  - DR Cash/Bank (proceeds)\n  - DR Loss on Disposal OR CR Gain on Disposal\n  - CR Asset Account (remove from books)"
+  },
+  {
+    "title": "How to Track Asset Maintenance",
+    "content": "To schedule asset maintenance:\n1. Go to Assets > Maintenance Plans\n2. Click 'New Plan'\n3. Select asset\n4. Enter maintenance details:\n   - Type (Preventive, Corrective)\n   - Frequency (Monthly, Quarterly, Yearly)\n   - Next maintenance date\n   - Estimated cost\n5. Click 'Save'\n\nTo record maintenance:\n1. When maintenance is due, system creates notification\n2. Record actual maintenance performed\n3. Update next maintenance date\n4. Record costs\n5. Post maintenance expense to GL"
+  },
+  {
+    "title": "How to Create a Project",
+    "content": "To create a project:\n1. Go to Projects > Projects\n2. Click 'New Project'\n3. Enter project details:\n   - Code (unique)\n   - Name/Description\n   - Start and end dates\n   - Project manager\n   - Status (Planning, Active, On Hold, Completed, Cancelled)\n4. Set budget (optional)\n5. Add team members (optional)\n6. Click 'Save'\n\nProjects can be linked to tasks, budgets, and expenses for tracking."
+  },
+  {
+    "title": "How to Manage Tasks",
+    "content": "To create a task:\n1. Go to Projects > Tasks\n2. Click 'New Task'\n3. Select project\n4. Enter task details:\n   - Title\n   - Description\n   - Assigned to (employee)\n   - Start and due dates\n   - Priority (Low, Medium, High)\n   - Status (Open, In Progress, Completed, Cancelled)\n5. Add dependencies (tasks that must complete first)\n6. Click 'Save'\n\n**Task Dependencies:**\nYou can set tasks that must be completed before others can start, creating a project workflow."
+  },
+  {
+    "title": "Multi-Company Features",
+    "content": "Twist ERP supports multiple companies:\n\n**Company Setup:**\n- Each company has separate data (customers, suppliers, transactions)\n- Companies belong to a company group\n- Users can access multiple companies\n- Switch between companies using company selector\n\n**Company Group:**\n- Groups multiple companies for consolidated reporting\n- Share user accounts across companies\n- Centralized user management\n\n**Data Isolation:**\n- All transactions are company-specific\n- Cannot mix data between companies\n- Reports filter by selected company\n\n**Consolidated Reporting:**\n- View reports across all companies in group\n- Consolidated financial statements\n- Inter-company eliminations"
+  },
+  {
+    "title": "Document Numbering",
+    "content": "Document numbering in Twist ERP:\n\n**Auto-Generated Numbers:**\n- Format: PREFIX-YYYY-NNNNN\n- Examples:\n  - SO-2025-00001 (Sales Order)\n  - PO-2025-00001 (Purchase Order)\n  - INV-2025-00001 (Invoice)\n  - GRN-2025-00001 (Goods Receipt)\n  - JV-2025-00001 (Journal Voucher)\n\n**Numbering Rules:**\n- Sequential per document type\n- Per company (Company A SO-001 separate from Company B SO-001)\n- Resets yearly\n- Cannot be modified manually\n- No gaps allowed\n\nNumbers are generated automatically when you save a new document."
+  },
+  {
+    "title": "How Reports Work",
+    "content": "Reporting in Twist ERP:\n\n**Financial Reports:**\n- Trial Balance: All account balances\n- Income Statement (P&L): Revenue and expenses\n- Balance Sheet: Assets, liabilities, equity\n- Cash Flow Statement: Cash movements\n- Aged Receivables: Customer outstanding balances\n- Aged Payables: Supplier outstanding balances\n\n**Operational Reports:**\n- Sales by Customer\n- Sales by Product\n- Purchase by Supplier\n- Inventory Valuation\n- Stock Movement Report\n- Production Report\n- Budget vs Actual\n\n**Filters:**\n- Date range\n- Company\n- Department\n- Product category\n- Customer/Supplier\n\n**Export Options:**\n- PDF for printing\n- Excel for analysis\n- CSV for data import"
+  },
+  {
+    "title": "User Permissions and Security",
+    "content": "Security and access control:\n\n**User Roles:**\n- System Admin: Full access to all modules\n- Company Admin: Full access to their company\n- Finance Manager: Access to finance module\n- Sales Manager: Access to sales module\n- Procurement Manager: Access to procurement module\n- Inventory Manager: Access to inventory module\n- Employee: Limited access\n\n**Permission Levels:**\n- View: Can see records\n- Create: Can create new records\n- Edit: Can modify records\n- Delete: Can delete records\n- Approve: Can approve workflows\n- Post: Can post to general ledger\n\n**Data Access:**\n- Company-level: Users see only their company data\n- Department-level: Additional filtering by department\n- Audit trail: All changes logged with user and timestamp"
+  },
+  {
+    "title": "Common Workflows Summary",
+    "content": "Quick reference for common workflows:\n\n**SALES:**\nCustomer → Sales Order (Draft → Confirm) → Delivery Order (Post) → Invoice (Post) → Payment (Post)\n\n**PROCUREMENT:**\nPR (Draft → Approve) → PO (Draft → Approve) → GRN (Post) → AP Invoice (Post) → Payment (Post)\n\n**PRODUCTION:**\nBOM → Work Order (Plan → Release → Start) → Material Issue (Post) → Production Receipt (Post) → Complete\n\n**INVENTORY:**\nGRN (Receipt) / Delivery Order (Issue) / Stock Transfer / Stock Adjustment\n\n**FINANCE:**\nJournal Entry (Draft → Post) / Invoice (Draft → Post) / Payment (Draft → Post)\n\n**ASSETS:**\nAsset Creation → Monthly Depreciation → Maintenance → Disposal\n\nAll workflows post to general ledger automatically for complete financial integration."
+  },
+  {
+    "title": "Integration Between Modules",
+    "content": "How modules work together:\n\n**Sales → Inventory → Finance:**\n- Sales Order created\n- Delivery Order posts: Reduces inventory, posts COGS\n- Invoice posts: Creates AR, posts revenue\n- Payment posts: Reduces AR, increases cash\n\n**Procurement → Inventory → Finance:**\n- Purchase Order created\n- GRN posts: Increases inventory, creates GRNI liability\n- AP Invoice posts: Clears GRNI, creates AP\n- Payment posts: Reduces AP, decreases cash\n\n**Production → Inventory → Finance:**\n- Work Order created\n- Material Issue posts: Reduces inventory, creates WIP\n- Production Receipt posts: Increases finished goods, reduces WIP\n\n**HR → Finance:**\n- Monthly payroll calculates salaries\n- Payroll journal posts: Creates salary expense and payables\n- Payments post: Reduces payables, decreases cash\n\n**Assets → Finance:**\n- Asset acquisition recorded\n- Monthly depreciation posts: Expense and accumulated depreciation\n- Disposal posts: Clears asset, records gain/loss\n\nAll financial transactions flow through the general ledger for complete visibility."
+  },
+  {
+    "title": "Best Practices",
+    "content": "Best practices for using Twist ERP:\n\n**General:**\n- Always review before posting - posted transactions cannot be edited\n- Use proper document numbering - let system auto-generate\n- Keep master data clean (customers, suppliers, products)\n- Regular backups\n\n**Finance:**\n- Reconcile bank accounts monthly\n- Review trial balance before closing period\n- Post journal entries with clear descriptions\n- Ensure debits equal credits\n- Never post directly to control accounts\n\n**Inventory:**\n- Conduct regular stock counts\n- Post stock adjustments with proper justification\n- Monitor slow-moving items\n- Set reorder levels for critical items\n\n**Procurement:**\n- Always get multiple quotes\n- Follow approval workflows\n- Match GRN to PO and invoice (three-way matching)\n- Review budget before approving PRs\n\n**Production:**\n- Keep BOMs up to date\n- Issue materials accurately\n- Record production promptly\n- Track production variances\n\n**Security:**\n- Change passwords regularly\n- Use strong passwords\n- Log out when finished\n- Review audit logs periodically"
+  },
+  {
+    "title": "Troubleshooting Common Issues",
+    "content": "Common issues and solutions:\n\n**Cannot post journal entry:**\n- Check: Debits must equal credits\n- Check: All accounts exist and are active\n- Check: Not posting to control accounts\n- Check: No negative amounts\n\n**Cannot approve purchase requisition:**\n- Check: Budget available\n- Check: All required fields filled\n- Check: User has approval permission\n\n**Cannot post GRN:**\n- Check: Linked to valid PO\n- Check: Quantity not exceeding PO quantity\n- Check: All required fields filled\n- Check: Warehouse selected\n\n**Stock going negative:**\n- Check: Sufficient stock in warehouse\n- Check: Stock not allocated to other orders\n- Run stock reconciliation\n\n**Invoice not updating to PAID:**\n- Check: Payment posted successfully\n- Check: Payment allocated to invoice\n- Check: Payment amount matches invoice\n\n**Document number not generating:**\n- Check: Number sequence exists for document type\n- Check: Company selected\n- Contact system administrator"
+  },
+  {
+    "title": "Month-End and Year-End Closing",
+    "content": "Period closing procedures:\n\n**MONTH-END CLOSING:**\n1. Post all transactions for the month\n2. Run depreciation for all assets\n3. Process monthly payroll\n4. Post accruals and prepayments\n5. Reconcile all bank accounts\n6. Review trial balance\n7. Generate financial statements\n8. Review variance reports (Budget vs Actual)\n9. Close accounting period (prevents backdating)\n\n**YEAR-END CLOSING:**\n1. Complete month-end procedures for December\n2. Review annual financial statements\n3. Calculate and post year-end adjustments\n4. Run inventory valuation\n5. Review asset values and depreciation\n6. Post closing entries:\n   - Close revenue accounts to Income Summary\n   - Close expense accounts to Income Summary\n   - Close Income Summary to Retained Earnings\n7. Generate annual reports\n8. Archive year-end backup\n9. Set up new fiscal year budgets\n10. Close fiscal year in system\n\n**POST-CLOSING:**\n- All temporary accounts (revenue, expenses) have zero balance\n- Balance sheet accounts carry forward\n- New year starts with clean P&L\n- Prior year data remains accessible for reporting"
+  }
+]

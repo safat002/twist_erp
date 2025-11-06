@@ -14,7 +14,6 @@ from django.utils import timezone
 from django.utils.text import slugify
 
 from apps.audit.models import AuditLog
-from apps.metadata.services import MetadataScope, create_metadata_version
 from apps.permissions.models import Permission
 from apps.finance.models import Account, AccountType, Journal
 from apps.finance.services.journal_service import JournalService
@@ -309,7 +308,7 @@ class MigrationPipeline:
     # ------------------------------------------------------------------
     # Staging & normalization
     # ------------------------------------------------------------------
-    def stage_rows(self, *, user=None):
+    def stage_rows(self, *, user=None, chunk_size: int | None = None):
         MigrationStagingRow.objects.filter(migration_job=self.job).delete()
         mapping_lookup = {
             mapping.column_name_in_file: mapping
@@ -317,31 +316,43 @@ class MigrationPipeline:
         }
 
         for migration_file in self.job.files.all():
-            df = self._load_dataframe(migration_file)
-            for idx, row in df.iterrows():
-                payload = {}
-                extra_data = {}
-                for column, value in row.items():
-                    mapping = mapping_lookup.get(column)
-                    if not mapping or mapping.target_storage_mode == migration_enums.TargetStorageMode.IGNORE:
-                        continue
+            file_path = migration_file.uploaded_file.path if migration_file.uploaded_file else migration_file.stored_path
+            is_csv = file_path and file_path.lower().endswith(".csv")
+            # Choose iterator: chunked CSV if chunk_size is provided, else full DataFrame
+            if is_csv and chunk_size and chunk_size > 0:
+                chunk_iter = pd.read_csv(file_path, chunksize=chunk_size)
+                chunks = ((chunk, True) for chunk in chunk_iter)
+            else:
+                chunks = ((self._load_dataframe(migration_file), False),)
 
-                    cleaned = self._clean_value(value)
-                    if mapping.requires_schema_extension:
-                        extra_data[mapping.target_entity_field] = cleaned
-                    else:
-                        payload[mapping.target_entity_field] = cleaned
+            base_index = 0
+            for df, is_chunk in chunks:
+                for idx, row in df.iterrows():
+                    payload = {}
+                    extra_data = {}
+                    for column, value in row.items():
+                        mapping = mapping_lookup.get(column)
+                        if not mapping or mapping.target_storage_mode == migration_enums.TargetStorageMode.IGNORE:
+                            continue
 
-                if extra_data:
-                    payload.setdefault("extra_data", {}).update(extra_data)
+                        cleaned = self._clean_value(value)
+                        if mapping.requires_schema_extension:
+                            extra_data[mapping.target_entity_field] = cleaned
+                        else:
+                            payload[mapping.target_entity_field] = cleaned
 
-                MigrationStagingRow.objects.create(
-                    migration_job=self.job,
-                    source_file_name=migration_file.original_filename,
-                    row_index_in_file=int(idx),
-                    clean_payload_json=payload,
-                    status=migration_enums.StagingRowStatus.PENDING_VALIDATION,
-                )
+                    if extra_data:
+                        payload.setdefault("extra_data", {}).update(extra_data)
+
+                    MigrationStagingRow.objects.create(
+                        migration_job=self.job,
+                        source_file_name=migration_file.original_filename,
+                        row_index_in_file=int(base_index + idx),
+                        clean_payload_json=payload,
+                        status=migration_enums.StagingRowStatus.PENDING_VALIDATION,
+                    )
+                if is_chunk:
+                    base_index += len(df)
 
         self._log_audit(
             self.job,
@@ -682,6 +693,7 @@ class MigrationPipeline:
     # Metadata extension
     # ------------------------------------------------------------------
     def apply_schema_extensions(self, *, approver):
+        from apps.metadata.services import MetadataScope, create_metadata_version
         for extension in self.job.schema_extensions.filter(status=migration_enums.SchemaExtensionStatus.PENDING):
             scope = MetadataScope.for_company(self.job.company)
             metadata = create_metadata_version(

@@ -1,13 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python manage.py makemigrations:*)",
-      "Bash(dir:*)",
-      "Bash(pip install:*)",
-      "Bash(python -m pip:*)",
-      "Bash(pip uninstall:*)",
-      "Bash(python:*)",
-      "Bash(findstr:*)"
+      "Bash(timeout 15 python manage.py runserver:*)",
+      "Bash(cat:*)",
+      "Bash(if exist \"backend\\apps\\finance\\views\" dir \"backend\\apps\\finance\\views\" /B)",
+      "Bash(timeout 30 python:*)",
+      "Bash(taskkill:*)",
+      "Bash(cmd.exe //c \"taskkill //F //PID 25524\")"
     ],
     "deny": [],
     "ask": []

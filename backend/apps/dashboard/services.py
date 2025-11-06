@@ -75,22 +75,17 @@ DEFAULT_LAYOUT = {
     ],
 }
 
-
 def _copy_layout(layout: Dict[str, Any]) -> Dict[str, Any]:
     return copy.deepcopy(layout)
-
 
 def get_default_layout() -> Dict[str, Any]:
     return _copy_layout(DEFAULT_LAYOUT)
 
-
 def get_default_widget_ids() -> List[str]:
     return [w['id'] for w in DEFAULT_WIDGETS]
 
-
 def get_available_widgets() -> List[Dict[str, Any]]:
     return copy.deepcopy(DEFAULT_WIDGETS)
-
 
 def _ensure_layout_record(layout: DashboardLayout | None, user, company) -> DashboardLayout:
     if layout:
@@ -102,7 +97,6 @@ def _ensure_layout_record(layout: DashboardLayout | None, user, company) -> Dash
         layout=get_default_layout(),
         widgets=get_default_widget_ids(),
     )
-
 
 def _fetch_or_build_snapshots(company, period_label: str) -> tuple[SalesPerformanceSnapshot | None, CashflowSnapshot | None]:
     alias = get_warehouse_alias("default")
@@ -137,10 +131,8 @@ def _fetch_or_build_snapshots(company, period_label: str) -> tuple[SalesPerforma
 
     return sales_snapshot, cash_snapshot
 
-
 def _as_float(value) -> float:
     return float(decimal_or_zero(value))
-
 
 def _build_recent_orders(company, limit: int = 6) -> List[Dict[str, Any]]:
     orders = (
@@ -159,7 +151,6 @@ def _build_recent_orders(company, limit: int = 6) -> List[Dict[str, Any]]:
         }
         for order in orders
     ]
-
 
 def _build_overdue_invoices(company, limit: int = 6) -> List[Dict[str, Any]]:
     today = timezone.now().date()
@@ -180,7 +171,6 @@ def _build_overdue_invoices(company, limit: int = 6) -> List[Dict[str, Any]]:
         }
         for invoice in invoices
     ]
-
 
 def _build_widget_payload(widget_id: str, sales_snapshot, cash_snapshot, extras: Dict[str, Any]) -> Dict[str, Any]:
     if widget_id == 'kpi-total-revenue':
@@ -224,6 +214,48 @@ def _build_widget_payload(widget_id: str, sales_snapshot, cash_snapshot, extras:
 
     return {}
 
+WIDGET_GROUP_MAP = {
+    # System Settings
+    'kpi-users': 'System Settings',
+    'kpi-permissions': 'System Settings',
+    'kpi-companies': 'System Settings',
+    'kpi-audit-logs': 'System Settings',
+    'kpi-notifications': 'System Settings',
+    'kpi-security': 'System Settings',
+
+    # Core Modules
+    'kpi-total-revenue': 'Core Modules',
+    'kpi-total-orders': 'Core Modules',
+    'kpi-receivables': 'Core Modules',
+    'kpi-payables': 'Core Modules',
+    'chart-sales-trend': 'Core Modules',
+    'chart-cashflow': 'Core Modules',
+    'table-top-customers': 'Core Modules',
+    'table-top-products': 'Core Modules',
+    'list-recent-orders': 'Core Modules',
+    'list-overdue-invoices': 'Core Modules',
+    'kpi-procurement': 'Core Modules',
+    'kpi-inventory': 'Core Modules',
+    'kpi-sales': 'Core Modules',
+    'kpi-budgeting': 'Core Modules',
+    'kpi-hr': 'Core Modules',
+
+    # Additional Modules
+    'kpi-microfinance': 'Additional Modules',
+    'kpi-ngo': 'Additional Modules',
+    'kpi-production': 'Additional Modules',
+    'kpi-projects': 'Additional Modules',
+    'kpi-assets': 'Additional Modules',
+
+    # Value Added Modules
+    'kpi-ai-companion': 'Value Added Modules',
+    'kpi-report-builder': 'Value Added Modules',
+    'kpi-analytics': 'Value Added Modules',
+    'kpi-form-builder': 'Value Added Modules',
+    'kpi-data-migration': 'Value Added Modules',
+    'kpi-tasks': 'Value Added Modules',
+    'kpi-workflows': 'Value Added Modules',
+}
 
 def load_dashboard(user, company, period: str = '30d') -> Dict[str, Any]:
     """
@@ -291,6 +323,7 @@ def load_dashboard(user, company, period: str = '30d') -> Dict[str, Any]:
         widgets_payload.append({
             **widget_meta,
             'data': widget_data,
+            'group': WIDGET_GROUP_MAP.get(widget_id, 'Core Modules'),
         })
 
     return {

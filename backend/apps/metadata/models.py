@@ -152,3 +152,25 @@ class MetadataDefinition(models.Model):
             .first()
         )
         return (latest.version + 1) if latest else 1
+
+
+class DocumentSequence(models.Model):
+    """
+    Per-company, per-document-type, per-fiscal-year sequence for human-friendly document numbers.
+    Example numbers: PO-2025-00001, PR-2025-00042, DO-2025-00003
+    """
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="document_sequences")
+    doc_type = models.CharField(max_length=20, help_text="Short document code, e.g., PO, PR, DO, GRN, JV")
+    fiscal_year = models.CharField(max_length=10, help_text="Fiscal year or period key, e.g., 2025 or 25")
+    current_value = models.PositiveIntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("company", "doc_type", "fiscal_year")
+        indexes = [
+            models.Index(fields=["company", "doc_type", "fiscal_year"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.company.code}:{self.doc_type}:{self.fiscal_year} -> {self.current_value}"

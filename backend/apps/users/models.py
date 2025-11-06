@@ -57,3 +57,88 @@ class UserCompanyRole(models.Model):
     class Meta:
         unique_together = [['user', 'company', 'role']]
         db_table = 'user_company_roles'
+
+
+class UserOrganizationalAccess(models.Model):
+    """
+    Multi-scoped access for users.
+    A user can have different roles at different levels.
+    """
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='org_access'
+    )
+
+    # Top-level access
+    access_groups = models.ManyToManyField(
+        'companies.CompanyGroup',
+        blank=True,
+        related_name='members_via_group'
+    )
+
+    access_companies = models.ManyToManyField(
+        'companies.Company',
+        blank=True,
+        related_name='members_via_company'
+    )
+
+    access_branches = models.ManyToManyField(
+        'companies.Branch',
+        blank=True,
+        related_name='members_via_branch'
+    )
+
+    access_departments = models.ManyToManyField(
+        'companies.Department',
+        blank=True,
+        related_name='members_via_department'
+    )
+
+    # Default/primary context for UX
+    primary_group = models.ForeignKey(
+        'companies.CompanyGroup',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+        help_text='Default group on login'
+    )
+
+    primary_company = models.ForeignKey(
+        'companies.Company',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+        help_text='Default company on login'
+    )
+
+    primary_branch = models.ForeignKey(
+        'companies.Branch',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+        help_text='Default branch on login (if applicable)'
+    )
+
+    primary_department = models.ForeignKey(
+        'companies.Department',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+        help_text='Default department on login (if applicable)'
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'user_organizational_access'
+        verbose_name = 'User Organizational Access'
+        verbose_name_plural = 'User Organizational Access'
+
+    def __str__(self):
+        return f"{self.user.username} - Organizational Access"

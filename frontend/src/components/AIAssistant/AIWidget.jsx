@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Avatar,
   Badge,
@@ -32,6 +32,7 @@ import {
   DeleteOutlined,
 } from '@ant-design/icons';
 import api from '../../services/api';
+import { useNavigate } from 'react-router-dom';
 import {
   chatWithAI,
   deleteAIPreference,
@@ -64,6 +65,7 @@ const formatTimestamp = (value) => {
 
 const AIWidget = () => {
   const { currentCompany } = useCompany();
+  const navigate = useNavigate();
   const [visible, setVisible] = useState(false);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -356,9 +358,10 @@ const AIWidget = () => {
         await loadUnreadAlerts();
       }
     } catch (error) {
+      const serverMsg = error?.response?.data?.message;
       const errorMessage = {
         role: 'assistant',
-        content: 'Sorry, I ran into an issue. Please try again.',
+        content: serverMsg || "I'm having trouble responding right now. Please try again in a minute.",
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMessage]);
@@ -410,7 +413,7 @@ const AIWidget = () => {
   const handleAction = (action) => {
     if (!action) return;
     if (action.action === 'navigate' && action.payload?.path) {
-      window.location.href = action.payload.path;
+      navigate(action.payload.path);
       return;
     }
     if (action.action === 'api' && action.payload?.endpoint) {
@@ -548,7 +551,7 @@ const AIWidget = () => {
         width={420}
         onClose={() => setVisible(false)}
         open={visible}
-        bodyStyle={{ padding: 0 }}
+        styles={{ body: { padding: 0 } }}
         destroyOnClose
       >
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -579,7 +582,7 @@ const AIWidget = () => {
                       <Text type="secondary" style={{ display: 'block' }}>
                         Field:{' '}
                         {suggestion.metadata.field_label || suggestion.metadata.field_name}{' '}
-                        · {suggestion.metadata.definition_key}
+                        Â· {suggestion.metadata.definition_key}
                       </Text>
                     ) : null}
                     {suggestion.metadata?.rule_code === 'metadata.dashboard_widget' ? (
@@ -844,3 +847,4 @@ const AIWidget = () => {
 };
 
 export default AIWidget;
+

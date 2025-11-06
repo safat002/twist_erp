@@ -107,7 +107,7 @@ const ItemCodes = () => {
             <Select
               showSearch
               optionFilterProp="label"
-              options={(uoms || []).map((u) => ({ value: u.id, label: `${u.code} - ${u.name}` }))}
+              options={(uoms || []).map((u) => ({ value: u.id, label: `${u.short_name || u.code} - ${u.name}` }))}
             />
           </Form.Item>
           <Form.Item name="standard_price" label="Standard Price">

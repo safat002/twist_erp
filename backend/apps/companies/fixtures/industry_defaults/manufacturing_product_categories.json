@@ -1,0 +1,9 @@
+[
+  {"code": "FG", "name": "Finished Goods", "parent_code": null, "level": 0, "is_featured": true},
+  {"code": "FG-CAT-A", "name": "Product Category A", "parent_code": "FG", "level": 1, "is_featured": false},
+  {"code": "FG-CAT-B", "name": "Product Category B", "parent_code": "FG", "level": 1, "is_featured": false},
+
+  {"code": "SEMI", "name": "Semi-Finished Goods", "parent_code": null, "level": 0, "is_featured": false},
+
+  {"code": "BYPRODUCT", "name": "By-Products", "parent_code": null, "level": 0, "is_featured": false}
+]

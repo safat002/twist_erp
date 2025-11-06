@@ -12,6 +12,17 @@ from .views import (
     CostCenterViewSet,
     BudgetItemCodeViewSet,
     BudgetUnitOfMeasureViewSet,
+    BudgetApprovalQueueView,
+    BudgetRemarkTemplateViewSet,
+    BudgetVarianceAuditViewSet,
+    # Entry endpoints
+    PermittedCostCentersView,
+    DeclaredBudgetsView,
+    EntrySummaryView,
+    LastPriceView,
+    AddBudgetItemView,
+    SubmitEntryView,
+    EntryLinesView,
 )
 
 router = DefaultRouter()
@@ -23,9 +34,20 @@ router.register(r'overrides', BudgetOverrideRequestViewSet, basename='budget-ove
 router.register(r'snapshots', BudgetSnapshotViewSet, basename='budget-snapshots')
 router.register(r'item-codes', BudgetItemCodeViewSet, basename='budget-item-codes')
 router.register(r'uoms', BudgetUnitOfMeasureViewSet, basename='budget-uoms')
+router.register(r'remark-templates', BudgetRemarkTemplateViewSet, basename='budget-remark-templates')
+router.register(r'variance-audit', BudgetVarianceAuditViewSet, basename='budget-variance-audit')
 
 urlpatterns = [
     path('', include(router.urls)),
     path('check-availability/', BudgetAvailabilityCheckView.as_view(), name='budget-availability'),
     path('workspace/summary/', BudgetWorkspaceSummaryView.as_view(), name='budget-workspace-summary'),
+    path('approvals/queue/', BudgetApprovalQueueView.as_view(), name='budget-approval-queue'),
+    # Budget Entry specific
+    path('entry/declared/', DeclaredBudgetsView.as_view(), name='budget-entry-declared'),
+    path('entry/cost-centers/', PermittedCostCentersView.as_view(), name='budget-entry-cost-centers'),
+    path('entry/summary/', EntrySummaryView.as_view(), name='budget-entry-summary'),
+    path('entry/price/', LastPriceView.as_view(), name='budget-entry-price'),
+    path('entry/lines/', EntryLinesView.as_view(), name='budget-entry-lines'),
+    path('entry/add/', AddBudgetItemView.as_view(), name='budget-entry-add'),
+    path('entry/submit/', SubmitEntryView.as_view(), name='budget-entry-submit'),
 ]

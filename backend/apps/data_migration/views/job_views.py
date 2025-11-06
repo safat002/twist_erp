@@ -115,7 +115,13 @@ class MigrationJobViewSet(viewsets.ModelViewSet):
             task = stage_migration_job.delay(job.id)
             return Response({"task_id": task.id, "status": job.status})
         pipeline = MigrationPipeline(job)
-        pipeline.stage_rows(user=request.user)
+        # Optional chunk_size for large CSVs
+        chunk_size = request.query_params.get("chunk_size")
+        try:
+            chunk_size = int(chunk_size) if chunk_size else None
+        except Exception:
+            chunk_size = None
+        pipeline.stage_rows(user=request.user, chunk_size=chunk_size)
         job.refresh_from_db()
         return Response(
             {

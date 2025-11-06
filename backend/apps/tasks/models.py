@@ -68,3 +68,38 @@ class TaskItem(CompanyAwareModel):
 
     def __str__(self) -> str:
         return f"{self.title}"
+
+
+class CalendarProvider(models.TextChoices):
+    GOOGLE = "google", "Google"
+    OUTLOOK = "outlook", "Outlook"
+
+
+class UserCalendarLink(CompanyAwareModel):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="calendar_links")
+    provider = models.CharField(max_length=20, choices=CalendarProvider.choices, default=CalendarProvider.GOOGLE)
+    email = models.EmailField(blank=True)
+    is_enabled = models.BooleanField(default=False)
+    # Private token for ICS feed subscription
+    ics_token = models.CharField(max_length=64, unique=True)
+
+    class Meta:
+        unique_together = ("company", "user", "provider")
+
+    def __str__(self) -> str:
+        return f"{self.user_id}:{self.provider}:{'on' if self.is_enabled else 'off'}"
+
+
+class UserCalendarCredential(CompanyAwareModel):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="calendar_credentials")
+    provider = models.CharField(max_length=20, choices=CalendarProvider.choices, default=CalendarProvider.OUTLOOK)
+    access_token = models.TextField()
+    refresh_token = models.TextField()
+    expires_at = models.DateTimeField()
+    scope = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        unique_together = ("company", "user", "provider")
+
+    def __str__(self) -> str:
+        return f"{self.user_id}:{self.provider} cred"

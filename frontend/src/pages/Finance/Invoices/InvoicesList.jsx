@@ -27,6 +27,7 @@ import {
   createInvoice,
   fetchAccounts,
   fetchInvoices,
+  approveInvoice,
   postInvoice,
 } from '../../../services/finance';
 
@@ -222,16 +223,28 @@ const InvoiceList = () => {
     {
       title: 'Actions',
       key: 'actions',
-      render: (_, record) =>
-        record.status === 'POSTED' || record.status === 'PAID' ? (
-          <Tag icon={<CheckCircleOutlined />} color="green">
-            Posted
-          </Tag>
-        ) : (
-          <Button type="link" onClick={() => handlePost(record)}>
-            Post
-          </Button>
-        ),
+      render: (_, record) => (
+        <Space>
+          {(record.status === 'DRAFT' || record.status === 'CANCELLED') && (
+            <Button type="link" onClick={async () => {
+              try {
+                await approveInvoice(record.id);
+                message.success('Invoice approved.');
+                loadInvoices({ type: filterType });
+              } catch (error) {
+                message.error(error?.response?.data?.detail || 'Unable to approve invoice.');
+              }
+            }}>
+              Approve
+            </Button>
+          )}
+          {record.status === 'POSTED' || record.status === 'PAID' ? (
+            <Tag icon={<CheckCircleOutlined />} color="green">Posted</Tag>
+          ) : (
+            <Button type="link" onClick={() => handlePost(record)}>Post</Button>
+          )}
+        </Space>
+      ),
     },
   ];
 

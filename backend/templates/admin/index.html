@@ -1,81 +1,980 @@
-{% extends "admin/base_site.html" %} {% block extrastyle %} {{ block.super }}
-<style>
-	/* Responsive card grid for dashboard */
-	.admin-cards {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-		gap: 16px;
-		margin-top: 12px;
-		width: 100%;
-	}
-	@media (min-width: 576px) {
-		.admin-cards {
-			grid-template-columns: repeat(2, 1fr);
-		}
-	}
-	@media (min-width: 768px) {
-		.admin-cards {
-			grid-template-columns: repeat(3, 1fr);
-		}
-	}
-	@media (min-width: 992px) {
-		.admin-cards {
-			grid-template-columns: repeat(4, 1fr);
-		}
-	}
-	@media (min-width: 1200px) {
-		.admin-cards {
-			grid-template-columns: repeat(5, 1fr);
-		}
-	}
-	.admin-card {
-		border: 1px solid #e5e5e5;
-		border-radius: 8px;
-		padding: 16px;
-		background: #fff;
-		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
-	}
-	.admin-card h3 {
-		margin: 0 0 8px 0;
-		font-size: 16px;
-	}
-	.admin-card ul {
-		margin: 0;
-		padding-left: 18px;
-	}
-	.admin-card .meta {
-		color: #999;
-		font-size: 12px;
-		margin-top: 8px;
-	}
-</style>
-{% endblock %} {% block content_title %}
-<h1>{{ site_header|default:'Twist ERP' }}</h1>
-<p class="help">{{ index_title|default:'' }}</p>
-{% endblock %} {% block content %}
-<div id="content-main">
-	{% if app_list %}
-	<div class="admin-cards">
-		{% for app in app_list %}
-		<div class="admin-card">
-			<h3>{{ app.name }}</h3>
-			<ul>
-				{% for model in app.models %}
-				<li>
-					{% if model.admin_url %}
-					<a href="{{ model.admin_url }}">{{ model.name }}</a>
-					{% else %} {{ model.name }} {% endif %} {% if model.add_url %}
-					&nbsp;·&nbsp;<a href="{{ model.add_url }}">Add</a>
-					{% endif %}
-				</li>
-				{% endfor %}
-			</ul>
-			<div class="meta">{{ app.app_label }}</div>
-		</div>
-		{% endfor %}
-	</div>
-	{% else %}
-	<p>No apps are registered.</p>
-	{% endif %}
-</div>
+{% extends "admin/base_site.html" %}
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    /* Modern Dashboard Layout */
+    .admin-dashboard {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 20px;
+      align-items: start;
+      animation: fadeIn 0.5s ease-in;
+    }
+    @media (min-width: 992px) {
+      .admin-dashboard { grid-template-columns: 1fr 340px; }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Collapsible Group Container */
+    .admin-cards-container {
+      margin-top: 20px;
+    }
+
+    .app-group {
+      margin-bottom: 30px;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+      background: #fff;
+      transition: all 0.3s ease;
+    }
+
+    .app-group:hover {
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    }
+
+    /* Group Header */
+    .group-header {
+      background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+      padding: 18px 24px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: all 0.3s ease;
+      border-bottom: 3px solid #3498db;
+    }
+
+    .group-header:hover {
+      background: linear-gradient(135deg, #34495e 0%, #2c3e50 100%);
+    }
+
+    .group-header-left {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+
+    .group-icon {
+      width: 40px;
+      height: 40px;
+      background: rgba(52, 152, 219, 0.2);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #3498db;
+      font-size: 1.3rem;
+    }
+
+    .group-title {
+      color: #ffffff;
+      font-size: 1.3rem;
+      font-weight: 600;
+      margin: 0;
+      letter-spacing: 0.5px;
+    }
+
+    .group-count {
+      background: rgba(52, 152, 219, 0.3);
+      color: #ffffff;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-left: 10px;
+    }
+
+    .group-toggle {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: rgba(255, 255, 255, 0.8);
+      font-size: 0.9rem;
+    }
+
+    .group-toggle-icon {
+      width: 32px;
+      height: 32px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.3s ease;
+    }
+
+    .group-toggle-icon i {
+      color: #ffffff;
+      transition: transform 0.3s ease;
+    }
+
+    .app-group.collapsed .group-toggle-icon i {
+      transform: rotate(-90deg);
+    }
+
+    /* Group Content */
+    .group-content {
+      padding: 20px;
+      background: #f8f9fa;
+      max-height: 3000px;
+      overflow: hidden;
+      transition: max-height 0.4s ease, padding 0.4s ease;
+    }
+
+    .app-group.collapsed .group-content {
+      max-height: 0;
+      padding: 0 20px;
+    }
+
+    /* Masonry-style cards with improved spacing */
+    .admin-cards {
+      column-count: 1;
+      column-gap: 20px;
+      width: 100%;
+    }
+    @media (min-width: 576px) { .admin-cards { column-count: 2; } }
+    @media (min-width: 992px) { .admin-cards { column-count: 3; } }
+    @media (min-width: 1400px) { .admin-cards { column-count: 4; } }
+
+    /* Enhanced Card Styling */
+    .admin-card {
+      border: none;
+      border-radius: 12px;
+      padding: 20px;
+      background: linear-gradient(135deg, #fff 0%, #f8f9fa 100%);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+      display: inline-block;
+      width: 100%;
+      margin: 0 0 20px;
+      break-inside: avoid;
+      -webkit-column-break-inside: avoid;
+      -moz-column-break-inside: avoid;
+      transition: all 0.3s ease;
+      border-left: 4px solid #3498db;
+    }
+
+    .admin-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+    }
+
+    .admin-card .card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 15px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid #e9ecef;
+    }
+
+    .admin-card h3 {
+      margin: 0;
+      font-size: 1.1rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #2c3e50;
+      font-weight: 600;
+    }
+
+    .admin-card h3 i {
+      font-size: 1.3rem;
+      color: #3498db;
+    }
+
+    .admin-card ul {
+      margin: 0;
+      padding-left: 0;
+      list-style: none;
+    }
+
+    .admin-card ul li {
+      padding: 8px 0;
+      border-bottom: 1px dashed #e9ecef;
+      transition: all 0.2s ease;
+    }
+
+    .admin-card ul li:last-child {
+      border-bottom: none;
+    }
+
+    .admin-card ul li:hover {
+      padding-left: 8px;
+      background-color: rgba(52, 152, 219, 0.05);
+    }
+
+    .admin-card ul li a {
+      color: #495057;
+      text-decoration: none;
+      font-weight: 500;
+      transition: color 0.2s ease;
+    }
+
+    .admin-card ul li a:hover {
+      color: #3498db;
+    }
+
+    .admin-card .meta {
+      color: #6c757d;
+      font-size: 0.8rem;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid #e9ecef;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 500;
+    }
+
+    /* Enhanced Toggle Switch */
+    .feature-toggle-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #cbd5e0;
+      transition: .3s;
+      border-radius: 24px;
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .3s;
+      border-radius: 50%;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    input:checked + .slider {
+      background: linear-gradient(135deg, #27ae60 0%, #229954 100%);
+    }
+
+    input:focus + .slider {
+      box-shadow: 0 0 0 3px rgba(39, 174, 96, 0.2);
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(20px);
+    }
+
+    .toggle-note {
+      color: #6c757d;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+
+    /* Sub-feature list */
+    .feature-section { margin-top: 10px; }
+    .feature-section-title { font-size: 12px; color: #666; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .02em; }
+    .feature-list { list-style: none; margin: 0; padding: 0; }
+    .feature-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; border-top: 1px dashed #eee; }
+    .feature-list li:first-child { border-top: none; }
+    .feature-list .feature-name { font-size: 13px; color: #333; }
+    .feature-toggle-wrap.feature-sub { margin-left: 8px; opacity: 0.9; }
+    .feature-toggle-wrap.feature-sub .switch { transform: scale(0.9); transform-origin: left center; }
+    .feature-list .toggle-note { font-size: 10px; }
+    .feature-actions { margin-top: 6px; }
+    .feature-actions button { border: none; background: none; color: #007bff; cursor: pointer; font-size: 12px; padding: 0; }
+
+    /* Enhanced Quick Actions Bar */
+    .quick-bar {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+
+    .quick-bar .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: linear-gradient(135deg, #fff 0%, #f8f9fa 100%);
+      border: 2px solid #e9ecef;
+      color: #2c3e50;
+      padding: 10px 18px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 500;
+      transition: all 0.3s ease;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    }
+
+    .quick-bar .btn:hover {
+      background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+      color: #fff;
+      border-color: #3498db;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(52, 152, 219, 0.3);
+    }
+
+    /* Modern Stats Cards */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+
+    @media (min-width: 768px) {
+      .stats { grid-template-columns: repeat(4, 1fr); }
+    }
+
+    .stat-card {
+      background: linear-gradient(135deg, #fff 0%, #f8f9fa 100%);
+      border: none;
+      border-left: 4px solid #3498db;
+      border-radius: 10px;
+      padding: 18px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+      transition: all 0.3s ease;
+    }
+
+    .stat-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+    }
+
+    .stat-title {
+      color: #6c757d;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .stat-value {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #2c3e50;
+      line-height: 1;
+    }
+
+    /* Enhanced Sidebar */
+    .admin-sidebar .module {
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #fff 0%, #f8f9fa 100%);
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+      border-left: 4px solid #3498db;
+    }
+
+    .admin-sidebar h3 {
+      margin: 0 0 15px;
+      font-size: 1.1rem;
+      color: #2c3e50;
+      font-weight: 600;
+      padding-bottom: 12px;
+      border-bottom: 2px solid #e9ecef;
+    }
+
+    .actionlist {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    .actionlist li {
+      padding: 12px 0;
+      border-bottom: 1px dashed #e9ecef;
+      transition: all 0.2s ease;
+    }
+
+    .actionlist li:first-child {
+      padding-top: 0;
+    }
+
+    .actionlist li:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+
+    .actionlist li:hover {
+      padding-left: 8px;
+      background-color: rgba(52, 152, 219, 0.05);
+    }
+
+    .actionlist li a {
+      color: #495057;
+      text-decoration: none;
+      font-weight: 500;
+      transition: color 0.2s ease;
+    }
+
+    .actionlist li a:hover {
+      color: #3498db;
+    }
+
+    .actionlist .meta {
+      color: #6c757d;
+      font-size: 0.75rem;
+      margin-top: 4px;
+      display: block;
+    }
+  </style>
 {% endblock %}
+{% block content_title %}
+  <h1>{{ site_header|default:'Twist ERP' }}</h1>
+  <p class="help">{{ index_title|default:'' }}</p>
+{% endblock %}
+{% block content %}
+<div id="content-main" class="admin-dashboard">
+  <div class="admin-main">
+  {% if app_list %}
+  <div class="quick-bar">
+    <a class="btn" href="/admin/admin_settings/modulefeaturetoggle/">Feature Toggles</a>
+    <a class="btn" href="/admin/admin_settings/featureauditlog/">Audit Logs</a>
+    <button type="button" id="btn-invalidate-cache" class="btn">Invalidate Feature Cache</button>
+  </div>
+  <div class="stats" id="stats">
+    <div class="stat-card"><div class="stat-title">Enabled Modules</div><div class="stat-value" id="stat-modules">-</div></div>
+    <div class="stat-card"><div class="stat-title">Enabled Features</div><div class="stat-value" id="stat-features">-</div></div>
+    <div class="stat-card"><div class="stat-title">Scope</div><div class="stat-value" id="stat-scope">-</div></div>
+    <div class="stat-card"><div class="stat-title">From Cache</div><div class="stat-value" id="stat-cached">-</div></div>
+  </div>
+  <div class="admin-cards-container">
+    <div id="admin-groups-container"></div>
+  </div>
+
+  {# Hidden app data for JavaScript #}
+  <script id="app-data" type="application/json">
+  [
+    {% for app in app_list %}
+    {
+      "app_label": "{{ app.app_label }}",
+      "name": "{{ app.name }}",
+      "models": [
+        {% for model in app.models %}
+        {
+          "name": "{{ model.name }}",
+          "admin_url": "{% if model.admin_url %}{{ model.admin_url }}{% endif %}",
+          "add_url": "{% if model.add_url %}{{ model.add_url }}{% endif %}"
+        }{% if not forloop.last %},{% endif %}
+        {% endfor %}
+      ]
+    }{% if not forloop.last %},{% endif %}
+    {% endfor %}
+  ]
+  </script>
+
+  {% else %}
+  <p>No apps are registered.</p>
+  {% endif %}
+  </div>
+  <aside class="admin-sidebar">
+    <div class="module" id="recent-actions-module">
+      {% load log i18n %}
+      <h3>{% trans 'Recent actions' %}</h3>
+      {% get_admin_log 10 as admin_log for_user user %}
+      <ul class="actionlist">
+        {% for entry in admin_log %}
+          <li class="{% if entry.is_addition %}add{% elif entry.is_change %}change{% elif entry.is_deletion %}delete{% endif %}">
+            {% if entry.is_deletion or not entry.get_admin_url %}
+              {{ entry.object_repr }}
+            {% else %}
+              <a href="{{ entry.get_admin_url }}">{{ entry.object_repr }}</a>
+            {% endif %}
+            <br>
+            <span class="meta">{{ entry.content_type }} - {{ entry.action_time|date:"Y-m-d H:i" }}</span>
+          </li>
+        {% empty %}
+          <li><span class="meta">{% trans 'No recent actions.' %}</span></li>
+        {% endfor %}
+      </ul>
+    </div>
+  </aside>
+</div>
+<script>
+  (function() {
+    // Load app data from JSON script tag
+    var APP_LIST = [];
+    try {
+      var appDataScript = document.getElementById('app-data');
+      if (appDataScript) {
+        APP_LIST = JSON.parse(appDataScript.textContent);
+      }
+    } catch(e) {
+      console.error('Failed to load app data:', e);
+    }
+    var ICONS = {
+      finance: 'fas fa-dollar-sign',
+      inventory: 'fas fa-boxes',
+      sales: 'fas fa-shopping-cart',
+      procurement: 'fas fa-truck-loading',
+      hr: 'fas fa-users',
+      production: 'fas fa-industry',
+      projects: 'fas fa-tasks',
+      policies: 'fas fa-shield-alt',
+      analytics: 'fas fa-chart-line',
+      report_builder: 'fas fa-file-alt',
+      workflows: 'fas fa-project-diagram',
+      form_builder: 'fas fa-wpforms',
+      data_migration: 'fas fa-database',
+      assets: 'fas fa-tools',
+      budgeting: 'fas fa-piggy-bank',
+      tasks: 'fas fa-check-square',
+      notifications: 'fas fa-bell',
+      ai_companion: 'fas fa-robot',
+      ngo: 'fas fa-hands-helping',
+      microfinance: 'fas fa-university',
+      companies: 'fas fa-building',
+      users: 'fas fa-user',
+      auth: 'fas fa-users-cog',
+      security: 'fas fa-shield-alt',
+      admin_settings: 'fas fa-cog',
+      audit: 'fas fa-history',
+      permissions: 'fas fa-key',
+      dashboard: 'fas fa-tachometer-alt'
+    };
+
+    // App Groupings Configuration
+    var APP_GROUPS = {
+      'system_settings': {
+        title: 'System Settings',
+        icon: 'fas fa-cog',
+        color: '#e74c3c',
+        apps: ['admin_settings', 'audit', 'auth', 'companies', 'permissions', 'notifications', 'users', 'security']
+      },
+      'core_modules': {
+        title: 'Core Modules',
+        icon: 'fas fa-briefcase',
+        color: '#3498db',
+        apps: ['finance', 'procurement', 'inventory', 'sales', 'budgeting', 'hr']
+      },
+      'additional_modules': {
+        title: 'Additional Modules',
+        icon: 'fas fa-puzzle-piece',
+        color: '#9b59b6',
+        apps: ['microfinance', 'ngo', 'production', 'projects', 'assets', 'policies']
+      },
+      'value_added': {
+        title: 'Value Added Modules',
+        icon: 'fas fa-magic',
+        color: '#27ae60',
+        apps: ['ai_companion', 'report_builder', 'analytics', 'form_builder', 'data_migration', 'tasks', 'workflows', 'dashboard']
+      }
+    };
+
+    // Helper functions
+    function getCookie(name) {
+      var value = '; ' + document.cookie;
+      var parts = value.split('; ' + name + '=');
+      if (parts.length === 2) return parts.pop().split(';').shift();
+      return null;
+    }
+
+    function getGroupPreference(groupId) {
+      try {
+        var prefs = JSON.parse(localStorage.getItem('admin_group_collapsed') || '{}');
+        return prefs[groupId] === true;
+      } catch(e) {
+        return false;
+      }
+    }
+
+    function setGroupPreference(groupId, collapsed) {
+      try {
+        var prefs = JSON.parse(localStorage.getItem('admin_group_collapsed') || '{}');
+        prefs[groupId] = collapsed;
+        localStorage.setItem('admin_group_collapsed', JSON.stringify(prefs));
+      } catch(e) {}
+    }
+
+    function organizeAppsIntoGroups() {
+      var groups = {};
+      var ungroupedApps = [];
+
+      // Initialize groups
+      for (var groupId in APP_GROUPS) {
+        groups[groupId] = {
+          config: APP_GROUPS[groupId],
+          apps: []
+        };
+      }
+
+      // Organize apps into groups
+      APP_LIST.forEach(function(app) {
+        var appLabel = app.app_label.toLowerCase();
+        var found = false;
+
+        for (var groupId in APP_GROUPS) {
+          if (APP_GROUPS[groupId].apps.indexOf(appLabel) !== -1) {
+            groups[groupId].apps.push(app);
+            found = true;
+            break;
+          }
+        }
+
+        if (!found) {
+          ungroupedApps.push(app);
+        }
+      });
+
+      return { groups: groups, ungrouped: ungroupedApps };
+    }
+
+    function createAppCard(app) {
+      var card = document.createElement('div');
+      card.className = 'admin-card';
+      card.setAttribute('data-module', app.app_label);
+
+      var iconClass = ICONS[app.app_label.toLowerCase()] || 'fas fa-circle';
+
+      var html = '<div class="card-head"><h3>';
+      html += '<i class="' + iconClass + '"></i> ' + app.name;
+      html += '</h3>';
+      html += '<div class="feature-toggle-wrap" title="Toggle module visibility in frontend">';
+      html += '<label class="switch">';
+      html += '<input type="checkbox" class="feature-toggle" data-module="' + app.app_label + '" disabled>';
+      html += '<span class="slider"></span></label>';
+      html += '<span class="toggle-note js-toggle-status" data-module="' + app.app_label + '">Loading...</span>';
+      html += '</div></div>';
+
+      html += '<ul>';
+      app.models.forEach(function(model) {
+        html += '<li>';
+        if (model.admin_url) {
+          html += '<a href="' + model.admin_url + '">' + model.name + '</a>';
+        } else {
+          html += model.name;
+        }
+        if (model.add_url) {
+          html += ' &bull; <a href="' + model.add_url + '">Add</a>';
+        }
+        html += '</li>';
+      });
+      html += '</ul>';
+
+      html += '<div class="feature-section" data-module="' + app.app_label + '">';
+      html += '<div class="feature-section-title">Features</div>';
+      html += '<ul class="feature-list" data-feature-list></ul>';
+      html += '<div class="feature-actions"><button type="button" class="js-toggle-features" data-state="collapsed">Show all</button></div>';
+      html += '</div>';
+
+      html += '<div class="meta">' + app.app_label + '</div>';
+
+      card.innerHTML = html;
+      return card;
+    }
+
+    function createGroup(groupId, groupData) {
+      if (groupData.apps.length === 0) return null;
+
+      var isCollapsed = getGroupPreference(groupId);
+      var group = document.createElement('div');
+      group.className = 'app-group' + (isCollapsed ? ' collapsed' : '');
+      group.setAttribute('data-group-id', groupId);
+
+      // Create header
+      var header = document.createElement('div');
+      header.className = 'group-header';
+      header.style.borderBottomColor = groupData.config.color;
+
+      var headerLeft = document.createElement('div');
+      headerLeft.className = 'group-header-left';
+
+      var icon = document.createElement('div');
+      icon.className = 'group-icon';
+      icon.style.color = groupData.config.color;
+      icon.innerHTML = '<i class="' + groupData.config.icon + '"></i>';
+
+      var titleContainer = document.createElement('div');
+      var title = document.createElement('h2');
+      title.className = 'group-title';
+      title.textContent = groupData.config.title;
+
+      var count = document.createElement('span');
+      count.className = 'group-count';
+      count.textContent = groupData.apps.length + ' modules';
+
+      title.appendChild(count);
+      titleContainer.appendChild(title);
+      headerLeft.appendChild(icon);
+      headerLeft.appendChild(titleContainer);
+
+      var toggleDiv = document.createElement('div');
+      toggleDiv.className = 'group-toggle';
+      toggleDiv.innerHTML = '<span>' + (isCollapsed ? 'Expand' : 'Collapse') + '</span><div class="group-toggle-icon"><i class="fas fa-chevron-down"></i></div>';
+
+      header.appendChild(headerLeft);
+      header.appendChild(toggleDiv);
+
+      // Create content
+      var content = document.createElement('div');
+      content.className = 'group-content';
+
+      var cardsContainer = document.createElement('div');
+      cardsContainer.className = 'admin-cards';
+
+      groupData.apps.forEach(function(app) {
+        cardsContainer.appendChild(createAppCard(app));
+      });
+
+      content.appendChild(cardsContainer);
+
+      // Add click handler
+      header.addEventListener('click', function() {
+        group.classList.toggle('collapsed');
+        var isNowCollapsed = group.classList.contains('collapsed');
+        setGroupPreference(groupId, isNowCollapsed);
+        toggleDiv.querySelector('span').textContent = isNowCollapsed ? 'Expand' : 'Collapse';
+      });
+
+      group.appendChild(header);
+      group.appendChild(content);
+
+      return group;
+    }
+
+    function renderGroups() {
+      var container = document.getElementById('admin-groups-container');
+      if (!container) return;
+
+      var organized = organizeAppsIntoGroups();
+
+      // Render groups in order
+      ['system_settings', 'core_modules', 'additional_modules', 'value_added'].forEach(function(groupId) {
+        var groupElement = createGroup(groupId, organized.groups[groupId]);
+        if (groupElement) {
+          container.appendChild(groupElement);
+        }
+      });
+
+      // Render ungrouped apps if any
+      if (organized.ungrouped.length > 0) {
+        var ungroupedData = {
+          config: { title: 'Other Modules', icon: 'fas fa-ellipsis-h', color: '#95a5a6' },
+          apps: organized.ungrouped
+        };
+        var ungroupedElement = createGroup('ungrouped', ungroupedData);
+        if (ungroupedElement) {
+          container.appendChild(ungroupedElement);
+        }
+      }
+    }
+
+    function setStatus(moduleName, text, isError) {
+      var el = document.querySelector('.js-toggle-status[data-module="' + moduleName + '"]');
+      if (!el) return;
+      el.textContent = text;
+      el.style.color = isError === true ? '#dc3545' : '#999';
+    }
+    function setSubStatus(li, text, isError) {
+      var el = li.querySelector('.js-sub-toggle-status');
+      if (!el) return;
+      el.textContent = text;
+      el.style.color = isError === true ? '#dc3545' : '#999';
+    }
+
+    function loadFeatures() {
+      fetch('/api/v1/admin-settings/features/', { credentials: 'same-origin' })
+        .then(function(res) { if (!res.ok) throw new Error('Failed to load'); return res.json(); })
+        .then(function(data) {
+          var features = data.features || {};
+          updateStatsFromFeatures(data);
+          // Module-level toggles
+          document.querySelectorAll('.feature-toggle').forEach(function(cb) {
+            var moduleName = cb.getAttribute('data-module');
+            var key = moduleName + '.module';
+            var f = features[key];
+            if (f) {
+              cb.checked = !!f.enabled;
+              cb.disabled = false;
+              setStatus(moduleName, (f.status && f.status !== 'enabled') ? f.status.replace('_', ' ') : (cb.checked ? 'Enabled' : 'Disabled'));
+            } else {
+              // Feature not in enabled map: assume disabled but allow enabling
+              cb.checked = false;
+              cb.disabled = false;
+              setStatus(moduleName, 'Disabled');
+            }
+          });
+          // Sub-feature lists
+          populateFeatureLists(features);
+        })
+        .catch(function() {
+          document.querySelectorAll('.feature-toggle').forEach(function(cb) { cb.disabled = true; });
+          document.querySelectorAll('.js-toggle-status').forEach(function(el) { el.textContent = 'Load failed'; el.style.color = '#dc3545'; });
+        });
+    }
+
+    function toggleFeature(moduleName, featureKey, enabled, cb) {
+      var url = '/api/v1/admin-settings/features/' + moduleName + '/' + featureKey + '/toggle/';
+      var csrftoken = getCookie('csrftoken') || '';
+      fetch(url, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrftoken },
+        body: JSON.stringify({ is_enabled: !!enabled })
+      })
+      .then(function(res) {
+        if (!res.ok) {
+          var err = new Error('Toggle failed');
+          err.status = res.status;
+          throw err;
+        }
+        return res.json();
+      })
+      .then(function(data) {
+        if (featureKey === 'module') {
+          setStatus(moduleName, data.is_enabled ? 'Enabled' : 'Disabled');
+        }
+      })
+      .catch(function(err) {
+        cb.checked = !enabled;
+        if (featureKey === 'module') {
+          if (err && err.status === 404) {
+            setStatus(moduleName, 'No toggle', true);
+            // Hide the switch entirely for modules without a toggle
+            var wrapper = cb.closest('.feature-toggle-wrap');
+            if (wrapper) {
+              var labelEl = wrapper.querySelector('.switch');
+              if (labelEl) { labelEl.style.display = 'none'; }
+            }
+            cb.disabled = true;
+          } else {
+            setStatus(moduleName, 'Update failed', true);
+          }
+        } else {
+          var li = cb.closest('li'); if (li) setSubStatus(li, 'Update failed', true);
+        }
+      })
+      .finally(function() { cb.disabled = false; });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+      // Render grouped cards first
+      renderGroups();
+
+      // Then load features
+      loadFeatures();
+
+      // Setup event delegation for feature toggles (since cards are dynamically created)
+      document.addEventListener('change', function(e) {
+        if (e.target.classList.contains('feature-toggle')) {
+          var moduleName = e.target.getAttribute('data-module');
+          var enabled = e.target.checked;
+          e.target.disabled = true;
+          setStatus(moduleName, enabled ? 'Enabling...' : 'Disabling...');
+          toggleFeature(moduleName, 'module', enabled, e.target);
+        }
+      });
+      // Invalidate cache button
+      var btnInvalidate = document.getElementById('btn-invalidate-cache');
+      if (btnInvalidate) {
+        btnInvalidate.addEventListener('click', function(){
+          var csrftoken = getCookie('csrftoken') || '';
+          fetch('/api/v1/admin-settings/features/invalidate-cache/', {
+            method: 'POST', credentials: 'same-origin', headers: { 'X-CSRFToken': csrftoken }
+          }).then(function(res){
+            if (!res.ok) throw new Error();
+            alert('Feature cache invalidated.');
+          }).catch(function(){ alert('Failed to invalidate cache'); });
+        });
+      }
+    });
+
+    function populateFeatureLists(features) {
+      var moduleMap = {};
+      Object.keys(features).forEach(function(fullKey) {
+        var parts = fullKey.split('.');
+        if (parts.length !== 2) return;
+        var moduleName = parts[0];
+        var featureKey = parts[1];
+        if (featureKey === 'module') return;
+        var f = features[fullKey] || {};
+        if (!moduleMap[moduleName]) moduleMap[moduleName] = [];
+        moduleMap[moduleName].push({ key: featureKey, name: f.name || featureKey, enabled: !!f.enabled, priority: f.priority || 0 });
+      });
+
+      document.querySelectorAll('.feature-section').forEach(function(section) {
+        var moduleName = section.getAttribute('data-module');
+        var list = section.querySelector('[data-feature-list]');
+        if (!list) return;
+        list.innerHTML = '';
+        var items = (moduleMap[moduleName] || []).sort(function(a,b){ return (b.priority||0) - (a.priority||0) || a.name.localeCompare(b.name); });
+        if (!items.length) { section.style.display = 'none'; return; }
+        section.style.display = '';
+        // Collapse to show first 5 by default
+        var maxCollapsed = 5;
+        items.forEach(function(item, idx) {
+          var li = document.createElement('li');
+          var left = document.createElement('span'); left.className = 'feature-name'; left.textContent = item.name;
+          var right = document.createElement('span'); right.className = 'feature-toggle-wrap feature-sub';
+          var label = document.createElement('label'); label.className = 'switch';
+          var input = document.createElement('input'); input.type = 'checkbox'; input.className = 'feature-toggle-sub'; input.checked = !!item.enabled; input.setAttribute('data-module', moduleName); input.setAttribute('data-feature', item.key);
+          var slider = document.createElement('span'); slider.className = 'slider';
+          var note = document.createElement('span'); note.className = 'toggle-note js-sub-toggle-status'; note.textContent = item.enabled ? 'Enabled' : 'Disabled';
+          label.appendChild(input); label.appendChild(slider); right.appendChild(label); right.appendChild(note);
+          li.appendChild(left); li.appendChild(right); list.appendChild(li);
+          if (idx >= maxCollapsed) { li.setAttribute('data-collapsed', 'true'); li.style.display = 'none'; }
+          input.addEventListener('change', function(e){
+            var enabled = e.target.checked; e.target.disabled = true; setSubStatus(li, enabled ? 'Enabling...' : 'Disabling...');
+            toggleFeature(moduleName, item.key, enabled, e.target);
+          });
+        });
+        var toggleBtn = section.querySelector('.js-toggle-features');
+        if (toggleBtn) {
+          // Hide toggle if not needed
+          if (items.length <= maxCollapsed) {
+            toggleBtn.style.display = 'none';
+          } else {
+            toggleBtn.addEventListener('click', function(){
+              var state = toggleBtn.getAttribute('data-state');
+              var isCollapsed = state !== 'expanded';
+              list.querySelectorAll('[data-collapsed]')?.forEach(function(el){ el.style.display = isCollapsed ? '' : 'none'; });
+              toggleBtn.textContent = isCollapsed ? 'Show less' : 'Show all';
+              toggleBtn.setAttribute('data-state', isCollapsed ? 'expanded' : 'collapsed');
+            });
+          }
+        }
+      });
+    }
+    function updateStatsFromFeatures(data) {
+      try {
+        var enabledModules = (data.modules || []).length;
+        var features = data.features || {};
+        var enabledFeatures = 0;
+        Object.keys(features).forEach(function(k){ if (!k.endsWith('.module') && features[k] && features[k].enabled) enabledFeatures++; });
+        document.getElementById('stat-modules').textContent = String(enabledModules);
+        document.getElementById('stat-features').textContent = String(enabledFeatures);
+        document.getElementById('stat-scope').textContent = data.scope || '-';
+        document.getElementById('stat-cached').textContent = data.cached ? 'Yes' : 'No';
+      } catch (e) {}
+    }
+  })();
+</script>
+{% endblock %}
+
+

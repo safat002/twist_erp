@@ -12,6 +12,12 @@ import {
   Typography,
   Badge,
   Statistic,
+  Button,
+  Modal,
+  Form,
+  Select,
+  InputNumber,
+  message,
 } from 'antd';
 import {
   UserOutlined,
@@ -19,6 +25,7 @@ import {
   ArrowUpOutlined,
   MailOutlined,
   CalendarOutlined,
+  PlusOutlined,
 } from '@ant-design/icons';
 import { Column, Pie } from '@ant-design/charts';
 import api from '../../../services/api';
@@ -119,6 +126,15 @@ const CustomersList = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [segmentDistribution, setSegmentDistribution] = useState(FALLBACK_SEGMENT_DISTRIBUTION);
   const [revenueTrend, setRevenueTrend] = useState(FALLBACK_REVENUE_TREND);
+  const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
+  const [customerForm] = Form.useForm();
+  const [accounts, setAccounts] = useState([]);
+  const [accountsLoading, setAccountsLoading] = useState(false);
+  const customerTypeOptions = [
+    { label: 'Local', value: 'local' },
+    { label: 'Export', value: 'export' },
+    { label: 'Intercompany', value: 'intercompany' },
+  ];
 
   useEffect(() => {
     loadCustomers();
@@ -134,8 +150,8 @@ const CustomersList = () => {
         return;
       }
       const response = await api.get('/api/v1/sales/customers/');
-      const payload = response.data || {};
-      const results = Array.isArray(payload.results) ? payload.results : [];
+      const payload = response.data;
+      const results = Array.isArray(payload) ? payload : Array.isArray(payload?.results) ? payload.results : [];
       setCustomers(results);
       if (Array.isArray(payload.segment_distribution)) {
         setSegmentDistribution(payload.segment_distribution);
@@ -150,6 +166,40 @@ const CustomersList = () => {
       setRevenueTrend(FALLBACK_REVENUE_TREND);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadAccounts = async () => {
+    try {
+      setAccountsLoading(true);
+      const res = await api.get('/api/v1/finance/accounts/');
+      const data = Array.isArray(res.data) ? res.data : res.data?.results || [];
+      setAccounts(data);
+    } catch (err) {
+      message.error('Unable to load accounts.');
+    } finally {
+      setAccountsLoading(false);
+    }
+  };
+
+  const showCustomerModal = () => {
+    setIsCustomerModalOpen(true);
+    loadAccounts();
+  };
+
+  const handleCustomerCancel = () => {
+    setIsCustomerModalOpen(false);
+    customerForm.resetFields();
+  };
+
+  const handleCustomerSubmit = async (values) => {
+    try {
+      await api.post('/api/v1/sales/customers/', values);
+      message.success('Customer added successfully');
+      handleCustomerCancel();
+      loadCustomers();
+    } catch (err) {
+      message.error(err?.response?.data?.detail || 'Failed to add customer');
     }
   };
 
@@ -214,6 +264,7 @@ const CustomersList = () => {
         value: Number(item?.value) || 0,
       }),
     );
+    const total = safeData.reduce((sum, d) => sum + (Number(d.value) || 0), 0);
     return {
       data: safeData,
       angleField: 'value',
@@ -221,7 +272,10 @@ const CustomersList = () => {
       radius: 0.8,
       label: {
         type: 'outer',
-        content: '{name}: {percentage}',
+        formatter: (datum) => {
+          const pct = total > 0 ? ((Number(datum.value) || 0) / total) * 100 : 0;
+          return `${datum.segment}: ${pct.toFixed(1)}%`;
+        },
       },
       tooltip: {
         formatter: (datum) => ({
@@ -364,6 +418,9 @@ const CustomersList = () => {
                   value={segmentFilter}
                   onChange={setSegmentFilter}
                 />
+                <Button type="primary" icon={<PlusOutlined />} onClick={showCustomerModal}>
+                  Add Customer
+                </Button>
               </Space>
             }
             loading={loading}
@@ -385,6 +442,47 @@ const CustomersList = () => {
           </Card>
         </Col>
       </Row>
+
+      <Modal
+        title="Add New Customer"
+        open={isCustomerModalOpen}
+        onCancel={handleCustomerCancel}
+        footer={null}
+        destroyOnClose
+      >
+        <Form layout="vertical" form={customerForm} onFinish={handleCustomerSubmit} initialValues={{ payment_terms: 30, customer_type: 'local' }}>
+          <Form.Item name="name" label="Customer Name" rules={[{ required: true }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="email" label="Email">
+            <Input type="email" />
+          </Form.Item>
+          <Form.Item name="phone" label="Phone">
+            <Input />
+          </Form.Item>
+          <Form.Item name="customer_type" label="Customer Type" rules={[{ required: true }]}>
+            <Select options={customerTypeOptions} />
+          </Form.Item>
+          <Form.Item name="payment_terms" label="Payment Terms (days)">
+            <InputNumber min={0} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="receivable_account" label="Receivable Account" rules={[{ required: true }]}> 
+            <Select loading={accountsLoading} placeholder="Select receivable account" showSearch optionFilterProp="label">
+              {(accounts || []).map((acc) => (
+                <Select.Option key={acc.id} value={acc.id} label={`${acc.code} — ${acc.name}`}>
+                  {acc.code} — {acc.name}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Form.Item>
+            <Space>
+              <Button onClick={handleCustomerCancel}>Cancel</Button>
+              <Button type="primary" htmlType="submit">Create</Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 };

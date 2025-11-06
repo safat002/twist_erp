@@ -1,4 +1,4 @@
-# Twist ERP - Comprehensive User Guide (v3)
+﻿# Twist ERP - Comprehensive User Guide (v3)
 
 This document serves as the official user guide for the Twist ERP platform. It details the purpose, usage, and cross-functional impact of each module.
 
@@ -79,9 +79,9 @@ Think of the AI in Twist ERP not as a simple chatbot, but as a capable, context-
     3.  **Manage Receivables (AR):** The team tracks customer invoices, sends reminders for overdue payments, and records collections.
     4.  **Bank Reconciliation:** The system provides an interface to match bank statement lines with ERP transactions.
 - **Cross-Module Integration & Business Impact:**
-    - **Procurement → Finance:** When a supplier invoice is posted in Procurement, it creates a bill in AP, increasing the company's liabilities. When the payment is made, it reduces cash and clears the liability.
-    - **Sales → Finance:** An approved customer invoice from the Sales module creates an invoice in AR, increasing revenue and accounts receivable. A customer receipt increases cash and clears the receivable.
-    - **Inventory → Finance:** Every stock movement that has a cost implication (like a sale or a write-off) triggers a journal entry to update the inventory asset value and Cost of Goods Sold (COGS) on the Profit & Loss statement.
+    - **Procurement â†’ Finance:** When a supplier invoice is posted in Procurement, it creates a bill in AP, increasing the company's liabilities. When the payment is made, it reduces cash and clears the liability.
+    - **Sales â†’ Finance:** An approved customer invoice from the Sales module creates an invoice in AR, increasing revenue and accounts receivable. A customer receipt increases cash and clears the receivable.
+    - **Inventory â†’ Finance:** Every stock movement that has a cost implication (like a sale or a write-off) triggers a journal entry to update the inventory asset value and Cost of Goods Sold (COGS) on the Profit & Loss statement.
     - **Business Impact:** This module provides the ultimate view of the company's health. By consolidating data from all other modules, it produces the P&L, Balance Sheet, and Cash Flow statements that are critical for strategic decision-making.
 
 #### b. Procurement & Supplier Management
@@ -167,3 +167,275 @@ The Twist ERP frontend is a visual, configurable, and context-aware interface de
     - A manager approves a Purchase Requisition. The **Workflow Engine** sends a notification and creates a `TaskItem` for the procurement officer.
     - The officer sees "New Task: Convert PR-056 to Purchase Order" on their Taskboard. Clicking it takes them directly to the PO creation screen with all the information from the PR pre-filled.
     - This creates a seamless, auditable chain of action, ensuring no requests are dropped and accountability is clear.
+
+---
+
+## Finance Module â€” User Guide (v1)
+
+### 1) Scope & Capabilities
+
+- Multi-company, multi-currency foundations with configurable numbering formats.
+- Chart of Accounts (CoA); Journals & Journal Vouchers (JV) with makerâ€“checker; AR/AP Invoices; Payments/Receipts; Period control (Open/Close/Lock); Bank Reconciliation v1; VAT basics; Core reports; FX Revaluation (preview and post).
+- Role-based permissions and optional segregation-of-duties (SoD).
+
+### 2) Roles & Permissions
+
+- View: `finance_view_dashboard`, `finance_view_coa`, `finance_view_journal`, `finance_view_invoice`, `finance_view_payment`, `finance_view_reports`.
+- Manage/Post: `finance_manage_coa`, `finance_manage_journal`, `finance_post_journal`, `finance_manage_invoice`, `finance_manage_payment`, `finance_reconcile_bank`, `finance_close_period`.
+- SoD: Creator cannot approve/post their own JV/Invoice/Payment when SoD is enabled.
+
+### 3) Company Settings (Toggles)
+
+These are read from `Company.settings.finance` (JSON). Defaults in parentheses:
+- `require_journal_review` (false): require Draft â†’ Review before posting JV.
+- `require_invoice_approval` (true): require approval before posting invoices.
+- `require_payment_approval` (true): require approval before posting payments.
+- `enforce_finance_sod` (true): enforce creator â‰  approver/poster.
+- `enforce_period_posting` (true): block posting to non-OPEN periods.
+
+### 4) Setup Checklist
+
+1) Create Chart of Accounts (Finance â†’ Accounts) including Receivable/Payable and at least one Bank/Cash account.
+2) Create Journals: GENERAL, SALES, PURCHASE, BANK, CASH (Finance â†’ Journals list is read-only; use admin if needed).
+3) Set Finance settings in Company (Admin) if you want to change approval/review defaults.
+4) Create current Fiscal Period (Finance â†’ Fiscal Periods) or run the seed command.
+5) Optional: Define TaxJurisdiction/TaxCode (Admin) and map tax GL accounts.
+
+Management commands:
+- Seed current period: `python backend/manage.py seed_current_period --company-id <ID>`
+- Seed sample bank statement: `python backend/manage.py seed_bank_statement_sample --company-id <ID> [--bank-account-id <ACCOUNT_ID>]`
+
+### 5) UI Navigation
+
+- Finance Control Tower: `/finance`
+- Accounts (CoA): `/finance/accounts`
+- Journal Vouchers: `/finance/journals`
+- Invoices: `/finance/invoices`
+- Payments: `/finance/payments`
+- Fiscal Periods: `/finance/periods`
+- Bank Reconciliation: `/finance/bank-recon`
+- Reports:
+  - Trial Balance: `/finance/reports/trial-balance`
+  - General Ledger: `/finance/reports/general-ledger`
+  - AR Aging: `/finance/reports/ar-aging`
+  - AP Aging: `/finance/reports/ap-aging`
+  - VAT Return: `/finance/reports/vat-return`
+
+### 6) Day-to-Day Workflows
+
+#### a. Journal Vouchers (JV)
+- Create JV: Finance â†’ Journal Vouchers â†’ New Voucher. Enter journal, date, narrative, and balanced lines.
+- Submit (if required): Draft â†’ Submit (moves to REVIEW).
+- Approve & Post (if review required): Approve (moves to POSTED). Otherwise Post directly.
+- SoD: the user who created the voucher cannot approve/post when SoD is enabled.
+
+#### b. AR/AP Invoices
+- Create Invoice: Finance â†’ Invoices â†’ New Invoice (choose AR or AP). Add lines (revenue/expense accounts, taxes as needed).
+- Approve: Click Approve on the invoice row (required by default).
+- Post: Click Post. System creates and posts a Journal Voucher. AR impacts receivable; AP impacts payable.
+- Payment updates invoice status automatically (Partial/Paid).
+
+#### c. Payments/Receipts
+- Create Entry: Finance â†’ Payments â†’ New Entry. Set type (Receipt or Payment), method, bank/cash account, partner, amount.
+- Allocate to invoices: In the modal, add allocations to open invoices for that partner (amounts must sum to the entry amount).
+- Approve: Click Approve (required by default).
+- Post: Click Post. System produces and posts JV and applies invoice settlements.
+
+#### d. Fiscal Periods
+- Create Period: Finance â†’ Fiscal Periods â†’ Create (month-level `YYYY-MM`).
+- Open/Close/Lock: Use action buttons on the list. If `enforce_period_posting` is true, only OPEN periods permit posting.
+
+#### e. Bank Reconciliation (v1)
+- Create Statement: Finance â†’ Bank Reconciliation â†’ Create (choose bank account, date, opening balance).
+- Statement Lines: For now, lines can be seeded via the sample command or added inline (basic v1).
+- Match Line: Admin API/UI supports matching a statement line to a posted Payment or Voucher.
+
+#### f. FX Revaluation (v1)
+- Endpoint-driven (admin function): POST `/api/v1/finance/reports/fx-revaluation/` with date, rates, gain/loss accounts, and monetary lines.
+- Preview without posting: set `post: false` (default). Returns balanced preview entries.
+- Post: set `post: true`. Creates and posts JV to General or fallback journal (requires `finance_post_journal`).
+
+### 7) Reports
+
+All accessible under Finance â†’ Reports:
+
+- Trial Balance: pick a date range; shows opening, debits, credits, closing by account.
+- General Ledger: select account + date range; shows opening and running balance lines.
+- AR Aging: pick As-of date; shows bucket cards and tabbed lists: Current, 1â€“30, 31â€“60, 61â€“90, >90.
+- AP Aging: same as AR but for payables.
+- VAT Return (v1): pick date range; shows output (AR) VAT, input (AP) VAT, and net. Enhanced breakdown by tax codes can be enabled when invoices carry tax codes.
+
+### 8) Notifications & Audit
+
+- Every create/update/transition/post logs an audit event. Key actions also emit notifications (if enabled) that appear in the Notification Center.
+
+### 9) Troubleshooting & FAQs
+
+- â€œCannot post â€” period is CLOSED/LOCKEDâ€: Open period from Finance â†’ Fiscal Periods, or disable `enforce_period_posting` in company settings.
+- â€œVoucher must be in review state before postingâ€: Enable Submit â†’ Approve path, or set `require_journal_review` = false.
+- â€œSegregation of duties violationâ€: Approval/Post must be done by someone other than the creator when SoD is enabled.
+- â€œBank Recon match missing paymentâ€: Ensure the payment is POSTED and belongs to the same company and bank account currency.
+- â€œApprove button missingâ€: Confirm you have `finance_manage_*` permissions and company settings require approval; also confirm youâ€™re authenticated and a company is selected.
+
+### 10) API Endpoints (Selected)
+
+- Accounts: `/api/v1/finance/accounts/`
+- Journals: `/api/v1/finance/journals/`; Vouchers: `/api/v1/finance/journal-vouchers/`
+  - Actions: `/:id/submit/`, `/:id/approve/`, `/:id/post/`
+- Invoices: `/api/v1/finance/invoices/`
+  - Actions: `/:id/approve/`, `/:id/post/`
+- Payments: `/api/v1/finance/payments/`
+  - Actions: `/:id/approve/`, `/:id/post/`
+- Periods: `/api/v1/finance/periods/` (actions: `/open`, `/close`, `/lock`, `/unlock`)
+- Bank Statements: `/api/v1/finance/bank-statements/` (action: `/:id/match-line/`)
+- Reports: `/api/v1/finance/reports/*` (`trial-balance`, `general-ledger`, `ar-aging`, `ap-aging`, `vat-return`, `fx-revaluation`)
+
+### 11) Security & Best Practices
+
+- Use separate roles for creators and approvers/posters when SoD is enabled.
+- Keep periods aligned with your fiscal calendar and lock after close to prevent back-dated postings.
+- Ensure journals (GENERAL, SALES, PURCHASE, BANK, CASH) are configured per company.
+- Maintain tax code tables consistently to enable accurate VAT reporting.
+
+---
+
+---
+
+## Budgeting Module – User Guide (Phase 8 Ready)
+
+This section explains how to plan, enter, review, moderate, approve, and monitor budgets using the new Phase 8 UI and workflows.
+
+### Roles & Access
+- Budget Module Owner: Defines budget periods/toggles, final approval, activation, auto-approval control.
+- Budget Moderator: Reviews all CC budgets, adds remarks, performs batch actions, can hold or send items back; no approval authority.
+- Cost Center (CC) Owner/Deputy: Reviews submitted entries for their cost center; can modify and approve or send back.
+- Entry User: Adds line items during the entry window for their assigned cost centers only.
+
+### Key Screens (routes)
+- Budgeting Hub: /budgets
+- Budget Entry: /budgets/entry
+- My Approval Queue: /budgets/approvals
+- Moderator Dashboard: /budgets/moderator
+- Remark Templates: /budgets/remark-templates
+- Budget Monitor (analytics): /budgets/monitor
+- Budget Registry: /budgets/list
+
+### 1) Declare a Budget (Module Owner)
+Use Budgeting Hub → “New Budget” or edit an existing budget.
+
+Required configuration captured in one modal:
+- Duration: duration_type (Monthly/Quarterly/Half-Yearly/Yearly/Custom) and optional custom_duration_days.
+- Period: period_start → period_end (when the budget is effective).
+- Entry Window: entry_start_date → entry_end_date and entry_enabled toggle.
+- Grace Period: grace_period_days (default 3 days) between entry end and review start.
+- Review Period: eview_start_date → eview_end_date and eview_enabled toggle.
+- Budget Impact: udget_impact_start_date → udget_impact_end_date and udget_impact_enabled toggle (controls actual consumption tracking).
+- Auto-Approval: uto_approve_if_not_approved (auto-approve on budget start if still pending).
+
+Actions in grid:
+- Open Entry → Submit for CC Approval → Start/Close Review → Request Final Approval → Activate.
+- Clone: Create a new budget from an existing one; optionally clone lines, apply an adjustment factor, or derive from actual consumption.
+
+### 2) Enter Budget Lines (Entry Users)
+Go to Budget Entry (/budgets/entry).
+- Select declared budget and your permitted cost center.
+- Add items with quantity and unit price (auto-populated from policy or manual override).
+- Submit to CC Owner when ready. You can save drafts before submission.
+
+### 3) Cost Center Owner Review
+Open My Approval Queue (/budgets/approvals). For each pending budget:
+- Modify & Approve: Adjust quantities/amounts with justification and approve.
+- Send Back: Return to Entry Users for corrections (only flagged items become editable during review period).
+- For final stage (Module Owner approvals), “Approve Final” or “Send Back”.
+
+### 4) Review Period & Sent-Back Items
+The review window is indicated in Budgeting Hub and per-budget by ReviewPeriodStatus.
+- During Review Period: Only lines marked “Sent Back” are editable by CC Owners/Entry Users.
+- After Review Period: Lines are locked, except lines on Hold.
+
+Held Items (line-level):
+- Mark one or multiple lines as Held with reason and optional “held until” date.
+- While Held, lines remain editable even after the review period ends.
+
+### 5) Moderator Review (No Approval Power)
+Go to Moderator Dashboard (/budgets/moderator) to process budgets in “Pending Moderator Review”.
+- Filters: by procurement class, category, variance, amount thresholds.
+- Batch actions:
+  - Add Remarks (custom text or apply templates to many lines).
+  - Send Back for Review (flags items for CC corrections).
+  - Hold (reason + hold-until) to allow edits after review close.
+- Mark Reviewed: When finished, forward to final approval.
+- Variance Audit: Open the audit drawer on a line to view original vs. modified values and who changed what/when/why.
+
+Remark Templates (/budgets/remark-templates):
+- Create shared or private templates (e.g., “Qty Exceeds Standard”, “Price Outdated”).
+- Apply from Moderator Dashboard during batch remarking.
+
+### 6) Final Approval & Activation
+- Module Owner “Approve Final” from My Approval Queue, then “Activate” in Budgeting Hub.
+- If Auto-Approval is on, budgets auto-approve on start date if still pending.
+- When activated, Budget Impact ON: real-time consumption matches against budget.
+
+### 7) Variance Tracking & Audit
+Every modification to a line records:
+- Original vs. current values (qty/price/value), variance/variance%.
+- Who changed it, when, and why.
+- View per-line variance audit in Moderator Dashboard (Audit drawer) and generate reports via API.
+
+### 8) Real-Time Monitoring
+Open Budget Monitor (/budgets/monitor).
+- Submission Progress: % submitted (and counts of submitted vs. not-started CCs).
+- Allocation Overview: Consumed vs. Remaining stacks per budget.
+- Bottlenecks: Budgets stuck >5 days in pending stages.
+- Status Summary: Count and allocation by status.
+
+### 9) Tips & Troubleshooting
+- Review Period doesn’t open: Ensure entry window ended and grace period elapsed; set review dates and enable eview_enabled.
+- Can’t edit during review: Only Sent-Back items are editable; moderators/owners can send back or put lines on hold.
+- Activation blocked: Approvals must be completed; use “Approve Final”, then “Activate.”
+- Auto-Approval: Ensure uto_approve_if_not_approved is toggled on the declared budget.
+
+### 10) Security & Permissions (summary)
+- Entry: CC owners/deputies/entry users of that CC can add/edit during entry.
+- Moderator: Users with moderation permission can access Moderator Dashboard/batch ops.
+- Module Owner: Users with final approval permission can approve final and activate budgets.
+
+This Phase 8 UI aligns with the formal spec in docs/Budget-Module-Final-Requirements.md and supports end-to-end planning → entry → review/moderation → approval → activation → monitoring.
+
+### 11) AI Features (Phase 9)
+- Price Prediction (per line): Open Moderator Dashboard → Insights on a line to see predicted price from PO history with confidence.
+- Consumption Forecast (per line): Insights show projected consumption vs. limit; a red tag appears on lines flagged to exceed after you compute forecasts.
+- Compute Forecasts (per budget): In Budgeting Hub, click “Forecasts” on a budget row to compute and store projections for all lines.
+- Alerts: Budget Monitor → Alerts → “Load Alerts” to see utilization threshold and forecast exceedance alerts.
+
+---
+
+## Budgeting Module — Recent Updates (Phase 8 + 9)
+
+- Declaration modal now includes: duration_type, custom_duration_days, entry_enabled, grace_period_days, eview_start_date/eview_end_date + eview_enabled, udget_impact_start_date/udget_impact_end_date + udget_impact_enabled, and uto_approve_if_not_approved.
+- Review indicators (Grace/Review/Open/Closed) are shown in the Budgets grid.
+- Moderator Dashboard (/budgets/moderator) supports filters, batch remarks/templates, batch send‑back, batch hold, and per‑line variance audit.
+- Approval Queue allows “Modify & Approve” by CC Owners (adjust quantities/values with justification).
+- Budget cloning available from the Budgets grid (“Clone”).
+- AI (Phase 9):
+  - Price Prediction per line (Moderator → “Insights”).
+  - Consumption Forecast per line (Moderator → “Insights”).
+  - Compute Forecasts per budget (Budgets grid → “Forecasts”), and lines projected to exceed show a red “Forecast Exceed” tag.
+  - Alerts in Budget Monitor (click “Load Alerts”) for utilization threshold and forecast exceedance.
+
+### Local Run (No Docker)
+
+- Backend (Django):
+  1) cd backend && python -m venv venv && . .\venv\Scripts\Activate.ps1
+  2) pip install -r requirements.txt
+  3) Set USE_SQLITE=true in ackend/.env
+  4) python manage.py migrate && python manage.py createsuperuser
+  5) python manage.py runserver 0.0.0.0:8000
+
+- Frontend (Vite):
+  1) cd frontend && npm ci
+  2) Create rontend/.env.local with VITE_API_BASE_URL=http://localhost:8000/api/v1
+  3) 
+pm run dev and open http://localhost:5173
+
+Note: If organizational lists (branches/departments) appear empty after an update, restart the backend server.

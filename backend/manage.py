@@ -96,7 +96,7 @@ def main() -> None:
             print(f"Warning: unable to parse DATABASE_URL ({exc}); using defaults.", file=sys.stderr)
             parsed_db_config = {}
     engine = (parsed_db_config.get("ENGINE") or "").lower()
-    using_sqlite = False
+    using_sqlite = use_sqlite_flag  # Read from .env: USE_SQLITE
     using_postgres = not using_sqlite and (not engine or "postgres" in engine)
     if using_postgres:
         host = parsed_db_config.get("HOST")
@@ -121,9 +121,15 @@ def main() -> None:
     # Initialize embedded PostgreSQL if not already done
     print(f"Debug: PG_DATA_DIR is {init_db.PG_DATA_DIR}")
     print(f"Debug: os.path.exists(PG_DATA_DIR) is {os.path.exists(init_db.PG_DATA_DIR)}")
+
+    # Check if user is using external PostgreSQL (DATABASE_URL explicitly set)
+    using_external_postgres = database_url and using_postgres and not database_url.startswith("sqlite")
+
     try:
         if using_sqlite or not using_postgres:
             print("SQLite mode requested; skipping embedded PostgreSQL bootstrap.")
+        elif using_external_postgres:
+            print(f"Using external PostgreSQL from DATABASE_URL; skipping embedded PostgreSQL management.")
         elif not os.path.exists(init_db.PG_DATA_DIR):
             print("Embedded PostgreSQL data directory not found. Initializing...")
             init_db.main()

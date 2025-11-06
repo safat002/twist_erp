@@ -12,8 +12,10 @@ from .models import (
     PurchaseOrderLine,
     PurchaseRequisition,
     PurchaseRequisitionLine,
+    PurchaseRequisitionDraft,
     Supplier,
 )
+from core.id_factory import make_supplier_code
 
 
 class SupplierSerializer(serializers.ModelSerializer):
@@ -28,6 +30,10 @@ class SupplierSerializer(serializers.ModelSerializer):
             "phone",
             "address",
             "payment_terms",
+            "status",
+            "supplier_type",
+            "is_blocked",
+            "block_reason",
             "is_active",
             "payable_account",
             "created_by",
@@ -35,6 +41,15 @@ class SupplierSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = ["company", "created_by", "created_at", "updated_at"]
+        extra_kwargs = {
+            "payable_account": {"required": False, "allow_null": True},
+        }
+
+    def validate(self, data):
+        if not self.instance: # Only on create
+            if Supplier.objects.filter(name__iexact=data['name'], company=self.context['request'].company).exists():
+                raise serializers.ValidationError("A supplier with this name already exists.")
+        return data
 
     def create(self, validated_data):
         request = self.context.get("request")
@@ -42,6 +57,31 @@ class SupplierSerializer(serializers.ModelSerializer):
         validated_data["company"] = company
         if request and request.user and "created_by" not in validated_data:
             validated_data["created_by"] = request.user
+        # Auto-generate supplier code if missing
+        code = validated_data.get("code")
+        if not code:
+            validated_data["code"] = make_supplier_code(company, Supplier)
+        # Default payable account if not provided: try a liability/control account
+        if not validated_data.get("payable_account"):
+            try:
+                from django.db.models import Q
+                from apps.finance.models import Account, AccountType  # local import to avoid cycles
+                default_ap = (
+                    Account.objects
+                    .filter(company=company)
+                    .filter(Q(account_type=AccountType.LIABILITY))
+                    .order_by('code')
+                    .first()
+                )
+                if default_ap:
+                    validated_data["payable_account"] = default_ap
+            except Exception:
+                # If we cannot infer a default, fall through and let DRF validate
+                pass
+        if not validated_data.get("payable_account"):
+            raise serializers.ValidationError({
+                "payable_account": "Select a payable account. No default liability account found for this company."
+            })
         return super().create(validated_data)
 
 
@@ -166,6 +206,34 @@ class PurchaseRequisitionSerializer(serializers.ModelSerializer):
         instance.save()
         return instance
 
+
+class PurchaseRequisitionDraftSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PurchaseRequisitionDraft
+        fields = [
+            'id',
+            'company',
+            'requisition_number',
+            'request_date',
+            'needed_by',
+            'purpose',
+            'status',
+            'lines',
+            'created_by',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['company', 'requisition_number', 'created_by', 'created_at', 'updated_at']
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        company = getattr(request, 'company', None)
+        user = getattr(request, 'user', None)
+        validated_data['company'] = company
+        if user and 'created_by' not in validated_data:
+            validated_data['created_by'] = user
+        return super().create(validated_data)
+
     def create(self, validated_data):
         lines_data = validated_data.pop("lines", [])
         request = self.context.get("request")
@@ -184,6 +252,25 @@ class PurchaseRequisitionSerializer(serializers.ModelSerializer):
             for idx, line in enumerate(lines_data, start=1):
                 self._build_line(requisition, line, idx)
             requisition.refresh_totals(commit=True)
+        # Notify procurement users about new PR created from draft
+        try:
+            from django.contrib.auth import get_user_model
+            from apps.notifications.models import Notification, NotificationSeverity
+            User = get_user_model()
+            qs = User.objects.filter(is_staff=True)
+            for u in qs:
+                Notification.objects.create(
+                    company=company,
+                    user=u,
+                    title=f"New Purchase Requisition {requisition.requisition_number}",
+                    body="A new purchase requisition has been created from a draft.",
+                    severity=NotificationSeverity.INFO,
+                    entity_type="PurchaseRequisition",
+                    entity_id=str(requisition.id),
+                    group_key="procurement_pr_created",
+                )
+        except Exception:
+            pass
         return requisition
 
     def update(self, instance, validated_data):

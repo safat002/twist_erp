@@ -65,7 +65,7 @@ const BOMList = () => {
   );
 
   const uomOptions = useMemo(
-    () => uoms.map((uom) => ({ value: uom.id, label: `${uom.code}` })),
+    () => uoms.map((uom) => ({ value: uom.id, label: `${uom.short_name || uom.code}` })),
     [uoms],
   );
 

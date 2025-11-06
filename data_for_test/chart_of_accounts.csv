@@ -1,0 +1,126 @@
+Account_Code,Account_Name,Account_Type,Parent_Account,Allow_Direct_Posting,Description
+1000,Assets,Asset,,No,Balance sheet asset section
+1100,Current Assets,Asset,1000,No,Short-term assets convertible to cash within 12 months
+1110,Cash,Asset,1100,Yes,Physical cash and petty cash
+1120,Bank Accounts,Asset,1100,Yes,Demand deposits and checking/savings accounts
+1130,Accounts Receivable,Asset,1100,Yes,Outstanding customer invoices
+1140,Advances to Employees,Asset,1100,Yes,Temporary advances given to employees
+1150,Inventory,Asset,1100,Yes,"Raw, WIP, Finished goods inventory"
+1160,Prepaid Expenses,Asset,1100,Yes,"Prepaid rent, insurance, utilities"
+1170,Other Current Receivables,Asset,1100,Yes,"Security deposits, other receivables"
+1200,Fixed Assets,Asset,1000,No,Long-term assets with useful life > 1 year
+1210,Property Plant & Equipment,Asset,1200,Yes,"Land, buildings, machinery"
+1220,Vehicles,Asset,1200,Yes,Owned or financed vehicles
+1230,Furniture & Fixtures,Asset,1200,Yes,"Office furniture, desks, fixtures"
+1240,Computers & IT Equipment,Asset,1200,Yes,"Servers, computers, peripherals"
+1250,Accumulated Depreciation - Fixed Assets,Contra Asset,1200,Yes,Accumulated depreciation contra account
+1260,Leasehold Improvements,Asset,1200,Yes,Capitalized leasehold improvements
+1270,Leasehold Improvements Amortization,Contra Asset,1200,Yes,Amortization of leasehold improvements
+1300,Investments,Asset,1000,No,"Stocks, mutual funds, long-term securities"
+1310,Shares & Securities,Asset,1300,Yes,Equity shares held
+1320,Fixed Deposits,Asset,1300,Yes,Fixed deposits & bonds
+1400,Intangible Assets,Asset,1000,No,Non-physical assets with value
+1410,Patents & Licenses,Asset,1400,Yes,"Patents, trademarks, copyrights"
+1420,Software & Systems,Asset,1400,Yes,"Software, ERP systems"
+2000,Liabilities,Liability,,No,Balance sheet liability section
+2100,Current Liabilities,Liability,2000,No,Obligations due within 12 months
+2110,Accounts Payable,Liability,2100,Yes,Outstanding supplier invoices
+2120,Accrued Expenses,Liability,2100,Yes,"Accrued payroll, rent, utilities"
+2130,Taxes Payable,Liability,2100,Yes,"Payable GST, VAT, income tax"
+2140,Current Portion of Loans,Liability,2100,Yes,Principal portion of loans due in <12 months
+2150,Deferred Revenue,Liability,2100,Yes,Advance customer payments
+2160,Short-term Borrowings,Liability,2100,Yes,Credit facility drawn down
+2170,Other Current Liabilities,Liability,2100,Yes,Other payables <12 months
+2200,Non-Current Liabilities,Liability,2000,No,"Long-term obligations, due > 12 months"
+2210,Long-term Bank Loans,Liability,2200,Yes,"Bank term loans, mortgages"
+2220,Lease Liabilities,Liability,2200,Yes,Equipment/building leases
+2230,Employee Benefits Payable,Liability,2200,Yes,"Gratuity, pension, post-employment benefits"
+2240,Deferred Tax Liabilities,Liability,2200,Yes,Tax deferral on temporary differences
+2250,Other Long-term Liabilities,Liability,2200,Yes,Other long-term liabilities
+2300,Grants & Donor Funds,Liability,2000,No,Grant and donor funding (NGO)
+2310,Restricted Project Funds,Liability,2300,Yes,Restricted project-specific funding
+2320,Unrestricted Grants,Liability,2300,Yes,General/unrestricted grants
+3000,Equity,Equity,,No,"Shareholders fund, residual claim"
+3100,Share Capital,Equity,3000,Yes,Paid-in capital by owners
+3110,Retained Earnings,Equity,3000,Yes,Accumulated profit/(loss) carried forward
+3120,Statutory Reserves,Equity,3000,Yes,Statutory reserves (as per regulation)
+3130,General Reserves,Equity,3000,Yes,Voluntary reserves
+3140,Revaluation Reserve,Equity,3000,Yes,Asset revaluation surplus
+3150,Other Reserves,Equity,3000,Yes,Other reserves & appropriations
+3160,Owner Capital - Proprietor,Equity,3000,Yes,Sole proprietor capital contribution
+4000,Revenue,Income,,No,Total revenue & gains
+4100,Sales Revenue,Income,4000,No,Core product/service sales
+4110,Domestic Sales,Income,4100,Yes,Domestic revenue
+4120,Export Sales,Income,4100,Yes,International/export revenue
+4130,Other Product Sales,Income,4100,Yes,Secondary product sales
+4200,Service Income,Income,4000,No,Service-based income (non-product)
+4210,Professional Fees,Income,4200,Yes,Professional advice fees
+4220,Consulting Income,Income,4200,Yes,Consulting/training income
+4300,Investment Income,Income,4000,No,Non-operating income
+4310,Interest Income,Income,4300,Yes,Interest on deposits
+4320,Dividend Income,Income,4300,Yes,Dividend received
+4330,Realized Gains on Investment,Income,4300,Yes,Gain on investment sale
+4400,Other Operating Income,Income,4000,No,Other recurring income
+4410,Scrap & Byproduct Sales,Income,4400,Yes,"Scrap value, byproducts"
+5000,Cost of Goods Sold,Expense,,No,Direct costs of producing goods
+5100,Materials Consumed,Expense,5000,No,Raw material used in production
+5110,Raw Materials Used,Expense,5100,Yes,Primary raw materials
+5120,Packing Materials,Expense,5100,Yes,"Packaging, wrapping materials"
+5130,Freight Inward,Expense,5100,Yes,Inbound freight & logistics
+5140,Subcontracting Charges,Expense,5100,Yes,Third-party manufacturing
+5200,Manufacturing Labor,Expense,5000,No,Direct labor in production
+5210,Direct Factory Wages,Expense,5200,Yes,Factory floor wages
+5220,Factory Overtime,Expense,5200,Yes,Overtime for production
+5300,Manufacturing Overhead,Expense,5000,No,Factory operations overhead
+5310,Factory Utilities,Expense,5300,Yes,"Factory electricity, water, steam"
+5320,Factory Maintenance & Repairs,Expense,5300,Yes,Factory equipment maintenance
+6000,Operating Expenses,Expense,,No,Overhead & administrative costs
+6100,Salaries & Wages,Expense,6000,No,Employee costs (non-manufacturing)
+6110,Administrative Salaries,Expense,6100,Yes,Office staff salaries
+6120,Staff Bonus,Expense,6100,Yes,Annual bonus to staff
+6130,Gratuity Expense,Expense,6100,Yes,Gratuity provision
+6140,Other Staff Compensation,Expense,6100,Yes,Other compensation (allowances)
+6200,Rent & Facilities,Expense,6000,No,Facilities and location costs
+6210,Office Rent,Expense,6200,Yes,Office building rent
+6220,Electricity & Water,Expense,6200,Yes,"Electricity, water, internet"
+6230,Internet & Telecom,Expense,6200,Yes,"Telephone, broadband, IT connectivity"
+6300,Office Supplies,Expense,6000,No,Consumables for office
+6310,Printing & Stationery,Expense,6300,Yes,"Printing, documents, forms"
+6320,Office Equipment & Supplies,Expense,6300,Yes,"Office machines, chairs, desks"
+6330,Software Licenses,Expense,6300,Yes,"Software, apps, cloud tools"
+6400,Repairs & Maintenance,Expense,6000,No,Upkeep of fixed assets
+6410,Building Maintenance,Expense,6400,Yes,Repairs to office/admin building
+6420,Equipment Maintenance,Expense,6400,Yes,Equipment maintenance contracts
+6500,Marketing & Sales Expenses,Expense,6000,No,Cost of customer acquisition & retention
+6510,Advertising & Promotions,Expense,6500,Yes,"Media, digital, print advertising"
+6520,Sales Commissions,Expense,6500,Yes,Sales rep incentives
+6530,Corporate Events,Expense,6500,Yes,"Team building, conferences, events"
+6600,Professional Services,Expense,6000,No,External expert services
+6610,Consulting Fees,Expense,6600,Yes,"Business consultants, advisors"
+6620,Legal Fees,Expense,6600,Yes,"Legal counsel, litigation"
+6630,Audit Fees,Expense,6600,Yes,"Annual audit, tax compliance"
+6700,Depreciation Expense,Expense,6000,No,Usage of assets over time
+6710,Depreciation - Admin Assets,Expense,6700,Yes,"Depreciation of office furniture, IT"
+6720,Amortization - Intangibles,Expense,6700,Yes,"Amortization of software, patents"
+6800,Insurance,Expense,6000,No,Risk transfer premiums
+6810,General Liability Insurance,Expense,6800,Yes,Coverage for general liability
+6820,Property Insurance,Expense,6800,Yes,"Building, equipment, vehicles"
+6900,Other Operating Expenses,Expense,6000,No,Miscellaneous overheads
+6910,Membership & Subscriptions,Expense,6900,Yes,"Professional memberships, certifications"
+6920,Training & Development,Expense,6900,Yes,"Courses, workshops, conferences"
+6930,Travel Allowance,Expense,6900,Yes,"Employee travel allowance, local transport"
+7000,Non-Operating Expenses,Expense,,No,Non-core expense & losses
+7100,Interest Expense,Expense,7000,No,Cost of borrowed funds
+7110,Bank Interest,Expense,7100,Yes,Bank interest on loans
+7120,Loan Interest,Expense,7100,Yes,Equipment/building lease interest
+7200,Foreign Exchange Loss,Expense,7000,No,Currency conversion impacts
+7210,Realized FX Loss,Expense,7200,Yes,Foreign exchange loss
+7220,Unrealized FX Loss,Expense,7200,Yes,Unrealized forex movements
+7300,Bad Debts & Provisions,Expense,7000,No,Risk of non-payment by customer
+7310,Bad Debts Written Off,Expense,7300,Yes,Write-off of uncollectible amounts
+7320,Doubtful Debts Provision,Expense,7300,Yes,Allowance for doubtful receivables
+7400,Extraordinary Losses,Expense,7000,No,Unusual or one-time losses
+7410,Loss on Asset Sale,Expense,7400,Yes,Loss on sale of assets
+7420,Theft & Losses,Expense,7400,Yes,"Theft, fraud, disaster losses"
+7500,Miscellaneous Non-Operating,Expense,7000,No,Other non-operating items
+7510,Other Income/Loss,Expense,7500,Yes,Miscellaneous income/loss

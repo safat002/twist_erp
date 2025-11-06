@@ -32,6 +32,7 @@ const Uoms = () => {
     () => [
       { title: 'Code', dataIndex: 'code', key: 'code' },
       { title: 'Name', dataIndex: 'name', key: 'name' },
+      { title: 'Short', dataIndex: 'short_name', key: 'short_name' },
       { title: 'Active', dataIndex: 'is_active', key: 'is_active', render: (v) => (v ? 'Yes' : 'No') },
     ],
     [],
@@ -44,6 +45,7 @@ const Uoms = () => {
       await api.post('/api/v1/budgets/uoms/', {
         code: values.code,
         name: values.name,
+        short_name: values.short_name || '',
         is_active: values.is_active ?? true,
       });
       message.success('UoM created');
@@ -77,6 +79,9 @@ const Uoms = () => {
           <Form.Item name="name" label="Name" rules={[{ required: true }]}>
             <Input placeholder="e.g., Pieces, Kilogram, Meter" />
           </Form.Item>
+          <Form.Item name="short_name" label="Short Name">
+            <Input placeholder="e.g., pc, kg, m" />
+          </Form.Item>
           <Form.Item name="is_active" label="Active" valuePropName="checked">
             <Switch />
           </Form.Item>
@@ -87,4 +92,3 @@ const Uoms = () => {
 };
 
 export default Uoms;
-

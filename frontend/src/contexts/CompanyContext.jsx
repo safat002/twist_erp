@@ -1,4 +1,4 @@
-import React, {
+﻿import React, {
   createContext,
   useCallback,
   useContext,
@@ -8,6 +8,7 @@ import React, {
 } from 'react';
 import api from '../services/api';
 import { useAuth } from './AuthContext';
+import { organizationalContextService } from '../services/organization';
 
 const CompanyContext = createContext();
 
@@ -17,27 +18,36 @@ export const CompanyProvider = ({ children }) => {
   const { isAuthenticated, loading: authLoading } = useAuth();
   const [companies, setCompanies] = useState([]);
   const [currentCompany, setCurrentCompany] = useState(null);
+
+  // Enhanced hierarchy state
+  const [companyGroups, setCompanyGroups] = useState([]);
+  const [branches, setBranches] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [currentGroup, setCurrentGroup] = useState(null);
+  const [currentBranch, setCurrentBranch] = useState(null);
+  const [currentDepartment, setCurrentDepartment] = useState(null);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const fallbackCompanies = useMemo(
     () => [
       {
-        id: 'demo-hq',
+        id: 1,
         code: 'HQ',
         name: 'Twist HQ (Demo)',
         industry: 'Garments',
         timezone: 'Asia/Dhaka',
       },
       {
-        id: 'demo-print',
+        id: 2,
         code: 'PRINT',
         name: 'Twist Printing Unit',
         industry: 'Printing',
         timezone: 'Asia/Dhaka',
       },
       {
-        id: 'demo-eu',
+        id: 3,
         code: 'EU',
         name: 'Twist Europe',
         industry: 'Distribution',
@@ -51,7 +61,7 @@ export const CompanyProvider = ({ children }) => {
     if (typeof window === 'undefined') {
       return;
     }
-    if (!companyId) {
+    if (!companyId || isNaN(parseInt(companyId, 10))) {
       window.localStorage.removeItem('twist-active-company');
       return;
     }
@@ -87,16 +97,16 @@ export const CompanyProvider = ({ children }) => {
     }
 
     try {
-      const response = await api.get('/api/v1/companies/');
+      // Primary: full list
+      const response = await api.get('/companies/companies/');
       const payload = response.data?.results || response.data || [];
       const hasBackendCompanies = Array.isArray(payload) && payload.length > 0;
-      const list = hasBackendCompanies ? payload : [];
-      setCompanies(list.length ? list : []);
+      let list = hasBackendCompanies ? payload : [];
       let matched = null;
 
       if (hasBackendCompanies) {
         try {
-          const activeResponse = await api.get('/api/v1/companies/active/');
+          const activeResponse = await api.get('/companies/companies/active/');
           const activeData = activeResponse.data;
           if (activeData) {
             matched =
@@ -115,14 +125,48 @@ export const CompanyProvider = ({ children }) => {
           list.find((company) => String(company.id) === String(storedId)) || null;
       }
 
+      // Final fallback: pick the first available backend company so the UI has context
+      if (!matched && hasBackendCompanies) {
+        matched = list[0] || null;
+      }
+
+      // If no list returned, try minimal list endpoint (active companies only)
+      if (!hasBackendCompanies) {
+        try {
+          const minimalResp = await api.get('/companies/companies/minimal/');
+          const minimal = minimalResp.data || [];
+          if (Array.isArray(minimal) && minimal.length) {
+            list = minimal;
+            matched = minimal[0];
+          }
+        } catch (_) {
+          // ignore, keep empty list
+        }
+      }
+
+      setCompanies(list.length ? list : []);
+
       setCurrentCompany(matched || null);
       persistActiveCompany((matched || {}).id);
     } catch (err) {
       console.warn('Failed to load companies:', err?.message);
       setError(err);
-      // Do not use demo fallback for authenticated users; show empty to avoid confusion
-      setCompanies([]);
-      setCurrentCompany(null);
+      // Try to fetch active company to at least give the UI a context
+      try {
+        const activeResponse = await api.get('/companies/companies/active/');
+        const active = activeResponse?.data;
+        if (active) {
+          setCompanies([active]);
+          setCurrentCompany(active);
+          persistActiveCompany(active.id);
+        } else {
+          setCompanies([]);
+          setCurrentCompany(null);
+        }
+      } catch (_) {
+        setCompanies([]);
+        setCurrentCompany(null);
+      }
     } finally {
       setLoading(false);
     }
@@ -147,7 +191,7 @@ export const CompanyProvider = ({ children }) => {
 
       if (isBackendCompany) {
         try {
-          const response = await api.post(`/api/v1/companies/${companyId}/activate/`);
+          const response = await api.post(`/companies/companies//activate/`);
           if (response?.data) {
             targetCompany = response.data;
             setCompanies((prev) => {
@@ -171,21 +215,69 @@ export const CompanyProvider = ({ children }) => {
 
       setCurrentCompany(targetCompany);
       persistActiveCompany(targetCompany?.id);
-      if (forceRefresh && typeof window !== 'undefined') {
-        window.location.reload();
-      }
+      // Avoid full page reload; feature context and components react to company change
     },
     [companies, currentCompany?.id, persistActiveCompany],
   );
+
+  // Load organizational context
+  const loadOrganizationalContext = useCallback(async () => {
+    if (!isAuthenticated) return;
+
+    try {
+      const response = await organizationalContextService.getCurrent();
+      const context = response.data;
+
+      if (context.company_group) {
+        setCurrentGroup(context.company_group);
+      }
+      if (context.branch) {
+        setCurrentBranch(context.branch);
+      }
+      if (context.department) {
+        setCurrentDepartment(context.department);
+      }
+    } catch (err) {
+      console.warn('Failed to load organizational context:', err);
+    }
+  }, [isAuthenticated]);
+
+  // Switch organizational context
+  const switchOrganizationalContext = useCallback(async (context) => {
+    try {
+      await organizationalContextService.updateContext({
+        company_group_id: context.groupId || null,
+        company_id: context.companyId || null,
+        branch_id: context.branchId || null,
+        department_id: context.departmentId || null,
+      });
+
+      if (context.group) setCurrentGroup(context.group);
+      if (context.company) setCurrentCompany(context.company);
+      if (context.branch) setCurrentBranch(context.branch);
+      if (context.department) setCurrentDepartment(context.department);
+
+      // Update localStorage
+      if (context.companyId) {
+        persistActiveCompany(context.companyId);
+        localStorage.setItem('twist-active-branch', context.branchId || '');
+        localStorage.setItem('twist-active-department', context.departmentId || '');
+      }
+    } catch (err) {
+      console.error('Failed to switch organizational context:', err);
+    }
+  }, [persistActiveCompany]);
 
   useEffect(() => {
     if (authLoading) {
       return;
     }
     hydrateCompanies();
-  }, [authLoading, hydrateCompanies]);
+    loadOrganizationalContext();
+  }, [authLoading, hydrateCompanies, loadOrganizationalContext]);
 
   const value = {
+    // Existing company-related values
     companies,
     currentCompany,
     loading,
@@ -196,7 +288,21 @@ export const CompanyProvider = ({ children }) => {
       setCurrentCompany(company);
       persistActiveCompany(company?.id);
     },
+
+    // Enhanced hierarchy values
+    companyGroups,
+    branches,
+    departments,
+    currentGroup,
+    currentBranch,
+    currentDepartment,
+    setCurrentGroup,
+    setCurrentBranch,
+    setCurrentDepartment,
+    switchOrganizationalContext,
+    loadOrganizationalContext,
   };
 
   return <CompanyContext.Provider value={value}>{children}</CompanyContext.Provider>;
 };
+

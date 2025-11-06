@@ -124,7 +124,7 @@ class AIOrchestrator:
             from .ai_service_v2 import chat as legacy_chat  # noqa
         except Exception as exc:
             logger.warning("Legacy QA chain unavailable: %s", exc)
-            return {"message": "I'm still learning. Could you try rephrasing?", "intent": "fallback"}
+            return {"message": "Hmm, I'm having some trouble with that. Could you try asking in a different way?", "intent": "fallback"}
         return legacy_chat(
             message,
             company_id=getattr(company, "id", None),

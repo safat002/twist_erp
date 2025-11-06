@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Layout, Menu, Avatar, Dropdown, Badge, Space, List, Typography, Modal, Form, Input, DatePicker, Button, Select } from 'antd';
+﻿import React, { useState, useEffect, useMemo } from 'react';
+import { Layout, Menu, Avatar, Dropdown, Badge, Space, List, Typography, Modal, Form, Input, DatePicker, Button, Select, Tag, message } from 'antd';
+import dayjs from 'dayjs';
 import {
   DashboardOutlined,
   DollarOutlined,
@@ -21,11 +22,18 @@ import {
   SolutionOutlined,
   RobotOutlined,
   PlusOutlined,
+  SafetyCertificateOutlined,
+  HeartOutlined,
+  MoneyCollectOutlined,
+  BankOutlined,
+  AuditOutlined,
+  LinkOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useCompany } from '../contexts/CompanyContext';
+import { useFeatures } from '../contexts/FeatureContext';
 import CompanySelector from '../components/Common/CompanySelector';
 import AIWidget from '../components/AIAssistant/AIWidget';
 import logo from '../assets/twist_erp_logo.png';
@@ -40,6 +48,7 @@ const MainLayout = ({ children }) => {
   const location = useLocation();
   const { user, logout, isAuthenticated } = useAuth();
   const { currentCompany } = useCompany();
+  const { isFeatureEnabled, getFeature, refreshFeatures } = useFeatures();
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -61,7 +70,7 @@ const MainLayout = ({ children }) => {
     const load = async () => {
       if (!isAuthenticated) return;
       try {
-        const { data } = await api.get('/api/v1/notifications/');
+        const { data } = await api.get('/api/v1/notifications/?limit=10');
         if (!mounted) return;
         const list = Array.isArray(data) ? data : data?.results || [];
         setNotifications(list);
@@ -79,142 +88,216 @@ const MainLayout = ({ children }) => {
     };
   }, [currentCompany?.id, isAuthenticated]);
 
+  const iconFromFeature = (moduleKey, featureKey = 'module') => {
+    try {
+      const f = getFeature(moduleKey, featureKey);
+      const icon = (f?.icon || '').toString();
+      if (!icon) return null;
+      if (icon.includes('shield')) return <SafetyCertificateOutlined />; // mdi-shield-check
+      if (icon.includes('hand-coin')) return <AuditOutlined />; // mdi-hand-coin (approx)
+      if (icon.includes('cash') || icon.includes('currency')) return <MoneyCollectOutlined />; // mdi-cash-multiple
+      if (icon.includes('bank')) return <BankOutlined />; // mdi-bank
+      if (icon.includes('hand-heart') || icon.includes('heart')) return <HeartOutlined />; // mdi-hand-heart
+      if (icon.includes('robot')) return <RobotOutlined />; // mdi-robot
+      return null;
+    } catch (_) {
+      return null;
+    }
+  };
+
   const menuItems = [
     {
       key: '/',
-      icon: <DashboardOutlined />,
+      icon: iconFromFeature('dashboard') || <DashboardOutlined />,
       label: 'Dashboard',
     },
     {
       key: 'workboard',
-      icon: <SolutionOutlined />,
+      icon: iconFromFeature('tasks') || <SolutionOutlined />,
       label: 'Workboard',
       children: [
-        { key: '/tasks', label: 'My Tasks' },
-        { key: '/tasks/team', label: 'Team Tasks' },
-        { key: '/notifications', label: 'Notification Center' },
+        { key: '/tasks', label: 'My Tasks', icon: iconFromFeature('tasks') },
+        { key: '/tasks/team', label: 'Team Tasks', icon: iconFromFeature('tasks') },
+        { key: '/notifications', label: 'Notification Center', icon: iconFromFeature('notifications') },
+        { key: '/approvals', label: 'My Approvals' },
       ],
     },
     {
       key: 'finance',
-      icon: <DollarOutlined />,
+      icon: iconFromFeature('finance') || <DollarOutlined />,
       label: 'Finance',
       children: [
-        { key: '/finance', label: 'Finance Control Tower' },
-        { key: '/finance/accounts', label: 'Chart of Accounts' },
-        { key: '/finance/journals', label: 'Journal Vouchers' },
-        { key: '/finance/invoices', label: 'Invoices' },
-        { key: '/finance/payments', label: 'Payments' },
+        { key: '/finance', label: 'Finance Control Tower', icon: iconFromFeature('finance') },
+        { key: '/finance/accounts', label: 'Chart of Accounts', icon: iconFromFeature('finance', 'chart_of_accounts') },
+        { key: '/finance/journals', label: 'Journal Vouchers', icon: iconFromFeature('finance', 'journal_vouchers') },
+        { key: '/finance/invoices', label: 'Invoices', icon: iconFromFeature('finance', 'invoices') },
+        { key: '/finance/payments', label: 'Payments', icon: iconFromFeature('finance', 'payments') },
+        { key: '/finance/periods', label: 'Fiscal Periods', icon: iconFromFeature('finance', 'periods') },
+        { key: '/finance/currencies', label: 'Currencies', icon: iconFromFeature('finance') },
+        { key: '/finance/bank-recon', label: 'Bank Reconciliation', icon: iconFromFeature('finance', 'bank') },
+        {
+          key: '/finance/reports',
+          label: 'Reports',
+          children: [
+            { key: '/finance/reports/trial-balance', label: 'Trial Balance' },
+            { key: '/finance/reports/general-ledger', label: 'General Ledger' },
+            { key: '/finance/reports/ar-aging', label: 'AR Aging' },
+            { key: '/finance/reports/ap-aging', label: 'AP Aging' },
+            { key: '/finance/reports/vat-return', label: 'VAT Return' },
+          ],
+        },
       ],
     },
     {
       key: 'inventory',
-      icon: <AppstoreOutlined />,
+      icon: iconFromFeature('inventory') || <AppstoreOutlined />,
       label: 'Inventory',
       children: [
-        { key: '/inventory', label: 'Inventory Control Tower' },
-        { key: '/inventory/products', label: 'Products' },
-        { key: '/inventory/warehouses', label: 'Warehouses' },
-        { key: '/inventory/movements', label: 'Stock Movements' },
+        { key: '/inventory', label: 'Inventory Control Tower', icon: iconFromFeature('inventory') },
+        { key: '/inventory/products', label: 'Products', icon: iconFromFeature('inventory', 'products') },
+        { key: '/inventory/warehouses', label: 'Warehouses', icon: iconFromFeature('inventory', 'warehouses') },
+        { key: '/inventory/movements', label: 'Stock Movements', icon: iconFromFeature('inventory', 'stock_movements') },
+        { key: '/inventory/requisitions', label: 'Requisitions', icon: iconFromFeature('inventory', 'requisitions_internal') },
+        {
+          key: '/inventory/valuation',
+          label: 'Valuation',
+          icon: <DollarOutlined />,
+          children: [
+        { key: '/inventory/valuation/settings', label: 'Valuation Settings' },
+        { key: '/inventory/valuation/cost-layers', label: 'Cost Layers' },
+        { key: '/inventory/valuation/report', label: 'Valuation Report' },
+        { key: '/inventory/valuation/landed-cost', label: 'Landed Cost Adjustment' },
+      ],
+        },
       ],
     },
     {
       key: 'sales',
-      icon: <ShoppingOutlined />,
+      icon: iconFromFeature('sales') || <ShoppingOutlined />,
       label: 'Sales & CRM',
       children: [
-        { key: '/sales', label: 'Sales Control Tower' },
-        { key: '/sales/customers', label: 'Customers' },
-        { key: '/sales/orders', label: 'Sales Orders' },
-        { key: '/sales/pipeline', label: 'Sales Pipeline' },
+        { key: '/sales', label: 'Sales Control Tower', icon: iconFromFeature('sales') },
+        { key: '/sales/customers', label: 'Customers', icon: iconFromFeature('sales', 'customers') },
+        { key: '/sales/orders', label: 'Sales Orders', icon: iconFromFeature('sales', 'sales_orders') },
+        { key: '/sales/pipeline', label: 'Sales Pipeline', icon: iconFromFeature('sales', 'pipeline') },
+      ],
+    },
+    {
+      key: 'policies',
+      icon: iconFromFeature('policies', 'module') || <SafetyCertificateOutlined />,
+      label: 'Policies',
+      children: [
+        { key: '/policies', label: 'Policies & SOPs' },
+        { key: '/policies/my', label: 'My Acknowledgements' },
+      ],
+    },
+    {
+      key: 'ngo',
+      icon: iconFromFeature('ngo', 'module') || <HeartOutlined />,
+      label: 'NGO Governance',
+      children: [
+        { key: '/ngo/dashboard', label: 'Dashboard' },
+        { key: '/ngo/programs', label: 'Programs' },
+        { key: '/ngo/donors', label: 'Donors' },
+        { key: '/ngo/compliance', label: 'Compliance' },
+        { key: '/ngo/grant-governance', label: 'Grant Governance', icon: iconFromFeature('ngo', 'grant_governance') || <AuditOutlined /> },
+      ],
+    },
+    {
+      key: 'microfinance',
+      icon: iconFromFeature('microfinance', 'module') || <BankOutlined />,
+      label: 'Microfinance',
+      children: [
+        { key: '/microfinance/dashboard', label: 'Dashboard' },
+        { key: '/microfinance/loans', label: 'Loans', icon: iconFromFeature('microfinance', 'loans') || <MoneyCollectOutlined /> },
+        { key: '/microfinance/borrowers', label: 'Borrowers' },
+        { key: '/microfinance/products', label: 'Loan Products' },
       ],
     },
     {
       key: 'procurement',
-      icon: <ShopOutlined />,
+      icon: iconFromFeature('procurement') || <ShopOutlined />,
       label: 'Procurement',
       children: [
-        { key: '/procurement', label: 'Procurement Control Tower' },
-        { key: '/procurement/suppliers', label: 'Suppliers' },
-        { key: '/procurement/orders', label: 'Purchase Orders' },
+        { key: '/procurement', label: 'Procurement Control Tower', icon: iconFromFeature('procurement') },
+        { key: '/procurement/suppliers', label: 'Suppliers', icon: iconFromFeature('procurement', 'vendors') },
+        { key: '/procurement/orders', label: 'Purchase Orders', icon: iconFromFeature('procurement', 'purchase_orders') },
       ],
     },
     {
       key: 'nocode',
-      icon: <FormOutlined />,
+      icon: iconFromFeature('form_builder') || <FormOutlined />,
       label: 'No-Code Tools',
       children: [
-        { key: '/forms', label: 'Form Builder' },
-        { key: '/reports', label: 'Report Builder' },
-        { key: '/workflows', label: 'Workflows' },
-        { key: '/migration', label: 'Data Migration' },
-      ],
-    },
-    {
-      key: 'company',
-      icon: <ApartmentOutlined />,
-      label: 'Company',
-      children: [
-        { key: '/company-management', label: 'Company Management' },
+        { key: '/forms', label: 'Form Builder', icon: iconFromFeature('form_builder') },
+        { key: '/reports', label: 'Report Builder', icon: iconFromFeature('report_builder') },
+        { key: '/workflows', label: 'Workflow Designer', icon: iconFromFeature('workflows') },
+        { key: '/workflows/list', label: 'Workflow List' },
+        { key: '/migration', label: 'Data Migration', icon: iconFromFeature('data_migration') },
       ],
     },
     {
       key: 'assets',
-      icon: <ToolOutlined />,
+      icon: iconFromFeature('assets') || <ToolOutlined />,
       label: 'Asset Management',
       children: [
-        { key: '/assets', label: 'Asset Command Center' },
-        { key: '/assets/list', label: 'Asset Register' },
-        { key: '/assets/maintenance', label: 'Maintenance Planner' },
+        { key: '/assets', label: 'Asset Command Center', icon: iconFromFeature('assets') },
+        { key: '/assets/list', label: 'Asset Register', icon: iconFromFeature('assets', 'list') },
+        { key: '/assets/maintenance', label: 'Maintenance Planner', icon: iconFromFeature('assets', 'maintenance') },
       ],
     },
     {
       key: 'budgets',
-      icon: <PieChartOutlined />,
+      icon: iconFromFeature('budgeting') || <PieChartOutlined />,
       label: 'Cost Centers & Budgeting',
       children: [
-        { key: '/budgets', label: 'Budgeting Hub' },
-        { key: '/budgets/cost-centers', label: 'Cost Centers' },
-        { key: '/budgets/item-codes', label: 'Item Codes' },
-        { key: '/budgets/uoms', label: 'Units of Measure' },
-        { key: '/budgets/list', label: 'Budget Registry' },
-        { key: '/budgets/monitor', label: 'Budget Monitor' },
+        { key: '/budgets', label: 'Budgeting Hub', icon: iconFromFeature('budgeting') },
+        { key: '/budgets/entry', label: 'Budget Entry', icon: iconFromFeature('budgeting', 'list') },
+        { key: '/budgets/approvals', label: 'Approval Queue', icon: iconFromFeature('budgeting', 'list') },
+        { key: '/budgets/cost-centers', label: 'Cost Centers', icon: iconFromFeature('budgeting', 'cost_centers') },
+        { key: '/budgets/item-codes', label: 'Item Codes', icon: iconFromFeature('budgeting', 'item_codes') },
+        { key: '/budgets/uoms', label: 'Units of Measure', icon: iconFromFeature('budgeting', 'uoms') },
+        { key: '/budgets/list', label: 'Budget Registry', icon: iconFromFeature('budgeting', 'list') },
+        { key: '/budgets/monitor', label: 'Budget Monitor', icon: iconFromFeature('budgeting', 'monitor') },
+        { key: '/budgets/gamification', label: 'Gamification', icon: iconFromFeature('budgeting', 'monitor') },
+        { key: '/budgets/moderator', label: 'Moderator Dashboard', icon: iconFromFeature('budgeting', 'monitor') },
+        { key: '/budgets/remark-templates', label: 'Remark Templates', icon: iconFromFeature('budgeting', 'list') },
       ],
     },
     {
       key: 'production',
-      icon: <ApartmentOutlined />,
+      icon: iconFromFeature('production') || <ApartmentOutlined />,
       label: 'Production',
       children: [
-        { key: '/production', label: 'Production Control Tower' },
-        { key: '/production/boms', label: 'Bills of Materials' },
-        { key: '/production/work-orders', label: 'Work Orders' },
+        { key: '/production', label: 'Production Control Tower', icon: iconFromFeature('production') },
+        { key: '/production/boms', label: 'Bills of Materials', icon: iconFromFeature('production', 'bom') },
+        { key: '/production/work-orders', label: 'Work Orders', icon: iconFromFeature('production', 'work_orders') },
       ],
     },
     {
       key: 'hr',
-      icon: <SolutionOutlined />,
+      icon: iconFromFeature('hr') || <SolutionOutlined />,
       label: 'HR & Payroll',
       children: [
-        { key: '/hr', label: 'People Operations Hub' },
-        { key: '/hr/leave', label: 'Leave Management' },
-        { key: '/hr/advances-loans', label: 'Advances & Loans' },
-        { key: '/hr/recruitment', label: 'Recruitment' },
-        { key: '/hr/onboarding', label: 'Onboarding' },
-        { key: '/hr/performance', label: 'Performance' },
-        { key: '/hr/exit-management', label: 'Exit Management' },
-        { key: '/hr/policies', label: 'Policy Management' },
-        { key: '/hr/attendance', label: 'Attendance' },
+        { key: '/hr', label: 'People Operations Hub', icon: iconFromFeature('hr') },
+        { key: '/hr/leave', label: 'Leave Management', icon: iconFromFeature('hr', 'leave') },
+        { key: '/hr/advances-loans', label: 'Advances & Loans', icon: iconFromFeature('hr', 'advances_loans') },
+        { key: '/hr/recruitment', label: 'Recruitment', icon: iconFromFeature('hr', 'recruitment') },
+        { key: '/hr/onboarding', label: 'Onboarding', icon: iconFromFeature('hr', 'onboarding') },
+        { key: '/hr/performance', label: 'Performance', icon: iconFromFeature('hr', 'performance') },
+        { key: '/hr/exit-management', label: 'Exit Management', icon: iconFromFeature('hr', 'exit_management') },
+        { key: '/hr/policies', label: 'Policy Management', icon: iconFromFeature('hr', 'policies') },
+        { key: '/hr/attendance', label: 'Attendance', icon: iconFromFeature('hr', 'attendance') },
       ],
     },
     {
       key: 'projects',
-      icon: <ProjectOutlined />,
+      icon: iconFromFeature('projects') || <ProjectOutlined />,
       label: 'Projects',
       children: [
-        { key: '/projects', label: 'Projects Command Center' },
-        { key: '/projects/list', label: 'Projects List' },
-        { key: '/projects/gantt', label: 'Gantt Planner' },
+        { key: '/projects', label: 'Projects Command Center', icon: iconFromFeature('projects') },
+        { key: '/projects/list', label: 'Projects List', icon: iconFromFeature('projects', 'list') },
+        { key: '/projects/gantt', label: 'Gantt Planner', icon: iconFromFeature('projects', 'gantt') },
       ],
     },
   ];
@@ -222,11 +305,125 @@ const MainLayout = ({ children }) => {
   if (user?.is_system_admin || user?.is_staff) {
     menuItems.push({
       key: 'ai',
-      icon: <RobotOutlined />,
+      icon: iconFromFeature('ai_companion') || <RobotOutlined />,
       label: 'AI Ops',
       children: [{ key: '/ai/training-review', label: 'Training Review' }],
     });
   }
+
+  // Helper function to map menu keys to feature modules
+  const getMenuFeatureModule = (menuKey) => {
+    const moduleMap = {
+      'finance': 'finance',
+      'inventory': 'inventory',
+      'sales': 'sales',
+      'procurement': 'procurement',
+      'production': 'production',
+      'hr': 'hr',
+      'projects': 'projects',
+      'assets': 'assets',
+      'budgets': 'budgeting',
+      'ngo': 'ngo',
+      'microfinance': 'microfinance',
+      'workboard': 'tasks',
+      'ai': 'ai_companion',
+    };
+    return moduleMap[menuKey];
+  };
+
+  // Helper function to add status badge to menu label
+  const addStatusBadge = (label, status) => {
+    if (!status || status === 'enabled') return label;
+
+    const badgeColors = {
+      'beta': 'blue',
+      'coming_soon': 'orange',
+      'deprecated': 'red',
+    };
+
+    const badgeLabels = {
+      'beta': 'Beta',
+      'coming_soon': 'Coming Soon',
+      'deprecated': 'Deprecated',
+    };
+
+    return (
+      <Space>
+        {label}
+        <Tag color={badgeColors[status]} style={{ fontSize: '10px', padding: '0 4px', marginRight: 0 }}>
+          {badgeLabels[status]}
+        </Tag>
+      </Space>
+    );
+  };
+
+  // Filter menu items based on feature toggles
+  const filteredMenuItems = useMemo(() => {
+    return menuItems
+      .map((item) => {
+        // Check if this menu item has a feature module
+        const moduleKey = getMenuFeatureModule(item.key);
+
+        if (moduleKey) {
+          // Check if the module is enabled
+          const isEnabled = isFeatureEnabled(moduleKey, 'module');
+          if (!isEnabled) {
+            return null; // Hide disabled modules
+          }
+
+          // Get feature details for status badges
+          const feature = getFeature(moduleKey, 'module');
+          if (feature?.status && feature.status !== 'enabled') {
+            return {
+              ...item,
+              label: addStatusBadge(item.label, feature.status),
+            };
+          }
+        }
+
+        // Handle Inventory child-specific feature visibility
+        if (item.key === 'inventory' && Array.isArray(item.children)) {
+          const filteredChildren = item.children.filter((child) => {
+            // Always show the Requisitions hub; tabs inside will honor feature flags
+            if (child.key === '/inventory/requisitions') return true;
+            return true;
+          });
+          return { ...item, children: filteredChildren };
+        }
+
+        if (item.key === 'procurement' && Array.isArray(item.children)) {
+          const filteredChildren = item.children.filter((child) => {
+            if (child.key === '/procurement/requisitions') return isFeatureEnabled('inventory', 'purchase_requisitions');
+            return true;
+          });
+          return { ...item, children: filteredChildren };
+        }
+
+        // Handle no-code tools submenu - check each child feature
+        if (item.key === 'nocode' && item.children) {
+          const filteredChildren = item.children.filter((child) => {
+            if (child.key === '/forms') return isFeatureEnabled('form_builder', 'module');
+            if (child.key === '/reports') return isFeatureEnabled('report_builder', 'module');
+            if (child.key === '/workflows') return isFeatureEnabled('workflows', 'module');
+            if (child.key === '/migration') return isFeatureEnabled('data_migration', 'module');
+            return true;
+          });
+
+          // Hide entire menu if no children are enabled
+          if (filteredChildren.length === 0) return null;
+
+          return {
+            ...item,
+            children: filteredChildren,
+          };
+        }
+
+        return item;
+      })
+      .filter(Boolean); // Remove null items
+  }, [menuItems, isFeatureEnabled, getFeature]);
+
+  console.log('filteredMenuItems', filteredMenuItems);
 
   const userDisplayName =
     user?.display_name ||
@@ -246,7 +443,19 @@ const MainLayout = ({ children }) => {
       icon: <SettingOutlined />,
       label: 'Settings',
       onClick: () => navigate('/settings'),
-    },
+      },
+      {
+        key: 'calendar_sync',
+        icon: <LinkOutlined />,
+        label: 'Calendar Sync',
+        onClick: () => navigate('/settings/calendar-sync'),
+      },
+      {
+        key: 'refresh_features',
+        icon: <BranchesOutlined />,
+        label: 'Refresh Features',
+        onClick: refreshFeatures,
+      },
     {
       type: 'divider',
     },
@@ -262,22 +471,37 @@ const MainLayout = ({ children }) => {
     navigate(key);
   };
 
+  const severityColor = (sev) => {
+    switch ((sev || '').toLowerCase()) {
+      case 'warning':
+        return 'orange';
+      case 'critical':
+        return 'red';
+      case 'info':
+      default:
+        return 'blue';
+    }
+  };
+
   const notifItems = (notifications || []).slice(0, 10).map((n) => ({
     key: String(n.id),
     label: (
       <div style={{ maxWidth: 360 }}>
-        <Space direction="vertical" size={0} style={{ width: '100%' }}>
-          <Typography.Text strong ellipsis>{n.title}</Typography.Text>
-          {n.body ? (
-            <Typography.Text type="secondary" ellipsis>
-              {n.body}
+        <Space direction="vertical" size={2} style={{ width: '100%' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+            <Typography.Text strong ellipsis style={{ maxWidth: 260 }}>{n.title}</Typography.Text>
+            <Typography.Text type="secondary" style={{ whiteSpace: 'nowrap' }}>
+              {n.created_at ? dayjs(n.created_at).format('MMM D, HH:mm') : ''}
             </Typography.Text>
-          ) : null}
-          {(n.status || 'unread') === 'unread' ? (
-            <Button type="link" size="small" style={{ padding: 0 }} onClick={(e) => { e.domEvent?.stopPropagation?.(); }}>
-              {/* placeholder to prevent collapse on click */}
-            </Button>
-          ) : null}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {n.severity ? <Tag color={severityColor(n.severity)}>{String(n.severity).toUpperCase()}</Tag> : null}
+            {n.body ? (
+              <Typography.Text type="secondary" ellipsis style={{ flex: 1 }}>
+                {n.body}
+              </Typography.Text>
+            ) : null}
+          </div>
         </Space>
       </div>
     ),
@@ -287,7 +511,7 @@ const MainLayout = ({ children }) => {
       ...notifItems,
       { type: 'divider' },
       { key: '__mark_all', label: 'Mark all read' },
-      { key: '__view_all', label: 'View all notifications' },
+      { key: '__view_all', label: 'See all notifications' },
     ],
     onClick: async ({ key }) => {
       if (key === '__view_all') {
@@ -340,7 +564,7 @@ const MainLayout = ({ children }) => {
           mode="inline"
           selectedKeys={[location.pathname]}
           openKeys={collapsed ? [] : openKeys}
-          items={menuItems}
+          items={filteredMenuItems}
           onClick={handleMenuClick}
           onOpenChange={(keys) => setOpenKeys(keys)}
         />
@@ -389,7 +613,7 @@ const MainLayout = ({ children }) => {
           {children}
         </Content>
         <Footer style={{ textAlign: 'center' }}>
-          TWIST ERP ©2025 Transform, Integrate, Simplify, Track
+          TWIST ERP Â©2025 Transform, Integrate, Simplify, Track
         </Footer>
         <AIWidget />
         <Modal
@@ -399,8 +623,21 @@ const MainLayout = ({ children }) => {
           onOk={async () => {
             try {
               const values = await form.validateFields();
+              if (!currentCompany?.id) {
+                message.error('Please select a company (top-left) before creating a task.');
+                return;
+              }
+              // Ensure header context is present
+              try {
+                const stored = localStorage.getItem('twist-active-company');
+                if (!stored || String(stored) !== String(currentCompany.id)) {
+                  localStorage.setItem('twist-active-company', String(currentCompany.id));
+                }
+              } catch (_) {}
+
               setCreating(true);
-              await api.post('/api/v1/tasks/', {
+
+              const payload = {
                 task_type: 'personal',
                 title: values.title,
                 description: values.description || '',
@@ -410,11 +647,39 @@ const MainLayout = ({ children }) => {
                 visibility_scope: 'private',
                 recurrence: values.recurrence || 'none',
                 recurrence_until: values.recurrence_until ? values.recurrence_until.toISOString() : null,
-              });
+              };
+
+              const postTask = async () => api.post('/api/v1/tasks/', payload);
+
+              try {
+                await postTask();
+              } catch (err) {
+                // If company context still missing on server, set session and retry once
+                const status = err?.response?.status;
+                if (status === 400) {
+                  try {
+                    await api.post('/api/v1/companies/companies/activate/', { id: currentCompany.id });
+                    await postTask();
+                  } catch (e2) {
+                    const detail = e2?.response?.data?.detail || 'Failed to create task';
+                    message.error(detail);
+                    return;
+                  }
+                } else {
+                  const detail = err?.response?.data?.detail || 'Failed to create task';
+                  message.error(detail);
+                  return;
+                }
+              }
               setCreateVisible(false);
               form.resetFields();
             } catch (e) {
-              // noop
+              // validation or unexpected
+              if (e?.errorFields) {
+                // AntD validation already shows messages
+              } else {
+                message.error('Unable to create task');
+              }
             } finally {
               setCreating(false);
             }

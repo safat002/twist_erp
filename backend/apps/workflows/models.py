@@ -4,6 +4,8 @@ from django.utils.text import slugify
 
 from apps.companies.models import Company, CompanyGroup
 from apps.metadata.models import MetadataDefinition
+from apps.permissions.models import Role
+from apps.users.models import User
 
 
 class WorkflowTemplate(models.Model):
@@ -47,6 +49,14 @@ class WorkflowTemplate(models.Model):
         null=True,
         blank=True,
         related_name="workflow_templates",
+    )
+    approver_role = models.ForeignKey(
+        Role,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        help_text="Role responsible for approving instances of this workflow",
+        related_name="workflow_templates_as_approver",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -96,6 +106,21 @@ class WorkflowInstance(models.Model):
     context = models.JSONField(default=dict, blank=True)
     company = models.ForeignKey(
         Company, on_delete=models.PROTECT, null=True, blank=True, related_name="workflow_instances"
+    )
+    approver_role = models.ForeignKey(
+        Role,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="workflow_instances",
+    )
+    assigned_to = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="assigned_workflow_instances",
+        help_text="If set, only this user may act on the instance",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

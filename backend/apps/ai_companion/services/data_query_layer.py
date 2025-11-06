@@ -174,7 +174,7 @@ class DataQueryLayer:
                     "count": len(accounts)
                 },
                 message=f"Total cash balance: {total_balance}",
-                metadata={"currency": "BDT"}  # TODO: Multi-currency support
+                metadata={"currency": getattr(self.company, 'currency', 'BDT')}
             )
 
         except Exception as e:

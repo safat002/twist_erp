@@ -4,11 +4,16 @@ from rest_framework import serializers
 from apps.audit.utils import log_audit_event
 from apps.metadata.services import MetadataScope, create_metadata_version
 from .models import WorkflowTemplate, WorkflowInstance
+from apps.permissions.models import Role
+from apps.users.models import User
 
 
 class WorkflowTemplateSerializer(serializers.ModelSerializer):
     publish = serializers.BooleanField(write_only=True, required=False, default=True)
     metadata = serializers.SerializerMethodField(read_only=True)
+    approver_role = serializers.PrimaryKeyRelatedField(
+        queryset=Role.objects.all(), required=False, allow_null=True
+    )
 
     class Meta:
         model = WorkflowTemplate
@@ -22,6 +27,7 @@ class WorkflowTemplateSerializer(serializers.ModelSerializer):
             "scope_type",
             "status",
             "version",
+            "approver_role",
             "metadata",
             "publish",
             "created_at",
@@ -90,9 +96,9 @@ class WorkflowTemplateSerializer(serializers.ModelSerializer):
             scope_type=scope_type,
             status=metadata.status,
             version=metadata.version,
-            metadata=metadata,
             company=company if scope_type == "COMPANY" else None,
             company_group=scope.company_group if scope_type != "GLOBAL" else None,
+            approver_role=validated_data.get("approver_role"),
         )
 
         if publish:
@@ -131,12 +137,55 @@ class WorkflowTemplateSerializer(serializers.ModelSerializer):
 
 
 class WorkflowInstanceSerializer(serializers.ModelSerializer):
+    approver_role = serializers.PrimaryKeyRelatedField(
+        queryset=Role.objects.all(), required=False, allow_null=True
+    )
+    assigned_to = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False, allow_null=True)
+
     class Meta:
         model = WorkflowInstance
-        fields = ["id", "template", "state", "context", "created_at", "updated_at"]
+        fields = [
+            "id",
+            "template",
+            "state",
+            "context",
+            "approver_role",
+            "assigned_to",
+            "created_at",
+            "updated_at",
+        ]
         read_only_fields = ["created_at", "updated_at"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
     def create(self, validated_data):
         request = self.context.get("request")
         company = getattr(request, "company", None)
-        return WorkflowInstance.objects.create(company=company, **validated_data)
+
+        template = validated_data.get("template")
+        approver_role = validated_data.get("approver_role") or getattr(template, "approver_role", None)
+        assigned_to = validated_data.get("assigned_to")
+
+        # Auto-assign to a user with the approver role if not explicitly assigned
+        if approver_role and not assigned_to and company:
+            try:
+                from apps.users.models import UserCompanyRole
+                ucr = (
+                    UserCompanyRole.objects.select_related("user")
+                    .filter(company=company, role=approver_role, is_active=True)
+                    .order_by("assigned_at")
+                    .first()
+                )
+                if ucr:
+                    assigned_to = ucr.user
+            except Exception:
+                assigned_to = None
+
+        instance = WorkflowInstance.objects.create(
+            company=company,
+            approver_role=approver_role,
+            assigned_to=assigned_to,
+            **{k: v for k, v in validated_data.items() if k not in {"approver_role", "assigned_to"}},
+        )
+        return instance

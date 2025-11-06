@@ -10,10 +10,11 @@ from ..models import (
     AccountType,
     Journal,
     JournalEntry,
-    JournalSequence,
     JournalStatus,
     JournalVoucher,
 )
+from ..models import FiscalPeriod, FiscalPeriodStatus
+from .config import enforce_period_posting, enforce_segregation_of_duties
 
 class JournalService:
     """
@@ -37,23 +38,14 @@ class JournalService:
 
     @staticmethod
     def _generate_voucher_number(company, journal, entry_date):
-        fiscal_year = entry_date.strftime('%Y')
-        sequence, _ = (
-            JournalSequence.objects
-            .select_for_update()
-            .get_or_create(
-                company=company,
-                journal=journal,
-                fiscal_year=fiscal_year,
-                defaults={'current_value': 0},
-            )
-        )
-        sequence.current_value += 1
-        sequence.save(update_fields=['current_value'])
-        sequence_number = sequence.current_value
-        prefix = f"{journal.code}-{fiscal_year}"
-        voucher_number = f"{prefix}-{sequence_number:04d}"
-        return voucher_number, sequence_number
+        from core.doc_numbers import get_next_doc_no
+        number = get_next_doc_no(company=company, doc_type=journal.code, prefix=journal.code, fy_format="YYYY", width=4)
+        # Extract numeric tail for sequence_number compatibility
+        try:
+            sequence_number = int(number.split("-")[-1])
+        except Exception:  # noqa: BLE001
+            sequence_number = 0
+        return number, sequence_number
 
     @staticmethod
     def _prepare_entries(entries_data, company):
@@ -180,8 +172,22 @@ class JournalService:
             .get(pk=voucher.pk)
         )
 
-        if voucher.status != JournalStatus.DRAFT:
+        if voucher.status not in {JournalStatus.DRAFT, JournalStatus.REVIEW}:
             raise ValueError(f"Voucher {voucher.voucher_number} is not in Draft state and cannot be posted.")
+
+        # Period enforcement
+        if enforce_period_posting(voucher.company):
+            try:
+                period_row = FiscalPeriod.objects.get(company=voucher.company, period=voucher.period)
+            except FiscalPeriod.DoesNotExist:  # If no row exists, treat as open by default
+                period_row = None
+            if period_row and period_row.status != FiscalPeriodStatus.OPEN:
+                raise ValueError(f"Posting blocked: fiscal period {voucher.period} is {period_row.status}.")
+
+        # SoD enforcement
+        if enforce_segregation_of_duties(voucher.company):
+            if voucher.created_by_id and posted_by and voucher.created_by_id == posted_by.id:
+                raise ValueError("Segregation of duties: creator cannot post their own voucher.")
 
         entries = list(
             voucher.entries
@@ -217,4 +223,25 @@ class JournalService:
         voucher.posted_at = timezone.now()
         voucher.save(update_fields=['status', 'posted_by', 'posted_at'])
 
+        return voucher
+
+    @staticmethod
+    def submit_for_review(voucher: JournalVoucher, actor):
+        if voucher.status != JournalStatus.DRAFT:
+            raise ValueError("Only draft vouchers can be submitted for review.")
+        voucher.status = JournalStatus.REVIEW
+        voucher.save(update_fields=['status'])
+        return voucher
+
+    @staticmethod
+    def approve_voucher(voucher: JournalVoucher, reviewer):
+        if voucher.status != JournalStatus.REVIEW:
+            raise ValueError("Voucher is not in review state.")
+        # SoD: reviewer cannot be creator
+        if enforce_segregation_of_duties(voucher.company):
+            if voucher.created_by_id and reviewer and voucher.created_by_id == reviewer.id:
+                raise ValueError("Segregation of duties: creator cannot approve their own voucher.")
+        voucher.reviewed_by = reviewer
+        voucher.reviewed_at = timezone.now()
+        voucher.save(update_fields=['reviewed_by', 'reviewed_at'])
         return voucher

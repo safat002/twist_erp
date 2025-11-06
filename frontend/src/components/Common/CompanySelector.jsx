@@ -59,7 +59,7 @@ const CompanySelector = () => {
           <Space direction="vertical" size={0}>
             <Typography.Text strong>{company.name}</Typography.Text>
             <Typography.Text type="secondary">
-              {(company.code || '').toString().toUpperCase()} · {company.industry || 'Business'}
+              {(company.code || '').toString().toUpperCase()} - {company.industry || 'Business'}
             </Typography.Text>
           </Space>
         </Space>
@@ -75,18 +75,11 @@ const CompanySelector = () => {
       baseItems.push({ type: 'divider' });
     }
 
-    baseItems.push(
-      {
-        key: 'refresh',
-        label: 'Refresh company list',
-        icon: <ReloadOutlined />,
-      },
-      {
-        key: 'manage',
-        label: 'Manage companies',
-        icon: <SettingOutlined />,
-      },
-    );
+    baseItems.push({
+      key: 'refresh',
+      label: 'Refresh company list',
+      icon: <ReloadOutlined />,
+    });
 
     return baseItems;
   }, [companyMenuItems]);
@@ -96,10 +89,7 @@ const CompanySelector = () => {
       refreshCompanies();
       return;
     }
-    if (key === 'manage') {
-      navigate('/company-management');
-      return;
-    }
+    // 'manage' action intentionally hidden from navbar
     switchCompany(key);
   };
 
@@ -113,8 +103,7 @@ const CompanySelector = () => {
         {currentCompany.name}
       </Typography.Text>
       <Typography.Text type="secondary" ellipsis style={{ maxWidth: 180 }}>
-        {(currentCompany.code || '').toString().toUpperCase()} ·{' '}
-        {currentCompany.timezone || currentCompany.industry || 'Multi-company ready'}
+        {(currentCompany.code || '').toString().toUpperCase()} - {currentCompany.timezone || currentCompany.industry || 'Multi-company ready'}
       </Typography.Text>
     </Space>
   ) : (
@@ -172,3 +161,4 @@ const CompanySelector = () => {
 };
 
 export default CompanySelector;
+

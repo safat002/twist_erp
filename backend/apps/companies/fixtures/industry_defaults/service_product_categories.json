@@ -1,0 +1,5 @@
+[
+  {"code": "CONSULTING", "name": "Consulting Services", "parent_code": null, "level": 0, "is_featured": true, "description": "Professional consulting services"},
+  {"code": "TRAINING", "name": "Training Services", "parent_code": null, "level": 0, "is_featured": true, "description": "Training and development programs"},
+  {"code": "SUPPORT", "name": "Support Services", "parent_code": null, "level": 0, "is_featured": false, "description": "Ongoing support and maintenance"}
+]

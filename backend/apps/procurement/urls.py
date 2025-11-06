@@ -5,6 +5,9 @@ from .views import (
     PurchaseOrderViewSet,
     PurchaseRequisitionViewSet,
     SupplierViewSet,
+    PurchaseRequisitionDraftView,
+    PurchaseRequisitionDraftDetailView,
+    PurchaseRequisitionDraftConvertView,
 )
 
 router = DefaultRouter()
@@ -15,4 +18,7 @@ router.register(r'purchase-order-lines', PurchaseOrderLineViewSet, basename='pur
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('requisitions/', PurchaseRequisitionDraftView.as_view(), name='purchase-requisition-draft'),
+    path('requisitions/<int:pk>/', PurchaseRequisitionDraftDetailView.as_view(), name='purchase-requisition-draft-detail'),
+    path('requisitions/<int:pk>/convert/', PurchaseRequisitionDraftConvertView.as_view(), name='purchase-requisition-draft-convert'),
 ]

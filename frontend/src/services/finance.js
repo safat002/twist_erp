@@ -27,6 +27,12 @@ export const deleteJournalVoucher = (id) =>
 export const postJournalVoucher = (id) =>
   api.post(`/api/v1/finance/journal-vouchers/${id}/post/`);
 
+export const submitJournalVoucher = (id) =>
+  api.post(`/api/v1/finance/journal-vouchers/${id}/submit/`);
+
+export const approveJournalVoucher = (id) =>
+  api.post(`/api/v1/finance/journal-vouchers/${id}/approve/`);
+
 export const processJournalVoucherDocument = (formData) =>
   api.post('/api/v1/finance/journal-vouchers/process-document/', formData, {
     headers: {
@@ -44,6 +50,8 @@ export const updateInvoice = (id, payload) =>
 
 export const postInvoice = (id) => api.post(`/api/v1/finance/invoices/${id}/post/`);
 
+export const approveInvoice = (id) => api.post(`/api/v1/finance/invoices/${id}/approve/`);
+
 export const fetchPayments = (params = {}) =>
   api.get('/api/v1/finance/payments/', { params });
 
@@ -53,3 +61,43 @@ export const updatePayment = (id, payload) =>
   api.put(`/api/v1/finance/payments/${id}/`, payload);
 
 export const postPayment = (id) => api.post(`/api/v1/finance/payments/${id}/post/`);
+
+export const approvePayment = (id) => api.post(`/api/v1/finance/payments/${id}/approve/`);
+
+// Fiscal Periods
+export const fetchPeriods = (params = {}) => api.get('/api/v1/finance/periods/', { params });
+export const createPeriod = (payload) => api.post('/api/v1/finance/periods/', payload);
+export const updatePeriod = (id, payload) => api.put(`/api/v1/finance/periods/${id}/`, payload);
+export const closePeriod = (id) => api.post(`/api/v1/finance/periods/${id}/close/`);
+export const openPeriod = (id) => api.post(`/api/v1/finance/periods/${id}/open/`);
+export const lockPeriod = (id) => api.post(`/api/v1/finance/periods/${id}/lock/`);
+export const unlockPeriod = (id) => api.post(`/api/v1/finance/periods/${id}/unlock/`);
+
+// Bank Reconciliation
+export const fetchBankStatements = (params = {}) => api.get('/api/v1/finance/bank-statements/', { params });
+export const createBankStatement = (payload) => api.post('/api/v1/finance/bank-statements/', payload);
+export const matchStatementLine = (id, payload) => api.post(`/api/v1/finance/bank-statements/${id}/match-line/`, payload);
+
+// Finance Reports
+export const getTrialBalance = (params = {}) =>
+  api.get('/api/v1/finance/reports/trial-balance', { params });
+
+export const getGeneralLedger = (params = {}) =>
+  api.get('/api/v1/finance/reports/general-ledger', { params });
+
+export const getARAging = (params = {}) =>
+  api.get('/api/v1/finance/reports/ar-aging', { params });
+
+export const getAPAging = (params = {}) =>
+  api.get('/api/v1/finance/reports/ap-aging', { params });
+
+export const getVATReturn = (params = {}) =>
+  api.get('/api/v1/finance/reports/vat-return', { params });
+
+// Currencies (multi-currency management)
+export const fetchCurrencies = () => api.get('/api/v1/finance/currencies/');
+export const createCurrency = (payload) => api.post('/api/v1/finance/currencies/', payload);
+export const updateCurrency = (id, payload) => api.put(`/api/v1/finance/currencies/${id}/`, payload);
+export const deleteCurrency = (id) => api.delete(`/api/v1/finance/currencies/${id}/`);
+export const setBaseCurrency = (code) => api.post('/api/v1/finance/currencies/set-base/', { code });
+export const fetchCurrencyChoices = () => api.get('/api/v1/companies/currency-choices/');

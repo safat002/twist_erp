@@ -1,7 +1,13 @@
 from django.db import models
 from django.conf import settings
 
+
 class Customer(models.Model):
+    class CustomerType(models.TextChoices):
+        LOCAL = "local", "Local"
+        EXPORT = "export", "Export"
+        INTERCOMPANY = "intercompany", "Intercompany"
+
     company = models.ForeignKey('companies.Company', on_delete=models.PROTECT, help_text="Company this record belongs to")
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='+')
     created_at = models.DateTimeField(auto_now_add=True)
@@ -21,6 +27,7 @@ class Customer(models.Model):
         ('ACTIVE', 'Active Customer'),
         ('INACTIVE', 'Inactive'),
     ], default='LEAD')
+    customer_type = models.CharField(max_length=20, choices=CustomerType.choices, default=CustomerType.LOCAL)
     is_active = models.BooleanField(default=True)
     receivable_account = models.ForeignKey('finance.Account', on_delete=models.PROTECT)
 

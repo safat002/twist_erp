@@ -803,3 +803,64 @@ class APIKeyUsageLog(models.Model):
     def __str__(self):
         status = "Success" if self.success else "Failed"
         return f"{self.operation} - {status} ({self.created_at})"
+
+
+class AIPendingConfirmation(models.Model):
+    """
+    Stores pending action confirmations awaiting user approval.
+    Replaces in-memory storage for production scalability.
+    """
+
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("confirmed", "Confirmed"),
+        ("cancelled", "Cancelled"),
+        ("expired", "Expired"),
+    ]
+
+    confirmation_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="ai_pending_confirmations",
+    )
+    company = models.ForeignKey(
+        "companies.Company",
+        on_delete=models.CASCADE,
+        related_name="ai_pending_confirmations",
+    )
+    action_type = models.CharField(max_length=100, help_text="Type of action (e.g., 'approve_po', 'create_so')")
+    action_params = models.JSONField(default=dict, help_text="Parameters for the action")
+    summary = models.TextField(help_text="Human-readable summary shown to user")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    expires_at = models.DateTimeField(help_text="When this confirmation expires")
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    execution_result = models.JSONField(default=dict, blank=True, help_text="Result after execution")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Pending Confirmation"
+        verbose_name_plural = "Pending Confirmations"
+        indexes = [
+            models.Index(fields=["confirmation_token"]),
+            models.Index(fields=["user", "status", "created_at"]),
+            models.Index(fields=["expires_at", "status"]),
+        ]
+
+    def __str__(self):
+        return f"{self.action_type} - {self.get_status_display()} ({self.user})"
+
+    def is_expired(self):
+        """Check if this confirmation has expired."""
+        from django.utils import timezone
+        return timezone.now() > self.expires_at
+
+    def mark_expired(self):
+        """Mark this confirmation as expired."""
+        from django.utils import timezone
+        if self.status == "pending" and self.is_expired():
+            self.status = "expired"
+            self.updated_at = timezone.now()
+            self.save(update_fields=["status", "updated_at"])

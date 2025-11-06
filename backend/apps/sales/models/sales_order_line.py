@@ -11,7 +11,12 @@ class SalesOrderLine(models.Model):
     tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     line_total = models.DecimalField(max_digits=20, decimal_places=2)
     delivered_qty = models.DecimalField(max_digits=15, decimal_places=3, default=0)
-    product = models.ForeignKey('inventory.Product', on_delete=models.PROTECT)
+    product = models.ForeignKey(
+        'sales.Product',
+        on_delete=models.PROTECT,
+        related_name='sales_order_lines',
+        help_text="Saleable product being sold"
+    )
     warehouse = models.ForeignKey('inventory.Warehouse', on_delete=models.PROTECT)
 
     class Meta:
