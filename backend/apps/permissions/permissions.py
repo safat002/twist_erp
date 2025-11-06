@@ -18,12 +18,18 @@ def has_permission(user: User, permission_code: str, company: Company) -> bool:
     Returns:
         True if the user has the permission, False otherwise.
     """
-    if not user or not user.is_authenticated or not company:
+    # Basic auth guard
+    if not user or not user.is_authenticated:
         return False
 
-    # System administrators and superusers have all permissions implicitly
-    if user.is_system_admin or (user.is_staff and user.is_superuser):
+    # System administrators and superusers have all permissions implicitly,
+    # even if no explicit company context was provided.
+    if getattr(user, 'is_system_admin', False) or (getattr(user, 'is_staff', False) and getattr(user, 'is_superuser', False)):
         return True
+
+    # For non-superusers, company context is required from here on.
+    if not company:
+        return False
 
     # Get all active roles for the user in the specified company
     user_company_roles = user.usercompanyrole_set.filter(company=company, is_active=True)

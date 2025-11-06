@@ -54,7 +54,48 @@ const Uoms = () => {
       load();
     } catch (e) {
       if (e?.errorFields) return;
-      message.error('Could not create UoM');
+      const similar = e?.response?.data?.similar;
+      if (Array.isArray(similar) && similar.length) {
+        Modal.confirm({
+          title: 'Similar UoMs exist',
+          content: (
+            <div>
+              <p>We found similar UoMs in your group. Are you sure you want to create a new one?</p>
+              <ul>
+                {similar.map((s) => (
+                  <li key={s.id}>
+                    <strong>{s.code}</strong> — {s.name}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ),
+          okText: 'Create Anyway',
+          cancelText: 'Cancel',
+          onOk: async () => {
+            try {
+              setSaving(true);
+              const v = await form.validateFields();
+              await api.post('/api/v1/budgets/uoms/?force=1', {
+                code: v.code,
+                name: v.name,
+                short_name: v.short_name || '',
+                is_active: v.is_active ?? true,
+              });
+              message.success('UoM created');
+              setOpen(false);
+              form.resetFields();
+              load();
+            } catch (err2) {
+              message.error(err2?.response?.data?.detail || 'Could not create UoM');
+            } finally {
+              setSaving(false);
+            }
+          },
+        });
+      } else {
+        message.error(e?.response?.data?.detail || 'Could not create UoM');
+      }
     } finally {
       setSaving(false);
     }

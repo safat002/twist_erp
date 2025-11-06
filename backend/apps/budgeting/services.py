@@ -518,7 +518,12 @@ class BudgetPriceService:
 
     @staticmethod
     def _standard_price(company, item_code):
-        bic = BudgetItemCode.objects.filter(company=company, code=item_code).first()
+        # Group-scoped lookup for item code
+        bic = None
+        if company and getattr(company, 'company_group_id', None):
+            bic = BudgetItemCode.objects.filter(company__company_group_id=company.company_group_id, code=item_code).first()
+        if not bic and company:
+            bic = BudgetItemCode.objects.filter(company=company, code=item_code).first()
         if bic and bic.standard_price is not None:
             return bic.standard_price
         prod = Product.objects.filter(company=company, code=item_code).first()

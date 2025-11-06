@@ -8,6 +8,7 @@ from django.db.models import Count, F, Max, Sum
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import mixins, serializers, status, viewsets
+from django.conf import settings
 from django.db import IntegrityError, DatabaseError
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -24,6 +25,8 @@ from .models import (
     BudgetUsage,
     CostCenter,
     BudgetItemCode,
+    BudgetItemCategory,
+    BudgetItemSubCategory,
     BudgetRemarkTemplate,
     BudgetVarianceAudit,
 )
@@ -36,10 +39,15 @@ from .serializers import (
     CostCenterSerializer,
     BudgetItemCodeSerializer,
     BudgetUnitOfMeasureSerializer,
+    BudgetItemCategorySerializer,
+    BudgetItemSubCategorySerializer,
     BudgetRemarkTemplateSerializer,
     BudgetVarianceAuditSerializer,
 )
 from apps.inventory.models import UnitOfMeasure
+from difflib import SequenceMatcher
+import math
+from apps.permissions.permissions import has_permission
 from apps.security.services.permission_service import PermissionService
 from .services import (
     BudgetApprovalService,
@@ -656,6 +664,19 @@ class BudgetLineViewSet(viewsets.ModelViewSet):
                 or cc.budget_entry_users.filter(id=getattr(user, 'id', None)).exists()
             ):
                 raise serializers.ValidationError("You are not allowed to enter budget lines for this cost center.")
+        # Derive procurement_class from budget type if not provided
+        pc = serializer.validated_data.get("procurement_class")
+        if not pc:
+            try:
+                bt = getattr(budget, 'budget_type', None)
+                from .models import Budget as _Budget, BudgetLine as _BudgetLine
+                pc_map = {
+                    getattr(_Budget, 'TYPE_OPEX', 'opex'): _BudgetLine.ProcurementClass.SERVICE_ITEM,
+                    getattr(_Budget, 'TYPE_CAPEX', 'capex'): _BudgetLine.ProcurementClass.CAPEX_ITEM,
+                }
+                serializer.validated_data["procurement_class"] = pc_map.get(bt, _BudgetLine.ProcurementClass.STOCK_ITEM)
+            except Exception:
+                pass
         sequence = serializer.validated_data.get("sequence")
         if not sequence:
             max_seq = budget.lines.aggregate(max_sequence=Max("sequence")).get("max_sequence") or 0
@@ -1205,9 +1226,153 @@ class BudgetItemCodeViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         company = getattr(self.request, "company", None)
-        qs = BudgetItemCode.objects.select_related("company", "uom")
-        if company:
+        qs = BudgetItemCode.objects.select_related("company", "uom", "category_ref", "sub_category_ref").order_by('code')
+        if company and getattr(company, 'company_group_id', None):
+            # Group-scoped: share item codes across companies in the same group
+            qs = qs.filter(company__company_group_id=company.company_group_id)
+        elif company:
             qs = qs.filter(company=company)
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save()
+
+    def create(self, request, *args, **kwargs):
+        # Permission check: creating item codes requires budgeting_manage_item_codes
+        company = getattr(request, "company", None)
+        if not has_permission(request.user, 'budgeting_manage_item_codes', company):
+            return Response({"detail": "Missing permission: budgeting_manage_item_codes"}, status=status.HTTP_403_FORBIDDEN)
+        # Similarity suggestions before creating item code
+        try:
+            code = (request.data.get('code') or '').strip()
+            name = (request.data.get('name') or '').strip()
+            force = (str(request.query_params.get('force') or request.data.get('force') or '')).lower() in {'1','true','yes','on'}
+            # Suggestion engine configuration
+            suggest_cfg = getattr(settings, 'BUDGETING_ITEM_CODE_SUGGESTIONS', {})
+            suggest_enabled = bool(suggest_cfg.get('enabled', True))
+            use_embeddings = bool(suggest_cfg.get('use_embeddings', True))
+            embed_threshold = float(suggest_cfg.get('embedding_threshold', 0.70))
+            fuzzy_threshold = float(suggest_cfg.get('fuzzy_threshold', 0.50))
+            candidate_limit = int(suggest_cfg.get('candidate_limit', 200))
+            results_limit = int(suggest_cfg.get('results_limit', 5))
+
+            if suggest_enabled and company and (code or name) and not force:
+                qs = BudgetItemCode.objects.all()
+                if getattr(company, 'company_group_id', None):
+                    qs = qs.filter(company__company_group_id=company.company_group_id)
+                else:
+                    qs = qs.filter(company=company)
+
+                # Strict duplicate on NAME: block create unless force is set
+                if name and qs.filter(name__iexact=name).exists():
+                    return Response({
+                        "detail": "An item code with this name already exists for your company group.",
+                        "name": ["duplicate"],
+                    }, status=status.HTTP_400_BAD_REQUEST)
+
+                # Preselect candidate pool (prefer name match; code may be empty)
+                criteria = models.Q()
+                if name:
+                    criteria |= models.Q(name__icontains=name)
+                if code:
+                    criteria |= models.Q(code__icontains=code)
+                candidates = list(qs.filter(criteria)[:candidate_limit]) if (name or code) else []
+                # If no substring candidates (e.g., typos), sample a small set for fuzzy matching
+                if not candidates:
+                    candidates = list(qs[:candidate_limit])
+
+                # Try vector similarity first (if AI embeddings are available)
+                similar = []
+                try:
+                    from apps.ai_companion.services.ai_service_v2 import ai_service_v2  # local import
+                    emb = getattr(ai_service_v2, 'embeddings', None)
+                    if emb is None and hasattr(ai_service_v2, '_ensure_ready'):
+                        try:
+                            ai_service_v2._ensure_ready(require_generator=False)
+                            emb = getattr(ai_service_v2, 'embeddings', None)
+                        except Exception:
+                            emb = None
+                    if emb is not None and use_embeddings:
+                        query_text = f"{code} {name}".strip()
+                        qv = emb.embed_query(query_text)
+                        # cosine similarity helper
+                        def _cos(a, b):
+                            da = math.sqrt(sum(x*x for x in a)) or 1.0
+                            db = math.sqrt(sum(x*x for x in b)) or 1.0
+                            return sum(x*y for x, y in zip(a, b)) / (da * db)
+                        cand_texts = [f"{(c.code or '').strip()} {(c.name or '').strip()}".strip() for c in candidates]
+                        dvs = emb.embed_documents(cand_texts)
+                        sims = [(_cos(qv, dv), c) for dv, c in zip(dvs, candidates)]
+                        # threshold tuned for embeddings (higher than fuzzy)
+                        sims = [(s, c) for s, c in sims if s >= embed_threshold]
+                        sims.sort(key=lambda t: t[0], reverse=True)
+                        similar = [{"id": c.id, "code": c.code, "name": c.name, "uom": getattr(c.uom, 'name', None)} for s, c in sims[:results_limit]]
+                except Exception:
+                    similar = []
+
+                # Fallback to fuzzy if no vector result
+                if not similar and candidates:
+                    scored = []
+                    for c in candidates:
+                        score_code = SequenceMatcher(a=code.lower(), b=(c.code or '').lower()).ratio() if code else 0
+                        score_name = SequenceMatcher(a=name.lower(), b=(c.name or '').lower()).ratio() if name else 0
+                        score = max(score_code, score_name)
+                        if score >= fuzzy_threshold:
+                            scored.append((score, c))
+                    scored.sort(key=lambda t: t[0], reverse=True)
+                    similar = [{"id": c.id, "code": c.code, "name": c.name, "uom": getattr(c.uom, 'name', None)} for _, c in scored[:results_limit]]
+
+                if similar:
+                    try:
+                        from apps.ai_companion.models import AIProactiveSuggestion
+                        AIProactiveSuggestion.objects.create(
+                            user=request.user,
+                            company=company,
+                            title="Similar Item Codes found",
+                            body=f"Codes similar to '{code or name}' exist.",
+                            metadata={"proposed": {"code": code, "name": name}, "similar": similar},
+                            source_skill="budgeting_item_code",
+                            alert_type="info",
+                        )
+                    except Exception:
+                        pass
+                    return Response({"detail": "Similar item codes exist", "similar": similar, "hint": "Pass force=1 to create anyway."}, status=status.HTTP_409_CONFLICT)
+        except Exception as e:
+            print(f"[BudgetItemCodeViewSet] Similarity check failed: {e}")
+        return super().create(request, *args, **kwargs)
+
+
+class BudgetItemCategoryViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
+    serializer_class = BudgetItemCategorySerializer
+
+    def get_queryset(self):
+        company = getattr(self.request, "company", None)
+        qs = BudgetItemCategory.objects.select_related("company").order_by('code')
+        if company and getattr(company, 'company_group_id', None):
+            qs = qs.filter(company__company_group_id=company.company_group_id)
+        elif company:
+            qs = qs.filter(company=company)
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save()
+
+
+class BudgetItemSubCategoryViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
+    serializer_class = BudgetItemSubCategorySerializer
+
+    def get_queryset(self):
+        company = getattr(self.request, "company", None)
+        qs = BudgetItemSubCategory.objects.select_related("company", "category").order_by('category_id', 'code')
+        if company and getattr(company, 'company_group_id', None):
+            qs = qs.filter(company__company_group_id=company.company_group_id)
+        elif company:
+            qs = qs.filter(company=company)
+        category_id = self.request.query_params.get('category')
+        if category_id:
+            qs = qs.filter(category_id=category_id)
         return qs
 
     def perform_create(self, serializer):
@@ -1220,13 +1385,104 @@ class BudgetUnitOfMeasureViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         company = getattr(self.request, "company", None)
-        qs = UnitOfMeasure.objects.all()
-        if company:
+        qs = UnitOfMeasure.objects.all().order_by('code', 'id')
+        if company and getattr(company, 'company_group_id', None):
+            qs = qs.filter(company__company_group_id=company.company_group_id)
+        elif company:
             qs = qs.filter(company=company)
         return qs
 
+    def list(self, request, *args, **kwargs):
+        # Deduplicate by code within the company group so each UOM shows once
+        queryset = self.get_queryset()
+        by_code = {}
+        for u in queryset:
+            if u.code not in by_code:
+                by_code[u.code] = u
+        serializer = self.get_serializer(list(by_code.values()), many=True)
+        return Response(serializer.data)
+
     def perform_create(self, serializer):
         serializer.save()
+
+    def create(self, request, *args, **kwargs):
+        # Permission check: creating UOMs requires budgeting_manage_uoms
+        company = getattr(request, "company", None)
+        if not has_permission(request.user, 'budgeting_manage_uoms', company):
+            return Response({"detail": "Missing permission: budgeting_manage_uoms"}, status=status.HTTP_403_FORBIDDEN)
+        # Similarity suggestions before creating UOM
+        try:
+            code = (request.data.get('code') or '').strip()
+            name = (request.data.get('name') or '').strip()
+            force = (str(request.query_params.get('force') or request.data.get('force') or '')).lower() in {'1','true','yes','on'}
+            if company and (code or name) and not force:
+                qs = UnitOfMeasure.objects.all()
+                if getattr(company, 'company_group_id', None):
+                    qs = qs.filter(company__company_group_id=company.company_group_id)
+                else:
+                    qs = qs.filter(company=company)
+                if code and qs.filter(code__iexact=code).exists():
+                    return Response({"detail": "A UOM with this code already exists for your company group.", "code": ["duplicate"]}, status=status.HTTP_400_BAD_REQUEST)
+
+                candidates = list(qs.filter(models.Q(code__icontains=code) | models.Q(name__icontains=name))[:50])
+
+                # Try vector similarity if embeddings available
+                similar = []
+                try:
+                    from apps.ai_companion.services.ai_service_v2 import ai_service_v2  # local import
+                    emb = getattr(ai_service_v2, 'embeddings', None)
+                    if emb is None and hasattr(ai_service_v2, '_ensure_ready'):
+                        try:
+                            ai_service_v2._ensure_ready(require_generator=False)
+                            emb = getattr(ai_service_v2, 'embeddings', None)
+                        except Exception:
+                            emb = None
+                    if emb is not None:
+                        query_text = f"{code} {name}".strip()
+                        qv = emb.embed_query(query_text)
+                        def _cos(a, b):
+                            da = math.sqrt(sum(x*x for x in a)) or 1.0
+                            db = math.sqrt(sum(x*x for x in b)) or 1.0
+                            return sum(x*y for x, y in zip(a, b)) / (da * db)
+                        cand_texts = [f"{(u.code or '').strip()} {(u.name or '').strip()}".strip() for u in candidates]
+                        dvs = emb.embed_documents(cand_texts)
+                        sims = [(_cos(qv, dv), u) for dv, u in zip(dvs, candidates)]
+                        sims = [(s, u) for s, u in sims if s >= 0.75]
+                        sims.sort(key=lambda t: t[0], reverse=True)
+                        similar = [{"id": u.id, "code": u.code, "name": u.name} for s, u in sims[:5]]
+                except Exception:
+                    similar = []
+
+                # Fallback to fuzzy
+                if not similar and candidates:
+                    scored = []
+                    for u in candidates:
+                        score_code = SequenceMatcher(a=code.lower(), b=(u.code or '').lower()).ratio() if code else 0
+                        score_name = SequenceMatcher(a=name.lower(), b=(u.name or '').lower()).ratio() if name else 0
+                        score = max(score_code, score_name)
+                        if score >= 0.6:
+                            scored.append((score, u))
+                    scored.sort(key=lambda t: t[0], reverse=True)
+                    similar = [{"id": u.id, "code": u.code, "name": u.name} for _, u in scored[:5]]
+
+                if similar:
+                    try:
+                        from apps.ai_companion.models import AIProactiveSuggestion
+                        AIProactiveSuggestion.objects.create(
+                            user=request.user,
+                            company=company,
+                            title="Similar UOMs found",
+                            body=f"UOMs similar to '{code or name}' exist.",
+                            metadata={"proposed": {"code": code, "name": name}, "similar": similar},
+                            source_skill="budgeting_uom",
+                            alert_type="info",
+                        )
+                    except Exception:
+                        pass
+                    return Response({"detail": "Similar UOMs exist", "similar": similar, "hint": "Pass force=1 to create anyway."}, status=status.HTTP_409_CONFLICT)
+        except Exception:
+            pass
+        return super().create(request, *args, **kwargs)
 
 
 class PermittedCostCentersView(APIView):
@@ -1238,14 +1494,20 @@ class PermittedCostCentersView(APIView):
         qs = CostCenter.objects.select_related("company", "owner", "deputy_owner")
         if company:
             qs = qs.filter(company=company)
-        qs = qs.filter(models.Q(owner=user) | models.Q(deputy_owner=user) | models.Q(budget_entry_users=user))
+        # Admins/staff: see all active cost centers in scope
+        if getattr(user, "is_superuser", False) or getattr(user, "is_system_admin", False) or getattr(user, "is_staff", False):
+            base_qs = qs.filter(is_active=True)
+        else:
+            base_qs = qs.filter(
+                models.Q(owner=user) | models.Q(deputy_owner=user) | models.Q(budget_entry_users=user)
+            )
+        base_qs = base_qs.distinct().order_by("code")
+        # Fallback: if none matched (e.g., initial setup), show all active to avoid empty UX for first-time setup
+        if not base_qs.exists():
+            base_qs = qs.filter(is_active=True).order_by("code")
         data = [
-            {
-                "id": cc.id,
-                "code": cc.code,
-                "name": cc.name,
-            }
-            for cc in qs.distinct().order_by("code")
+            {"id": cc.id, "code": cc.code, "name": cc.name}
+            for cc in base_qs
         ]
         return Response(data)
 
@@ -1349,7 +1611,7 @@ class EntryLinesView(APIView):
                 budget_type=declared.budget_type,
                 period_start=declared.period_start,
                 period_end=declared.period_end,
-                name=f"{declared.name} - {cc.code}",
+                name=declared.name,
                 entry_start_date=declared.entry_start_date,
                 entry_end_date=declared.entry_end_date,
                 threshold_percent=declared.threshold_percent,
@@ -1391,7 +1653,9 @@ class AddBudgetItemView(APIView):
         item_name = request.data.get("item_name")
         qty = request.data.get("quantity")
         manual_unit_price = request.data.get("manual_unit_price")
-        procurement_class = request.data.get("procurement_class") or BudgetLine.ProcurementClass.STOCK_ITEM
+        # Derive procurement class from declared budget type (ignore client override)
+        if False:
+            pass  # placeholder for readability
         if not (cost_center_id and declared_budget_id and item_code and qty is not None):
             return Response({"detail": "cost_center, budget, item_code, quantity are required"}, status=status.HTTP_400_BAD_REQUEST)
         try:
@@ -1432,7 +1696,7 @@ class AddBudgetItemView(APIView):
                 budget_type=declared.budget_type,
                 period_start=declared.period_start,
                 period_end=declared.period_end,
-                name=f"{declared.name} - {cc.code}",
+                name=declared.name,
                 entry_start_date=declared.entry_start_date,
                 entry_end_date=declared.entry_end_date,
                 threshold_percent=declared.threshold_percent,
@@ -1440,6 +1704,16 @@ class AddBudgetItemView(APIView):
                 status=Budget.STATUS_DRAFT,
                 revision_no=next_rev,
             )
+        # Decide procurement class based on declared budget type
+        try:
+            if declared.budget_type == Budget.TYPE_OPEX:
+                procurement_class = BudgetLine.ProcurementClass.SERVICE_ITEM
+            elif declared.budget_type == Budget.TYPE_CAPEX:
+                procurement_class = BudgetLine.ProcurementClass.CAPEX_ITEM
+            else:
+                procurement_class = BudgetLine.ProcurementClass.STOCK_ITEM
+        except Exception:
+            procurement_class = BudgetLine.ProcurementClass.STOCK_ITEM
         # Resolve price
         if manual_unit_price is not None:
             try:
@@ -1502,7 +1776,7 @@ class SubmitEntryView(APIView):
                 budget_type=declared.budget_type,
                 period_start=declared.period_start,
                 period_end=declared.period_end,
-                name=f"{declared.name} - {cc.code}",
+                name=declared.name,
                 entry_start_date=declared.entry_start_date,
                 entry_end_date=declared.entry_end_date,
                 threshold_percent=declared.threshold_percent,

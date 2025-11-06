@@ -16,6 +16,7 @@ from .models import (
     Supplier,
 )
 from core.id_factory import make_supplier_code
+from apps.companies.models import Company
 
 
 class SupplierSerializer(serializers.ModelSerializer):
@@ -40,27 +41,66 @@ class SupplierSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["company", "created_by", "created_at", "updated_at"]
+        read_only_fields = ["company", "created_by", "created_at", "updated_at", "code"]
         extra_kwargs = {
             "payable_account": {"required": False, "allow_null": True},
         }
 
+    def _resolve_company(self, request):
+        """Resolve active company from request.company, header, session, or user fallback."""
+        company = getattr(request, "company", None)
+        if company:
+            return company
+        # Try header
+        try:
+            header_id = request.headers.get("X-Company-ID") or request.META.get("HTTP_X_COMPANY_ID")
+            if header_id:
+                cmp = Company.objects.filter(id=header_id).first()
+                if cmp:
+                    return cmp
+        except Exception:
+            pass
+        # Try session
+        try:
+            sess_id = request.session.get("active_company_id")
+            if sess_id:
+                cmp = Company.objects.filter(id=sess_id).first()
+                if cmp:
+                    return cmp
+        except Exception:
+            pass
+        # Fallback: user's first active company
+        try:
+            if request.user and request.user.is_authenticated:
+                return request.user.companies.filter(is_active=True).first()
+        except Exception:
+            pass
+        return None
+
     def validate(self, data):
-        if not self.instance: # Only on create
-            if Supplier.objects.filter(name__iexact=data['name'], company=self.context['request'].company).exists():
+        request = self.context.get('request')
+        company = self._resolve_company(request) if request else None
+        if not company and not self.instance:
+            raise serializers.ValidationError({"company": "Active company context is required."})
+        if not self.instance:  # Only on create
+            existing_qs = Supplier.objects.all()
+            if company:
+                existing_qs = existing_qs.filter(company=company)
+            if existing_qs.filter(name__iexact=data.get('name', '')).exists():
                 raise serializers.ValidationError("A supplier with this name already exists.")
         return data
 
     def create(self, validated_data):
         request = self.context.get("request")
-        company = getattr(request, "company", None)
+        company = self._resolve_company(request) if request else None
+        if not company:
+            raise serializers.ValidationError({"company": "Active company context is required."})
         validated_data["company"] = company
         if request and request.user and "created_by" not in validated_data:
             validated_data["created_by"] = request.user
-        # Auto-generate supplier code if missing
-        code = validated_data.get("code")
-        if not code:
-            validated_data["code"] = make_supplier_code(company, Supplier)
+        # Always auto-generate supplier code (hidden from clients)
+        validated_data.pop("code", None)
+        validated_data["code"] = make_supplier_code(company, Supplier)
         # Default payable account if not provided: try a liability/control account
         if not validated_data.get("payable_account"):
             try:
@@ -83,6 +123,11 @@ class SupplierSerializer(serializers.ModelSerializer):
                 "payable_account": "Select a payable account. No default liability account found for this company."
             })
         return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        # Prevent external code changes
+        validated_data.pop("code", None)
+        return super().update(instance, validated_data)
 
 
 class PurchaseRequisitionLineSerializer(serializers.ModelSerializer):

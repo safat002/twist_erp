@@ -214,6 +214,7 @@ class ActionExecutor:
             "post_ar_invoice": self._post_ar_invoice,
             "issue_payment": self._issue_payment,
             "create_customer": self._create_customer,
+            "create_item_code": self._create_item_code,
             # Add more handlers as needed
         }
 
@@ -1069,6 +1070,7 @@ class ActionExecutor:
             "post_ar_invoice": self._validate_post_ar_invoice,
             "issue_payment": self._validate_issue_payment,
             "create_customer": self._validate_create_customer,
+            "create_item_code": self._validate_create_item_code,
         }
         return validators.get(action_type)
 
@@ -1216,9 +1218,68 @@ class ActionExecutor:
                     f"(Receivable account will be validated)"
                 )
 
+            elif action_type == "create_item_code":
+                code = params.get('code') or 'N/A'
+                name = params.get('name') or 'N/A'
+                uom = params.get('uom') or params.get('uom_id') or 'N/A'
+                price = params.get('standard_price', '0')
+                return (
+                    f"Create new item code:\n"
+                    f"Code: {code}\n"
+                    f"Name: {name}\n"
+                    f"UoM: {uom}\n"
+                    f"Standard Price: {price}"
+                )
             else:
                 return f"Execute action: {action_type}"
-
         except Exception as e:
             logger.error(f"Error generating summary: {e}")
             return f"Execute action: {action_type}"
+
+    def _validate_create_item_code(self, params: Dict[str, Any]) -> tuple:
+        if not params.get('code'):
+            return False, "Please provide the item code (unique within your group)."
+        if not params.get('name'):
+            return False, "Please provide the item name."
+        if not (params.get('uom') or params.get('uom_id')):
+            return False, "Please specify the unit of measure (code or id)."
+        return True, None
+
+    def _create_item_code(self, params: Dict[str, Any]) -> ActionResult:
+        try:
+            from apps.budgeting.models import BudgetItemCode
+            from apps.inventory.models import UnitOfMeasure
+            from apps.permissions.permissions import has_permission
+            # Enforce permission
+            if not has_permission(self.user, 'budgeting_manage_item_codes', self.company):
+                return ActionResult(success=False, message="Missing permission: budgeting_manage_item_codes")
+            code = (params.get('code') or '').strip()
+            name = (params.get('name') or '').strip()
+            category = (params.get('category') or '').strip()
+            std_price = params.get('standard_price') or 0
+            uom_obj = None
+            if params.get('uom_id'):
+                uom_obj = UnitOfMeasure.objects.filter(id=params['uom_id'], company__company_group=self.company.company_group).first()
+            if not uom_obj and params.get('uom'):
+                uom_obj = UnitOfMeasure.objects.filter(code__iexact=params['uom'], company__company_group=self.company.company_group).order_by('id').first()
+            if not uom_obj:
+                return ActionResult(success=False, message="I couldn't find the specified UoM in your group. Please provide a valid UoM code or id.")
+
+            # Duplicate check (group-wide)
+            exists = BudgetItemCode.objects.filter(company__company_group=self.company.company_group, code__iexact=code).exists()
+            if exists:
+                return ActionResult(success=False, message=f"An item code '{code}' already exists in your group.")
+
+            bic = BudgetItemCode.objects.create(
+                company=self.company,
+                code=code,
+                name=name,
+                category=category,
+                uom=uom_obj,
+                standard_price=std_price or 0,
+                is_active=True,
+            )
+            return ActionResult(success=True, message=f"Item code '{code}' created.", data={"id": bic.id, "code": bic.code})
+        except Exception as e:
+            logger.exception("_create_item_code failed: %s", e)
+            return ActionResult(success=False, message=f"Failed to create item code: {e}")

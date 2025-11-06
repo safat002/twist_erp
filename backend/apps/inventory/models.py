@@ -116,6 +116,7 @@ class Warehouse(models.Model):
 
 class UnitOfMeasure(models.Model):
     company = models.ForeignKey('companies.Company', on_delete=models.PROTECT, help_text="Company this record belongs to")
+    company_group = models.ForeignKey('companies.CompanyGroup', on_delete=models.PROTECT, null=True, blank=True, help_text="Company group (for group-wide uniqueness)")
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='+')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -126,6 +127,20 @@ class UnitOfMeasure(models.Model):
 
     class Meta:
         unique_together = ('company', 'code')
+        verbose_name = 'Unit of Measure'
+        verbose_name_plural = 'Units of Measure'
+
+    def __str__(self) -> str:
+        return f"{self.code} - {self.name}"
+
+    def save(self, *args, **kwargs):
+        # Auto-derive company_group if not set
+        if self.company_id and not self.company_group_id:
+            try:
+                self.company_group = self.company.company_group
+            except Exception:
+                pass
+        super().save(*args, **kwargs)
 
 class StockMovementLine(models.Model):
     movement = models.ForeignKey(StockMovement, on_delete=models.CASCADE, related_name='lines')

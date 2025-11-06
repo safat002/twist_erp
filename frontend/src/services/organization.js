@@ -188,6 +188,17 @@ export const userOrganizationalAccessService = {
   updateMyAccess: (data) => api.put('/users/me/organizational-access/', data),
 };
 
+// ==================== Roles & Assignments ====================
+
+export const roleService = {
+  list: (params = {}) => api.get('/permissions/roles/', { params }),
+};
+
+export const userRoleService = {
+  getForUserCompany: (userId, companyId) => api.get(`/users/${userId}/roles/`, { params: { company: companyId } }),
+  setForUserCompany: (userId, companyId, roles) => api.post(`/users/${userId}/roles/`, { company: companyId, roles }),
+};
+
 // ==================== Helper Functions ====================
 
 export const organizationHelpers = {

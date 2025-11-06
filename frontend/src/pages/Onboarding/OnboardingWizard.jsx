@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   Alert,
   Button,
@@ -15,6 +15,9 @@ import {
   Typography,
 } from 'antd';
 import api from '../../services/api';
+import { useAuth } from '../../contexts/AuthContext';
+import { roleService, userRoleService } from '../../services/organization';
+import { Checkbox } from 'antd';
 
 const { Title, Text } = Typography;
 
@@ -43,12 +46,16 @@ const initialCompany = {
 };
 
 const OnboardingWizard = () => {
+  const { user } = useAuth();
   const [current, setCurrent] = useState(0);
   const [groupForm] = Form.useForm();
   const [companyForm] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const [roles, setRoles] = useState([]);
+  const [assignedRoleIds, setAssignedRoleIds] = useState([]);
+  const [assigning, setAssigning] = useState(false);
 
   const steps = useMemo(
     () => [
@@ -131,6 +138,36 @@ const OnboardingWizard = () => {
       }
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  useEffect(() => {
+    const loadRoles = async () => {
+      try {
+        if (!result?.company?.id) return;
+        const { data } = await roleService.list({ company: result.company.id });
+        const list = data?.results || [];
+        setRoles(list);
+        // Prefill with Company Administrator if present
+        const defaultIds = list.filter((r) => r.name === 'Company Administrator' || r.name === 'System Administrator').map((r) => r.id);
+        setAssignedRoleIds(defaultIds);
+      } catch (_) {
+        // ignore
+      }
+    };
+    loadRoles();
+  }, [result?.company?.id]);
+
+  const handleAssignRoles = async () => {
+    if (!user?.id || !result?.company?.id) return;
+    try {
+      setAssigning(true);
+      await userRoleService.setForUserCompany(user.id, result.company.id, assignedRoleIds);
+      // Also add membership to localStorage active company if needed
+    } catch (_) {
+      // show feedback via alert below
+    } finally {
+      setAssigning(false);
     }
   };
 
@@ -285,6 +322,21 @@ const OnboardingWizard = () => {
               message="Provisioning will create the database, run migrations, and bootstrap your first company."
             />
           )}
+          {result?.company?.id ? (
+            <Card title="Assign Roles to Your Account" style={{ marginTop: 16 }}>
+              <Text>Select which default roles to grant your account in {result.company.name}.</Text>
+              <div style={{ marginTop: 12 }}>
+                <Checkbox.Group
+                  options={roles.map((r) => ({ label: r.name, value: r.id }))}
+                  value={assignedRoleIds}
+                  onChange={setAssignedRoleIds}
+                />
+              </div>
+              <div style={{ marginTop: 12 }}>
+                <Button type="primary" loading={assigning} onClick={handleAssignRoles}>Assign to Me</Button>
+              </div>
+            </Card>
+          ) : null}
         </Space>
       </Card>
     );

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Form, Input, Select, Space, Switch, Button, Typography, message } from 'antd';
-import { LinkOutlined } from '@ant-design/icons';
+import { LinkOutlined, CopyOutlined } from '@ant-design/icons';
 import api from '../../services/api';
 
 const { Text } = Typography;
@@ -57,6 +57,16 @@ const CalendarSync = () => {
     }
   };
 
+  const copyIcs = async () => {
+    try {
+      if (!icsUrl) return;
+      await navigator.clipboard.writeText(icsUrl);
+      message.success('ICS URL copied');
+    } catch (e) {
+      message.success('Select and copy the URL');
+    }
+  };
+
   return (
     <Card title="Calendar Sync" loading={loading}>
       <Form layout="vertical" form={form} onFinish={onSubmit}>
@@ -79,8 +89,18 @@ const CalendarSync = () => {
       </Form>
       <div style={{ marginTop: 16 }}>
         <Text type="secondary">Subscribe to this ICS feed in Outlook or Google Calendar:</Text>
-        <div>
-          {icsUrl ? <Input value={icsUrl} readOnly /> : <Text type="secondary">Enable sync to generate a personal ICS link.</Text>}
+        <div style={{ marginTop: 8 }}>
+          {icsUrl ? (
+            <Space.Compact style={{ width: '100%' }}>
+              <Input value={icsUrl} readOnly />
+              <Button icon={<CopyOutlined />} onClick={copyIcs}>Copy</Button>
+              <Button type="link" href={`https://calendar.google.com/calendar/r?cid=${encodeURIComponent(icsUrl)}`} target="_blank" rel="noreferrer">
+                Open in Google Calendar
+              </Button>
+            </Space.Compact>
+          ) : (
+            <Text type="secondary">Enable sync to generate a personal ICS link.</Text>
+          )}
         </div>
       </div>
     </Card>

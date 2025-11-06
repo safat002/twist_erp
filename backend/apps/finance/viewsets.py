@@ -180,6 +180,14 @@ class FiscalPeriodViewSet(CompanyScopedMixin, viewsets.ModelViewSet):
 
     def list(self, request, *args, **kwargs):  # type: ignore[override]
         self.ensure_perm("finance_close_period")
+        # Autogenerate current/next periods based on company settings
+        try:
+            from apps.finance.services.period_service import ensure_upcoming_periods
+            company = self.get_company(required=True)
+            ensure_upcoming_periods(company, days_threshold=15)
+        except Exception:
+            # Soft-fail; listing should still work
+            pass
         return super().list(request, *args, **kwargs)
 
     def perform_create(self, serializer):  # type: ignore[override]
@@ -1106,6 +1114,19 @@ class CurrencyViewSet(CompanyScopedMixin, viewsets.ModelViewSet):
 
     def perform_update(self, serializer):  # type: ignore[override]
         serializer.save()
+
+    @action(detail=False, methods=["get"], url_path="choices")
+    def choices(self, request):
+        """Return system-supported currency choices (ISO 4217 codes).
+
+        Useful for UI dropdowns when creating groups/companies.
+        """
+        try:
+            from apps.companies.models import CompanyGroup  # local import to avoid cycles
+            data = [{"code": code, "name": name} for code, name in CompanyGroup.CURRENCY_CHOICES]
+        except Exception:
+            data = []
+        return Response(data)
 
     @action(detail=False, methods=["post"], url_path="set-base")
     def set_base(self, request):

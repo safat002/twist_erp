@@ -14,6 +14,8 @@ from .views import (
     BudgetUnitOfMeasureViewSet,
     BudgetApprovalQueueView,
     BudgetRemarkTemplateViewSet,
+    BudgetItemCategoryViewSet,
+    BudgetItemSubCategoryViewSet,
     BudgetVarianceAuditViewSet,
     # Entry endpoints
     PermittedCostCentersView,
@@ -36,6 +38,8 @@ router.register(r'item-codes', BudgetItemCodeViewSet, basename='budget-item-code
 router.register(r'uoms', BudgetUnitOfMeasureViewSet, basename='budget-uoms')
 router.register(r'remark-templates', BudgetRemarkTemplateViewSet, basename='budget-remark-templates')
 router.register(r'variance-audit', BudgetVarianceAuditViewSet, basename='budget-variance-audit')
+router.register(r'item-categories', BudgetItemCategoryViewSet, basename='budget-item-categories')
+router.register(r'item-sub-categories', BudgetItemSubCategoryViewSet, basename='budget-item-sub-categories')
 
 urlpatterns = [
     path('', include(router.urls)),

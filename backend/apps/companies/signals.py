@@ -5,6 +5,7 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 from .models import Company
 from .services import DefaultDataService
+from django.core.management import call_command
 import logging
 
 logger = logging.getLogger(__name__)
@@ -36,3 +37,10 @@ def load_default_data_on_company_creation(sender, instance, created, **kwargs):
         except Exception as e:
             logger.error(f"Failed to load default data for {instance.name}: {str(e)}", exc_info=True)
             # Don't raise - allow company creation to succeed even if default data loading fails
+            return
+
+        # Seed default roles/permissions for this company (idempotent)
+        try:
+            call_command('seed_default_roles', company_id=instance.id)
+        except Exception as e:
+            logger.warning(f"Failed to seed default roles for company {instance.code}: {e}")

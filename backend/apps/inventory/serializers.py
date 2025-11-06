@@ -32,6 +32,28 @@ class UnitOfMeasureSerializer(serializers.ModelSerializer):
         model = UnitOfMeasure
         fields = '__all__'
 
+    def create(self, validated_data):
+        request = self.context.get('request')
+        company = getattr(request, 'company', None)
+        user = getattr(request, 'user', None)
+        code = validated_data.get('code')
+        if not company:
+            raise serializers.ValidationError({'detail': 'Active company is required.'})
+        # Enforce group-level uniqueness for UOM code (unless forced)
+        force = False
+        try:
+            force = (str(request.query_params.get('force') or request.data.get('force') or '')).lower() in {'1','true','yes','on'}
+        except Exception:
+            force = False
+        if not force:
+            exists = UnitOfMeasure.objects.filter(company__company_group_id=company.company_group_id, code__iexact=code).exists()
+            if exists:
+                raise serializers.ValidationError({'code': 'A UOM with this code already exists for your company group.'})
+        validated_data['company'] = company
+        if user and 'created_by' not in validated_data:
+            validated_data['created_by'] = user
+        return super().create(validated_data)
+
 class StockMovementLineSerializer(serializers.ModelSerializer):
     # Back-compat: allow posting 'product' as alias for 'item'
     product = serializers.PrimaryKeyRelatedField(queryset=Item.objects.all(), write_only=True, required=False, allow_null=True)

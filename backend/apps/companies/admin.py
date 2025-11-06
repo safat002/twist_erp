@@ -37,9 +37,11 @@ class CompanyGroupAdmin(admin.ModelAdmin):
     readonly_fields = ('hierarchy_path', 'created_at', 'updated_at', 'created_by')
     raw_id_fields = ('parent_group', 'owner_user', 'created_by')
 
+    # Hide 'code' (auto-generated) and 'db_name' (auto-generated) from edit forms
+    # Keep them visible via read-only display if needed in future.
     fieldsets = (
         ('Basic Information', {
-            'fields': ('code', 'name', 'group_type', 'description')
+            'fields': ('name', 'group_type', 'description')
         }),
         ('Hierarchy', {
             'fields': ('parent_group', 'hierarchy_path')
@@ -54,7 +56,7 @@ class CompanyGroupAdmin(admin.ModelAdmin):
             'fields': ('registration_number', 'registration_authority', 'tax_id', 'legal_address')
         }),
         ('Legacy Fields', {
-            'fields': ('db_name', 'industry_pack_type', 'supports_intercompany', 'status'),
+            'fields': ('industry_pack_type', 'supports_intercompany', 'status'),
             'classes': ('collapse',)
         }),
         ('Metadata', {

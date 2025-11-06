@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Button, Card, Form, Input, Select, Space, Table, Tag, DatePicker, message } from 'antd';
+import { Alert, Button, Card, Form, Input, Select, Space, Table, Tag, DatePicker, message } from 'antd';
 import dayjs from 'dayjs';
 import { useCompany } from '../../../contexts/CompanyContext';
 import {
@@ -17,13 +17,26 @@ const PeriodsList = () => {
   const { currentCompany } = useCompany();
   const [loading, setLoading] = useState(false);
   const [periods, setPeriods] = useState([]);
+  const [banner, setBanner] = useState(null);
   const [form] = Form.useForm();
 
   const load = async () => {
     try {
       setLoading(true);
       const { data } = await fetchPeriods();
-      setPeriods(Array.isArray(data?.results) ? data.results : data);
+      const list = Array.isArray(data?.results) ? data.results : data;
+      setPeriods(list);
+      // Compute banner: if within 15 days to month end and next period exists with notes 'AUTO'
+      const today = dayjs();
+      const monthEnd = today.endOf('month');
+      const daysLeft = monthEnd.diff(today, 'day');
+      const next = today.add(1, 'month').format('YYYY-MM');
+      const nextRow = (list || []).find((p) => p.period === next);
+      if (daysLeft <= 15 && nextRow && (nextRow.notes || '').toUpperCase().includes('AUTO')) {
+        setBanner(`Next fiscal period ${next} was auto-created (within ${daysLeft} day(s) of month end).`);
+      } else {
+        setBanner(null);
+      }
     } catch (err) {
       message.error('Unable to load fiscal periods');
     } finally {
@@ -76,6 +89,9 @@ const PeriodsList = () => {
       <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 16 }}>
         <span style={{ fontSize: 18, fontWeight: 600 }}>Fiscal Periods</span>
       </Space>
+      {banner ? (
+        <Alert type="info" showIcon message={banner} style={{ marginBottom: 16 }} />
+      ) : null}
       <Card style={{ marginBottom: 16 }}>
         <Form layout="inline" form={form} onFinish={handleCreate}>
           <Form.Item name="period" label="Period" rules={[{ required: true }]}> 
@@ -97,4 +113,3 @@ const PeriodsList = () => {
 };
 
 export default PeriodsList;
-

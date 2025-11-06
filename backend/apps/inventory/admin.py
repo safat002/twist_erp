@@ -14,7 +14,7 @@ class ProductCategoryAdmin(admin.ModelAdmin):
     list_filter = ['is_active', 'company']
     search_fields = ['code', 'name']
 
-@admin.register(UnitOfMeasure)
+# Moved to Budgeting admin via proxy registration. Keep admin class here for reuse.
 class UnitOfMeasureAdmin(admin.ModelAdmin):
     list_display = ["code", "name", "is_active", "company"]
     list_filter = ["is_active", "company"]

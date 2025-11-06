@@ -52,8 +52,29 @@ class WarehouseViewSet(viewsets.ModelViewSet):
     serializer_class = WarehouseSerializer
 
 class UnitOfMeasureViewSet(viewsets.ModelViewSet):
-    queryset = UnitOfMeasure.objects.all()
+    permission_classes = [IsAuthenticated]
     serializer_class = UnitOfMeasureSerializer
+    queryset = UnitOfMeasure.objects.all()
+
+    def get_queryset(self):
+        qs = UnitOfMeasure.objects.all().order_by('code', 'id')
+        company = getattr(self.request, 'company', None)
+        if company and getattr(company, 'company_group_id', None):
+            # Group-scoped: share UOMs across companies in the same group
+            qs = qs.filter(company__company_group_id=company.company_group_id)
+        elif company:
+            qs = qs.filter(company=company)
+        return qs
+
+    def list(self, request, *args, **kwargs):
+        # Deduplicate by code within the company group so each UOM shows once
+        queryset = self.get_queryset()
+        by_code = {}
+        for u in queryset:
+            if u.code not in by_code:
+                by_code[u.code] = u
+        serializer = self.get_serializer(list(by_code.values()), many=True)
+        return Response(serializer.data)
 
 class StockMovementLineViewSet(viewsets.ModelViewSet):
     queryset = StockMovementLine.objects.all()

@@ -17,6 +17,12 @@ def env_int(name: str, default: int) -> int:
     except (TypeError, ValueError):
         return default
 
+def env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, default))
+    except (TypeError, ValueError):
+        return default
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -84,7 +90,7 @@ STATIC_APPS = [
     'apps.data_migration',
     'apps.finance',
     'apps.sales',
-    'apps.permissions',
+    'apps.permissions.apps.PermissionsConfig',
     'apps.inventory',
     'apps.analytics',
     'apps.dashboard',
@@ -120,7 +126,7 @@ JAZZMIN_SETTINGS = {
     "site_header": "Twist ERP",
 
     # Brand & logos
-    "site_brand": "TWIST ERP",
+    "site_brand": None,
     "site_logo": "brand/twist-logo.svg",
     "login_logo": "brand/twist-logo.svg",
     "login_logo_dark": "brand/twist-logo-white.svg",
@@ -208,6 +214,8 @@ JAZZMIN_SETTINGS = {
         "finance.payment": "fas fa-money-bill-wave",
         "inventory": "fas fa-warehouse",
         "inventory.product": "fas fa-box-open",
+        "inventory.unitofmeasure": "fas fa-balance-scale",
+        "budgeting.budgetunitofmeasure": "fas fa-balance-scale",
         "inventory.warehouse": "fas fa-warehouse",
         "inventory.stockmovement": "fas fa-exchange-alt",
         "sales": "fas fa-chart-line",
@@ -269,7 +277,11 @@ JAZZMIN_SETTINGS = {
     #############
     # Relative paths to custom CSS/JS scripts (must be present in static files)
     "custom_css": "admin/css/custom_admin.css",
-    "custom_js": None,
+    "custom_js": [
+        "admin/js/collapse_persist.js",
+        "admin/js/sidebar_persist.js",
+        "admin/js/budget_line_form.js",
+    ],
     # Whether to show the UI customizer on the sidebar
     "show_ui_builder": False,
 
@@ -474,6 +486,16 @@ AI_CONFIG = {
     'RASA_SERVER': os.getenv('AI_RASA_SERVER', 'http://localhost:5005'),
 }
 
+# Configurable similarity suggestions for Budget Item Codes
+BUDGETING_ITEM_CODE_SUGGESTIONS = {
+    'enabled': env_bool('BUDGETING_SUGGEST_ENABLED', 'true'),
+    'use_embeddings': env_bool('BUDGETING_SUGGEST_USE_EMBEDDINGS', 'true'),
+    'embedding_threshold': env_float('BUDGETING_SUGGEST_EMBED_THRESHOLD', 0.70),
+    'fuzzy_threshold': env_float('BUDGETING_SUGGEST_FUZZY_THRESHOLD', 0.50),
+    'candidate_limit': env_int('BUDGETING_SUGGEST_CANDIDATE_LIMIT', 200),
+    'results_limit': env_int('BUDGETING_SUGGEST_RESULTS_LIMIT', 5),
+}
+
 # Google Gemini API Configuration (Free LLM for Document Processing)
 # Get your free API key from: https://makersuite.google.com/app/apikey
 GOOGLE_GEMINI_API_KEY = os.getenv('GOOGLE_GEMINI_API_KEY', None)
@@ -567,4 +589,3 @@ try:
     CORS_ALLOW_CREDENTIALS = True
 except Exception:
     pass
-

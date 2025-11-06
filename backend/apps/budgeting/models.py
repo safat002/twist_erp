@@ -395,6 +395,29 @@ class Budget(models.Model):
             ),
         ]
 
+    def __str__(self) -> str:
+        try:
+            nm = (self.name or "").strip()
+        except Exception:
+            nm = ""
+        if nm:
+            return nm
+        try:
+            comp = getattr(self.company, 'code', None) or getattr(self.company, 'name', '') or ''
+        except Exception:
+            comp = ''
+        try:
+            ps = self.period_start.strftime('%Y-%m-%d') if self.period_start else ''
+            pe = self.period_end.strftime('%Y-%m-%d') if self.period_end else ''
+        except Exception:
+            ps = pe = ''
+        bt = ''
+        try:
+            bt = self.get_budget_type_display()
+        except Exception:
+            pass
+        return f"{comp} {bt} {ps}-{pe}".strip()
+
     @property
     def available(self) -> Decimal:
         return self.amount - self.consumed
@@ -1069,11 +1092,79 @@ class BudgetConsumptionSnapshot(models.Model):
         ]
 
 
+class BudgetItemCategory(models.Model):
+    """Top-level item category for budgeting, shared within a company group."""
+    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name='budget_item_categories')
+    company_group = models.ForeignKey(CompanyGroup, on_delete=models.PROTECT, null=True, blank=True, related_name='+')
+    code = models.CharField(max_length=50)
+    name = models.CharField(max_length=255)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["code"]
+        constraints = [
+            models.UniqueConstraint(fields=["company_group", "code"], name="uniq_budget_cat_group_code"),
+        ]
+        indexes = [
+            models.Index(fields=["company", "code"]),
+            models.Index(fields=["company", "is_active"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.company_id and not self.company_group_id:
+            try:
+                self.company_group = self.company.company_group
+            except Exception:
+                pass
+        super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        return f"{self.code} - {self.name}"
+
+
+class BudgetItemSubCategory(models.Model):
+    """Second-level item category. Must have a parent category."""
+    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name='budget_item_subcategories')
+    company_group = models.ForeignKey(CompanyGroup, on_delete=models.PROTECT, null=True, blank=True, related_name='+')
+    category = models.ForeignKey(BudgetItemCategory, on_delete=models.PROTECT, related_name='subcategories')
+    code = models.CharField(max_length=50)
+    name = models.CharField(max_length=255)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["category_id", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["category", "code"], name="uniq_budget_subcat_category_code"),
+        ]
+        indexes = [
+            models.Index(fields=["company", "category"]),
+            models.Index(fields=["category", "code"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.company_id and not self.company_group_id:
+            try:
+                self.company_group = self.company.company_group
+            except Exception:
+                pass
+        super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        return f"{self.category.code}:{self.code} - {self.name}"
+
 class BudgetItemCode(models.Model):
     company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name='budget_item_codes')
+    company_group = models.ForeignKey(CompanyGroup, on_delete=models.PROTECT, null=True, blank=True, related_name='+')
     code = models.CharField(max_length=64)
     name = models.CharField(max_length=255)
+    # Back-compat free-text field (kept); prefer category_ref/sub_category_ref
     category = models.CharField(max_length=120, blank=True)
+    category_ref = models.ForeignKey('budgeting.BudgetItemCategory', on_delete=models.PROTECT, null=True, blank=True, related_name='item_codes')
+    sub_category_ref = models.ForeignKey('budgeting.BudgetItemSubCategory', on_delete=models.PROTECT, null=True, blank=True, related_name='item_codes')
     uom = models.ForeignKey('inventory.UnitOfMeasure', on_delete=models.PROTECT, related_name='budget_item_codes')
     standard_price = models.DecimalField(max_digits=20, decimal_places=2, default=Decimal("0.00"))
     is_active = models.BooleanField(default=True)
@@ -1090,6 +1181,14 @@ class BudgetItemCode(models.Model):
 
     def __str__(self) -> str:
         return f"{self.code} - {self.name}"
+
+    def save(self, *args, **kwargs):
+        if self.company_id and not self.company_group_id:
+            try:
+                self.company_group = self.company.company_group
+            except Exception:
+                pass
+        super().save(*args, **kwargs)
 
 
 class BudgetPricePolicy(models.Model):

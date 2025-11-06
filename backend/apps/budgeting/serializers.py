@@ -13,6 +13,8 @@ from .models import (
     BudgetUsage,
     CostCenter,
     BudgetItemCode,
+    BudgetItemCategory,
+    BudgetItemSubCategory,
     BudgetApproval,
     BudgetRemarkTemplate,
     BudgetVarianceAudit,
@@ -185,20 +187,39 @@ class BudgetLineSerializer(serializers.ModelSerializer):
         budget = attrs.get("budget")
         if not budget and self.instance:
             budget = self.instance.budget
-        if budget and getattr(budget, "budget_type", None) == Budget.TYPE_REVENUE:
-            # Revenue budgets must be product-based
-            product = attrs.get("product") or (self.instance.product if self.instance else None)
-            if not product:
-                raise serializers.ValidationError({"product": "Product is required for revenue budgets."})
-            # If product present and no item_code/name provided, derive basic values for display
-            if not attrs.get("item_code") and hasattr(product, "code"):
-                attrs["item_code"] = product.code
-            if not attrs.get("item_name") and hasattr(product, "name"):
-                attrs["item_name"] = product.name
-        else:
-            # Non-revenue budgets should be based on item code; product optional/ignored
-            if not attrs.get("item_code") and not (self.instance and self.instance.item_code):
-                raise serializers.ValidationError({"item_code": "Item code is required for non-revenue budgets."})
+        if budget:
+            btype = getattr(budget, "budget_type", None)
+            if btype == Budget.TYPE_OPERATIONAL:
+                # Operational / Production: require both product and item
+                product = attrs.get("product") or (self.instance.product if self.instance else None)
+                item = attrs.get("item") or (self.instance.item if self.instance else None)
+                errors = {}
+                if not product:
+                    errors["product"] = "Product is required for operational/production budgets."
+                if not item:
+                    errors["item"] = "Item is required for operational/production budgets."
+                if errors:
+                    raise serializers.ValidationError(errors)
+                # Auto-derive item fields from selection
+                try:
+                    if item:
+                        attrs["item_code"] = getattr(item, "code", attrs.get("item_code"))
+                        attrs["item_name"] = getattr(item, "name", attrs.get("item_name"))
+                except Exception:
+                    pass
+            elif btype == Budget.TYPE_REVENUE:
+                # Revenue: require product
+                product = attrs.get("product") or (self.instance.product if self.instance else None)
+                if not product:
+                    raise serializers.ValidationError({"product": "Product is required for revenue budgets."})
+                if not attrs.get("item_code") and hasattr(product, "code"):
+                    attrs["item_code"] = product.code
+                if not attrs.get("item_name") and hasattr(product, "name"):
+                    attrs["item_name"] = product.name
+            else:
+                # Other budgets: require item_code
+                if not attrs.get("item_code") and not (self.instance and self.instance.item_code):
+                    raise serializers.ValidationError({"item_code": "Item code is required for this budget type."})
         return attrs
 
     def get_remaining_quantity(self, obj: BudgetLine) -> str:
@@ -551,6 +572,10 @@ class BudgetSnapshotSerializer(serializers.ModelSerializer):
 
 class BudgetItemCodeSerializer(serializers.ModelSerializer):
     uom_name = serializers.ReadOnlyField(source="uom.name")
+    category_id = serializers.PrimaryKeyRelatedField(source='category_ref', queryset=BudgetItemCategory.objects.all(), required=False, allow_null=True, write_only=True)
+    sub_category_id = serializers.PrimaryKeyRelatedField(source='sub_category_ref', queryset=BudgetItemSubCategory.objects.all(), required=False, allow_null=True, write_only=True)
+    category_name = serializers.SerializerMethodField()
+    sub_category_name = serializers.SerializerMethodField()
 
     class Meta:
         model = BudgetItemCode
@@ -560,6 +585,10 @@ class BudgetItemCodeSerializer(serializers.ModelSerializer):
             "code",
             "name",
             "category",
+            "category_id",
+            "category_name",
+            "sub_category_id",
+            "sub_category_name",
             "uom",
             "uom_name",
             "standard_price",
@@ -567,12 +596,133 @@ class BudgetItemCodeSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["company", "created_at", "updated_at"]
+        read_only_fields = ["company", "code", "created_at", "updated_at"]
+
+    def _generate_item_code(self, company) -> str:
+        prefix = "IC"
+        width = 6
+        qs = BudgetItemCode.objects.filter(company__company_group_id=getattr(company, 'company_group_id', None), code__startswith=prefix)
+        existing = qs.values_list('code', flat=True)
+        max_num = 0
+        for code in existing:
+            suffix = code[len(prefix):]
+            if suffix.isdigit():
+                try:
+                    max_num = max(max_num, int(suffix))
+                except ValueError:
+                    pass
+        i = max_num + 1
+        while True:
+            candidate = f"{prefix}{i:06d}"
+            if not BudgetItemCode.objects.filter(company__company_group_id=getattr(company, 'company_group_id', None), code=candidate).exists():
+                return candidate
+            i += 1
 
     def create(self, validated_data):
         request = self.context.get("request")
         company = getattr(request, "company", None)
-        return BudgetItemCode.objects.create(company=company, **validated_data)
+        if not company:
+            # Fallbacks to reduce friction, especially for superusers
+            try:
+                # Try header directly if middleware didn't populate
+                header_id = None
+                try:
+                    header_id = request.headers.get("X-Company-ID") or request.META.get("HTTP_X_COMPANY_ID")
+                except Exception:
+                    header_id = None
+                if header_id:
+                    from apps.companies.models import Company as _Company
+                    company = _Company.objects.filter(id=header_id, is_active=True).first()
+            except Exception:
+                company = None
+
+        if not company:
+            # For superusers/system admins: default to their default company
+            user = getattr(request, "user", None)
+            if getattr(user, "is_superuser", False) or getattr(user, "is_system_admin", False):
+                try:
+                    from apps.companies.models import Company as _Company
+                    company = getattr(user, "default_company", None)
+                    if not company or not getattr(company, "is_active", True):
+                        # first active among user's companies, else first active globally
+                        company = getattr(user, "companies", None).filter(is_active=True).first() if hasattr(user, "companies") else None
+                        if not company:
+                            company = _Company.objects.filter(is_active=True).first()
+                except Exception:
+                    company = None
+
+        if not company:
+            raise serializers.ValidationError({"detail": "Active company is required."})
+        # Enforce name-level uniqueness within the company group (unless forced)
+        name = (validated_data.get("name") or "").strip()
+        force = False
+        try:
+            force = (str(request.query_params.get('force') or request.data.get('force') or '')).lower() in {'1','true','yes','on'}
+        except Exception:
+            force = False
+        if name and not force:
+            if BudgetItemCode.objects.filter(company__company_group_id=getattr(company, 'company_group_id', None), name__iexact=name).exists():
+                raise serializers.ValidationError({"name": "An item code with this name already exists for your company group."})
+
+        # Always auto-generate code on create (hide in backend)
+        validated_data.pop("code", None)
+        generated_code = self._generate_item_code(company)
+        # If both category_ref and sub_category_ref are provided, ensure they match and belong to same group
+        sub = validated_data.get('sub_category_ref')
+        cat = validated_data.get('category_ref')
+        if sub and cat and sub.category_id != cat.id:
+            raise serializers.ValidationError({"sub_category_id": "Sub-category must belong to the selected category."})
+        if cat and getattr(cat, 'company_group_id', None) and company and getattr(company, 'company_group_id', None):
+            if cat.company_group_id != company.company_group_id:
+                raise serializers.ValidationError({"category_id": "Category must belong to your company group."})
+        if sub and getattr(sub, 'company_group_id', None) and company and getattr(company, 'company_group_id', None):
+            if sub.company_group_id != company.company_group_id:
+                raise serializers.ValidationError({"sub_category_id": "Sub-category must belong to your company group."})
+        return BudgetItemCode.objects.create(company=company, code=generated_code, **validated_data)
+
+    def get_category_name(self, obj: BudgetItemCode) -> str | None:
+        if obj.category_ref_id:
+            return obj.category_ref.name
+        return obj.category or None
+
+    def get_sub_category_name(self, obj: BudgetItemCode) -> str | None:
+        if obj.sub_category_ref_id:
+            return obj.sub_category_ref.name
+        return None
+
+class BudgetItemCategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BudgetItemCategory
+        fields = ["id", "code", "name", "is_active", "created_at", "updated_at"]
+        read_only_fields = ["created_at", "updated_at"]
+
+    def create(self, validated_data):
+        request = self.context.get("request")
+        company = getattr(request, "company", None)
+        if not company:
+            raise serializers.ValidationError({"detail": "Active company is required."})
+        # Enforce uniqueness within group for UX (DB enforces per company)
+        if BudgetItemCategory.objects.filter(company__company_group_id=company.company_group_id, code__iexact=validated_data.get('code')).exists():
+            raise serializers.ValidationError({"code": "A category with this code already exists in your group."})
+        return BudgetItemCategory.objects.create(company=company, **validated_data)
+
+class BudgetItemSubCategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BudgetItemSubCategory
+        fields = ["id", "category", "code", "name", "is_active", "created_at", "updated_at"]
+        read_only_fields = ["created_at", "updated_at"]
+
+    def create(self, validated_data):
+        request = self.context.get("request")
+        company = getattr(request, "company", None)
+        if not company:
+            raise serializers.ValidationError({"detail": "Active company is required."})
+        category = validated_data.get('category')
+        if not category:
+            raise serializers.ValidationError({"category": "Sub-category requires a category."})
+        if BudgetItemSubCategory.objects.filter(category=category, code__iexact=validated_data.get('code')).exists():
+            raise serializers.ValidationError({"code": "A sub-category with this code already exists under the selected category."})
+        return BudgetItemSubCategory.objects.create(company=company, **validated_data)
 
 
 class BudgetUnitOfMeasureSerializer(serializers.ModelSerializer):
@@ -594,6 +744,18 @@ class BudgetUnitOfMeasureSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         company = getattr(request, "company", None)
         user = getattr(request, "user", None)
+        if not company:
+            raise serializers.ValidationError({"detail": "Active company is required."})
+        code = validated_data.get("code")
+        force = False
+        try:
+            force = (str(request.query_params.get('force') or request.data.get('force') or '')).lower() in {'1','true','yes','on'}
+        except Exception:
+            force = False
+        if not force:
+            exists = UnitOfMeasure.objects.filter(company__company_group_id=company.company_group_id, code__iexact=code).exists()
+            if exists:
+                raise serializers.ValidationError({"code": "A UOM with this code already exists for your company group."})
         return UnitOfMeasure.objects.create(company=company, created_by=user, **validated_data)
 
 

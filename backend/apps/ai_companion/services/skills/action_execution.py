@@ -44,7 +44,8 @@ class ActionExecutionSkill(BaseSkill):
         # Action targets
         action_targets = [
             "po", "purchase order", "so", "sales order", "invoice", "bill",
-            "payment", "voucher", "grn", "stock", "transfer", "customer"
+            "payment", "voucher", "grn", "stock", "transfer", "customer",
+            "item code", "itemcode", "uom", "unit of measure"
         ]
 
         has_action_verb = any(verb in lowered for verb in action_verbs)

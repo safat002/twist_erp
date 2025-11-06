@@ -574,7 +574,14 @@ class FiscalPeriodSerializer(serializers.ModelSerializer):
         company = _require_company(self.context)
         validated_data["company"] = company
         validated_data["company_group"] = company.company_group
-        return FiscalPeriod.objects.create(**validated_data)
+        instance = FiscalPeriod.objects.create(**validated_data)
+        # Notify finance owners about manual creation
+        try:
+            from apps.finance.services.period_service import _notify
+            _notify(company, f"Fiscal period {instance.period} created", f"Manually created fiscal period {instance.period}.")
+        except Exception:
+            pass
+        return instance
 
 
 class BankStatementLineSerializer(serializers.ModelSerializer):
