@@ -75,3 +75,5 @@ export const executeAIAction = ({ action, payload }) =>
 
 export const trackMetadataInterest = ({ kind, entity, ...rest }) =>
   api.post('/api/v1/ai/metadata/interest/', { kind, entity, ...rest });
+
+export const fetchAIAgenda = () => api.get('/api/v1/ai/agenda/');

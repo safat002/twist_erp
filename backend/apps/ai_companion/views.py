@@ -209,6 +209,136 @@ class AIAlertUnreadCountView(APIView):
         return Response({"count": count})
 
 
+class AIAgendaView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        company = getattr(request, "company", None)
+        agenda = {
+            "approvals": [],
+            "budgets_due": [],
+            "pos_pending_grn": [],
+            "ap_due": [],
+            "suggestions": [],
+        }
+        counts = {k: 0 for k in agenda.keys()}
+
+        # Pending approvals (workflow tasks assigned to user)
+        try:
+            from .services.data_query_layer import DataQueryLayer
+
+            dql = DataQueryLayer(user=request.user, company=company)
+            approvals_res = dql.get_pending_approvals()
+            if approvals_res.success:
+                agenda["approvals"] = approvals_res.data[:20]
+                counts["approvals"] = len(approvals_res.data)
+        except Exception:
+            logger.exception("Failed to load pending approvals for agenda")
+
+        # Budgets approaching entry deadline (within 7 days)
+        try:
+            from datetime import timedelta
+            from apps.budgeting.models import Budget
+            today = timezone.now().date()
+            soon = today + timedelta(days=7)
+            qs = Budget.objects.select_related("company", "cost_center").filter(
+                company=company,
+                entry_enabled=True,
+                status=Budget.STATUS_ENTRY_OPEN,
+                entry_end_date__isnull=False,
+                entry_end_date__gte=today,
+                entry_end_date__lte=soon,
+            ).order_by("entry_end_date")
+            rows = list(
+                qs.values(
+                    "id",
+                    "name",
+                    "budget_type",
+                    "entry_end_date",
+                    "period_start",
+                    "period_end",
+                )[:50]
+            )
+            agenda["budgets_due"] = rows
+            counts["budgets_due"] = len(rows)
+        except Exception:
+            logger.exception("Failed to load budgets due for agenda")
+
+        # Purchase Orders pending GRN (overdue vs expected delivery)
+        try:
+            from apps.procurement.models import PurchaseOrder
+            today = timezone.now().date()
+            # Heuristic: overdue POs (expected_delivery_date < today) in APPROVED/PARTIAL
+            po_qs = (
+                PurchaseOrder.objects.select_related("supplier")
+                .filter(company=company, expected_delivery_date__lt=today)
+                .filter(status__in=["APPROVED", "PARTIAL"])
+                .order_by("expected_delivery_date")
+            )
+            pos = list(
+                po_qs.values(
+                    "id",
+                    "po_number",
+                    "supplier__name",
+                    "expected_delivery_date",
+                    "status",
+                )[:50]
+            )
+            agenda["pos_pending_grn"] = pos
+            counts["pos_pending_grn"] = len(pos)
+        except Exception:
+            logger.exception("Failed to load pending GRNs for agenda")
+
+        # AP bills due within 7 days
+        try:
+            from datetime import timedelta
+            from django.db.models import F
+            from apps.finance.models import APBill
+            today = timezone.now().date()
+            soon = today + timedelta(days=7)
+            bills = (
+                APBill.objects.select_related("supplier")
+                .filter(company=company, status__in=["POSTED", "PARTIAL"], due_date__gte=today, due_date__lte=soon)
+                .annotate(outstanding=F("total_amount") - F("amount_paid"))
+                .filter(outstanding__gt=0)
+                .order_by("due_date")
+            )
+            rows = list(
+                bills.values(
+                    "id",
+                    "bill_number",
+                    "supplier__name",
+                    "due_date",
+                    "total_amount",
+                    "amount_paid",
+                )[:50]
+            )
+            agenda["ap_due"] = rows
+            counts["ap_due"] = len(rows)
+        except Exception:
+            logger.exception("Failed to load AP due for agenda")
+
+        # Proactive suggestions (pending)
+        try:
+            suggestions = orchestrator.get_pending_suggestions(request.user, company)
+            agenda["suggestions"] = [
+                {
+                    "id": s.id,
+                    "title": s.title,
+                    "body": s.body,
+                    "severity": s.severity,
+                    "alert_type": s.alert_type,
+                    "created_at": s.created_at.isoformat(),
+                }
+                for s in suggestions[:20]
+            ]
+            counts["suggestions"] = suggestions.count()
+        except Exception:
+            logger.exception("Failed to load AI suggestions for agenda")
+
+        return Response({"agenda": agenda, "counts": counts})
+
+
 class AIConversationHistoryView(APIView):
     permission_classes = [IsAuthenticated]
 

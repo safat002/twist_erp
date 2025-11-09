@@ -615,7 +615,6 @@ const MainLayout = ({ children }) => {
         <Footer style={{ textAlign: 'center' }}>
           TWIST ERP Â©2025 Transform, Integrate, Simplify, Track
         </Footer>
-        <AIWidget />
         <Modal
           title="Create Task"
           open={createVisible}
@@ -721,7 +720,8 @@ const MainLayout = ({ children }) => {
             </Form.Item>
           </Form>
         </Modal>
-      </Layout>
+        <AIWidget />
+    </Layout>
     </Layout>
   );
 };

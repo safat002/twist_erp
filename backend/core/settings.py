@@ -491,7 +491,7 @@ BUDGETING_ITEM_CODE_SUGGESTIONS = {
     'enabled': env_bool('BUDGETING_SUGGEST_ENABLED', 'true'),
     'use_embeddings': env_bool('BUDGETING_SUGGEST_USE_EMBEDDINGS', 'true'),
     'embedding_threshold': env_float('BUDGETING_SUGGEST_EMBED_THRESHOLD', 0.70),
-    'fuzzy_threshold': env_float('BUDGETING_SUGGEST_FUZZY_THRESHOLD', 0.50),
+    'fuzzy_threshold': env_float('BUDGETING_SUGGEST_FUZZY_THRESHOLD', 0.10),
     'candidate_limit': env_int('BUDGETING_SUGGEST_CANDIDATE_LIMIT', 200),
     'results_limit': env_int('BUDGETING_SUGGEST_RESULTS_LIMIT', 5),
 }
@@ -538,6 +538,10 @@ CELERY_BEAT_SCHEDULE = {
     'ai-monitor-budget-health': {
         'task': 'apps.ai_companion.tasks.monitor_budget_health',
         'schedule': crontab(minute=15, hour='*'),  # hourly at :15
+    },
+    'ai-generate-operational-agenda': {
+        'task': 'apps.ai_companion.tasks.generate_operational_agenda',
+        'schedule': crontab(minute='*/30'),  # every 30 minutes
     },
     'tasks-check-overdue': {
         'task': 'apps.tasks.check_overdue_tasks',

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Card, DatePicker, Drawer, Form, Input, InputNumber, Select, Space, Table, Tag, Typography, message } from 'antd';
+import { Button, Card, DatePicker, Form, Input, InputNumber, Modal, Select, Space, Table, Tag, Typography, message } from 'antd';
 import { PlusOutlined, CloseOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import api from '../../../services/api';
@@ -10,14 +10,14 @@ const { Title, Text } = Typography;
 
 const STORAGE_KEY = 'twist_erp.requisitions.internal.v1';
 
-const useProducts = () => {
+const useBudgetItems = () => {
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState([]);
   useEffect(() => {
     const load = async () => {
       try {
         setLoading(true);
-        const { data } = await api.get('/api/v1/inventory/products/');
+        const { data } = await api.get('/api/v1/budgets/item-codes/');
         const list = Array.isArray(data) ? data : data?.results || [];
         setItems(list);
       } catch (_e) {
@@ -41,7 +41,7 @@ const InternalRequisitions = ({ openNew = false, onCloseNew }) => {
   const [selectedCostCenter, setSelectedCostCenter] = useState(null);
   const [costCenters, setCostCenters] = useState([]);
   const [budgetLines, setBudgetLines] = useState([]);
-  const { items: products, loading: productsLoading } = useProducts();
+  const { items: budgetItems, loading: budgetItemsLoading } = useBudgetItems();
   const [searchParams] = useSearchParams();
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [dateRange, setDateRange] = useState([]);
@@ -163,20 +163,20 @@ const InternalRequisitions = ({ openNew = false, onCloseNew }) => {
     },
   ];
 
-  const BudgetInfo = ({ productId, costCenterId }) => {
+  const BudgetInfo = ({ productId, costCenterId, requestDate }) => {
     const [info, setInfo] = useState({ qty: '', used: '', remaining: '' });
     useEffect(() => {
       let cancelled = false;
       const load = async () => {
         if (!productId || !costCenterId) { setInfo({ qty: '', used: '', remaining: '' }); return; }
         try {
-          const { data } = await api.get('/api/v1/budgets/lines/', { params: { cost_center: costCenterId, product: productId } });
-          const line = Array.isArray(data?.results) ? data.results[0] : Array.isArray(data) ? data[0] : null;
+          const dateStr = (requestDate && requestDate.format) ? requestDate.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD');
+          const { data } = await api.get('/api/v1/budgets/lines/aggregate/', { params: { cost_center: costCenterId, item_code_id: productId, date: dateStr } });
           if (!cancelled) {
             setInfo({
-              qty: line?.qty_limit ?? '',
-              used: line?.consumed_quantity ?? '',
-              remaining: line?.remaining_quantity ?? line?.available_quantity ?? '',
+              qty: data?.approved_quantity ?? '',
+              used: data?.consumed_quantity ?? '',
+              remaining: data?.remaining_quantity ?? '',
             });
           }
         } catch (_e) {
@@ -185,7 +185,7 @@ const InternalRequisitions = ({ openNew = false, onCloseNew }) => {
       };
       load();
       return () => { cancelled = true; };
-    }, [productId, costCenterId]);
+    }, [productId, costCenterId, requestDate]);
     return (
       <>
         <Form.Item label="Budget Qty"><Input disabled value={info.qty} /></Form.Item>
@@ -195,31 +195,45 @@ const InternalRequisitions = ({ openNew = false, onCloseNew }) => {
     );
   };
 
-  const LineRow = ({ name, restField, remove }) => {
+  const LineRow = ({ name, restField, remove, form }) => {
     const productId = Form.useWatch([name, 'item_id'], form);
+    const requestDate = Form.useWatch('request_date', form);
+    const selectedItem = useMemo(() => (budgetItems || []).find(p => String(p.id) === String(productId)), [productId, budgetItems]);
+
+    useEffect(() => {
+      if (selectedItem) {
+        const uomText = selectedItem.uom_name || selectedItem.uom || 'EA';
+        let lines = form.getFieldValue('lines') || [];
+        const next = Array.isArray(lines) ? [...lines] : [];
+        const current = next[name] || {};
+        next[name] = { ...current, uom: uomText };
+        form.setFieldsValue({ lines: next });
+      }
+    }, [selectedItem, name, form]);
+
     return (
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 1fr) 120px 100px 240px 160px 160px 160px auto', columnGap: 8, alignItems: 'end', marginBottom: 8 }}>
         <Form.Item {...restField} name={[name, 'item_id']} label="Item" rules={[{ required: true, message: 'Select item' }]}>
           <Select
             showSearch
             filterOption={(input, option) => (option?.label || '').toLowerCase().includes(input.toLowerCase())}
-            loading={productsLoading}
+            loading={budgetItemsLoading}
             placeholder="Select item"
             optionFilterProp="label"
             style={{ minWidth: 260 }}
-            options={(products || []).map((p) => ({ value: p.id, label: `${p.code || p.sku || ''} ${p.name}` }))}
+            options={(budgetItems || []).map((p) => ({ value: p.id, label: `${p.code || ''} ${p.name}` }))}
           />
         </Form.Item>
         <Form.Item {...restField} name={[name, 'quantity']} label="Qty" rules={[{ required: true, message: 'Qty' }]}>
           <InputNumber min={0.001} step={1} style={{ width: 120 }} />
         </Form.Item>
         <Form.Item {...restField} name={[name, 'uom']} label="UoM">
-          <Input placeholder="EA" style={{ width: 100 }} />
+          <Input placeholder="EA" style={{ width: 100 }} disabled />
         </Form.Item>
         <Form.Item {...restField} name={[name, 'notes']} label="Notes">
           <Input placeholder="Optional" style={{ width: 240 }} />
         </Form.Item>
-        <BudgetInfo productId={productId} costCenterId={selectedCostCenter} />
+        <BudgetInfo productId={productId} costCenterId={selectedCostCenter} requestDate={requestDate} />
         <Button
           aria-label="Remove line"
           type="text"
@@ -243,7 +257,7 @@ const InternalRequisitions = ({ openNew = false, onCloseNew }) => {
       lines: (values.lines || []).map((ln, idx) => ({
         line_no: idx + 1,
         item_id: ln.item_id,
-        item_name: products.find((p) => String(p.id) === String(ln.item_id))?.name || '',
+        item_name: budgetItems.find((p) => String(p.id) === String(ln.item_id))?.name || '',
         quantity: Number(ln.quantity) || 0,
         uom: ln.uom || 'EA',
         notes: ln.notes || '',
@@ -340,16 +354,27 @@ const InternalRequisitions = ({ openNew = false, onCloseNew }) => {
         <Table rowKey={(r) => r.id || r.req_no} loading={loading} dataSource={filteredList} columns={columns} pagination={{ pageSize: 10 }} />
       </Card>
 
-      <Drawer
+      <Modal
         title="Create Internal Requisition"
         open={open}
-        width={900}
-        styles={{ body: { overflowX: 'auto' } }}
-        onClose={() => {
+        width={1200}
+        bodyStyle={{ overflowX: 'auto' }}
+        onCancel={() => {
           setOpen(false);
           if (onCloseNew) onCloseNew();
         }}
         destroyOnClose
+        footer={[
+          <Button key="back" onClick={() => {
+            setOpen(false);
+            if (onCloseNew) onCloseNew();
+          }}>
+            Cancel
+          </Button>,
+          <Button key="submit" type="primary" loading={submitting} onClick={() => form.submit()}>
+            Submit
+          </Button>,
+        ]}
       >
         <Form layout="vertical" form={form} onFinish={handleCreate} initialValues={{ request_date: dayjs(), lines: [{}, {}], _cc: selectedCostCenter }}>
           <Space size={16} style={{ display: 'flex', marginBottom: 8 }}>
@@ -384,18 +409,13 @@ const InternalRequisitions = ({ openNew = false, onCloseNew }) => {
             {(fields, { add, remove }) => (
               <Card title="Items" size="small" extra={<Button onClick={() => add()}>Add Line</Button>}>
                 {fields.map(({ key, name, ...restField }) => (
-                  <LineRow key={key} name={name} restField={restField} remove={() => remove(name)} />
+                  <LineRow key={key} name={name} restField={restField} remove={() => remove(name)} form={form} />
                 ))}
               </Card>
             )}
           </Form.List>
-
-          <Space style={{ marginTop: 16 }}>
-            <Button onClick={() => setOpen(false)}>Cancel</Button>
-            <Button type="primary" htmlType="submit" loading={submitting}>Submit</Button>
-          </Space>
         </Form>
-      </Drawer>
+      </Modal>
     </div>
   );
 };

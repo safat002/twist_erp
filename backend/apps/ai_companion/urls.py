@@ -1,6 +1,7 @@
 from django.urls import path
 from .views import (
     AIAlertUnreadCountView,
+    AIAgendaView,
     AIChatView,
     AIConversationHistoryView,
     AIFeedbackView,
@@ -23,6 +24,7 @@ urlpatterns = [
     path('status/', AIStatusView.as_view()),
     path('chat/', AIChatView.as_view()),
     path('feedback/', AIFeedbackView.as_view()),
+    path('agenda/', AIAgendaView.as_view()),
     path('train/', AITrainView.as_view()),
     path('suggestions/', AISuggestionListView.as_view()),
     path('alerts/unread-count/', AIAlertUnreadCountView.as_view()),

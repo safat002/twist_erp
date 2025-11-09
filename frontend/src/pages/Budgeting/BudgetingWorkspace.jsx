@@ -31,6 +31,7 @@ import {
   UserSwitchOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 import {
   approveBudget,
@@ -63,8 +64,10 @@ import {
   closeReviewPeriod,
   computeBudgetForecasts,
   cloneBudget,
+  fetchPermittedCostCentersEntry,
 } from '../../services/budget';
 import { searchUsers } from '../../services/users';
+import { useAuth } from '../../contexts/AuthContext';
 import { useCompany } from '../../contexts/CompanyContext';
 import EntryPeriodStatus from '../../components/Budgeting/EntryPeriodStatus';
 import ApprovalTimeline from '../../components/Budgeting/ApprovalTimeline';
@@ -72,17 +75,10 @@ import ReviewPeriodStatus from '../../components/Budgeting/ReviewPeriodStatus';
 
 const { Title, Text } = Typography;
 
-const STATUS_COLORS = {
-  DRAFT: 'default',
-  ENTRY_OPEN: 'green',
-  PENDING_CC_APPROVAL: 'geekblue',
-  CC_APPROVED: 'purple',
-  PENDING_FINAL_APPROVAL: 'gold',
-  APPROVED: 'blue',
-  ACTIVE: 'green',
-  EXPIRED: 'volcano',
-  CLOSED: 'magenta',
-};
+const NAME_STATUS_COLORS = { DRAFT: 'default', APPROVED: 'blue', REJECTED: 'red' };
+
+// Display-only mapping: only collapse CC phases for registry-only budgets (no lines)
+const isRegistryOnly = (r) => Number(r?.line_count || 0) === 0;
 
 const PROCUREMENT_OPTIONS = [
   { value: 'stock_item', label: 'Stock Item' },
@@ -100,6 +96,20 @@ const formatCurrency = (value) => {
 
 const BudgetingWorkspace = () => {
   const { currentCompany } = useCompany();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const clearEditParam = React.useCallback(() => {
+    try {
+      const params = new URLSearchParams(location.search || '');
+      if (params.has('edit')) {
+        params.delete('edit');
+        navigate({ pathname: location.pathname, search: params.toString() ? `?${params.toString()}` : '' }, { replace: true });
+      }
+    } catch (_) {
+      // no-op
+    }
+  }, [location.pathname, location.search, navigate]);
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState(null);
   const [costCenters, setCostCenters] = useState([]);
@@ -163,6 +173,64 @@ const BudgetingWorkspace = () => {
   useEffect(() => {
     loadWorkspace();
   }, [loadWorkspace]);
+
+  // Open edit modal if URL has ?edit=<budgetId>
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(location.search || '');
+      const editId = params.get('edit');
+      if (!editId || !budgets || budgets.length === 0 || budgetModalOpen) return;
+      const record = budgets.find((b) => String(b.id) === String(editId));
+      if (!record) return;
+      const start = record.period_start ? dayjs(record.period_start) : dayjs();
+      const end = record.period_end ? dayjs(record.period_end) : start;
+      setActiveBudget(record);
+      budgetForm.resetFields();
+      budgetForm.setFieldsValue({
+        id: record.id,
+        name: record.name,
+        budget_type: record.budget_type,
+        amount: record.amount,
+        threshold_percent: record.threshold_percent,
+        period: [start, end],
+        entry_window: [record.entry_start_date ? dayjs(record.entry_start_date) : start, record.entry_end_date ? dayjs(record.entry_end_date) : end],
+        entry_enabled: record.entry_enabled !== false,
+        grace_period_days: record.grace_period_days,
+        duration_type: record.duration_type || 'monthly',
+        custom_duration_days: record.custom_duration_days,
+        review_window: [record.review_start_date ? dayjs(record.review_start_date) : null, record.review_end_date ? dayjs(record.review_end_date) : null],
+        review_enabled: !!record.review_enabled,
+        impact_window: [record.budget_impact_start_date ? dayjs(record.budget_impact_start_date) : null, record.budget_impact_end_date ? dayjs(record.budget_impact_end_date) : null],
+        budget_impact_enabled: !!record.budget_impact_enabled,
+        auto_approve_if_not_approved: !!record.auto_approve_if_not_approved,
+      });
+      setBudgetModalOpen(true);
+    } catch (_) {
+      // ignore parsing errors
+    }
+  }, [location.search, budgets, budgetModalOpen]);
+
+  const handleRequestFinalApproval = async (id) => {
+    try {
+      await requestFinalApproval(id);
+      message.success('Requested final approval');
+      loadWorkspace();
+    } catch (e) {
+      const detail = e?.response?.data?.detail || 'Failed to request final approval';
+      message.error(detail);
+    }
+  };
+
+  const handleSubmitForApproval = async (id) => {
+    try {
+      await submitForApproval(id);
+      message.success('Submitted for CC approval');
+      loadWorkspace();
+    } catch (e) {
+      const detail = e?.response?.data?.detail || 'Failed to submit for approval';
+      message.error(detail);
+    }
+  };
 
   const lineLookup = useMemo(() => {
     const map = {};
@@ -374,6 +442,7 @@ const handleBudgetSave = async () => {
     }
     message.success('Budget saved');
     setBudgetModalOpen(false);
+    clearEditParam();
     budgetForm.resetFields();
     loadWorkspace();
   } catch (error) {
@@ -530,10 +599,13 @@ const handleOverrideSave = async () => {
       },
     },
     {
-      title: 'Status',
-      dataIndex: 'status',
-      key: 'status',
-      render: (value) => <Tag color={STATUS_COLORS[value] || 'default'}>{value}</Tag>,
+      title: 'Name Status',
+      key: 'name_status',
+      render: (_, record) => {
+        const ns = String(record.name_status || ((String(record.status || '').toLowerCase() === 'pending_name_approval') ? 'DRAFT' : 'APPROVED'));
+        const color = NAME_STATUS_COLORS[ns.toUpperCase()] || 'default';
+        return <Tag color={color}>{ns.toUpperCase()}</Tag>;
+      },
     },
     {
       title: 'Actions',
@@ -618,11 +690,19 @@ const handleOverrideSave = async () => {
           {record.status === 'DRAFT' && (
             <Space>
               <Button type="link" onClick={() => openEntry(record.id)}>Open Entry</Button>
-              <Button type="link" onClick={() => submitForApproval(record.id)}>Submit for CC Approval</Button>
+              {Number(record.line_count || 0) > 0 ? (
+                <Button type="link" onClick={() => handleSubmitForApproval(record.id)}>Submit for CC Approval</Button>
+              ) : (
+                <Button type="link" onClick={() => handleRequestFinalApproval(record.id)}>Request Final Approval</Button>
+              )}
             </Space>
           )}
           {record.status === 'ENTRY_OPEN' && (
-            <Button type="link" onClick={() => submitForApproval(record.id)}>Submit for CC Approval</Button>
+            Number(record.line_count || 0) > 0 ? (
+              <Button type="link" onClick={() => handleSubmitForApproval(record.id)}>Submit for CC Approval</Button>
+            ) : (
+              <Button type="link" onClick={() => handleRequestFinalApproval(record.id)}>Request Final Approval</Button>
+            )
           )}
           {(record.status === 'ENTRY_OPEN' || record.status === 'ENTRY_CLOSED_REVIEW_PENDING') && (
             <Button type="link" onClick={() => startReviewPeriod(record.id)}>Start Review</Button>
@@ -635,6 +715,17 @@ const handleOverrideSave = async () => {
           )}
           {record.status === 'CC_APPROVED' && (
             <Button type="link" onClick={() => requestFinalApproval(record.id)}>Request Final Approval</Button>
+          )}
+          {record.status === 'PENDING_FINAL_APPROVAL' && (
+            <Button type="link" onClick={async () => {
+              try {
+                await approveBudget(record.id);
+                message.success('Budget approved');
+                loadWorkspace();
+              } catch (e) {
+                message.error(e?.response?.data?.detail || 'Failed to approve budget');
+              }
+            }}>Approve</Button>
           )}
           {record.status === 'APPROVED' && (
             <Button type="link" onClick={() => activateBudget(record.id)}>Activate</Button>
@@ -708,6 +799,113 @@ const handleOverrideSave = async () => {
       ),
     },
   ];
+
+  // Final-approved items overview state
+  const [faBudgets, setFaBudgets] = useState([]);
+  const [faCostCenters, setFaCostCenters] = useState([]);
+  const [faLoading, setFaLoading] = useState(false);
+  const [faRows, setFaRows] = useState([]);
+  const [faBudgetId, setFaBudgetId] = useState(null);
+  const [faCostCenterId, setFaCostCenterId] = useState(null);
+  const { user } = useAuth();
+  const isSuperuser = !!(user && user.is_superuser);
+
+  useEffect(() => {
+    const loadFilters = async () => {
+      try {
+        const [b, c] = await Promise.all([
+          fetchBudgets({ page_size: 1000 }),
+          isSuperuser ? fetchCostCenters({ limit: 1000 }) : fetchPermittedCostCentersEntry(),
+        ]);
+        const budgets = b?.data?.results || b?.data || [];
+        const ccs = c?.data?.results || c?.data || [];
+        setFaCostCenters(ccs);
+        const permittedIds = new Set((ccs || []).map((x) => Number(x.id)));
+        let eligible = [];
+        if (isSuperuser) {
+          // Superusers see all budgets
+          eligible = budgets;
+        } else {
+          // Only include budgets with final-approved items on permitted CCs, or approved budgets with any permitted lines
+          for (const bud of budgets) {
+            try {
+              const res = await fetchBudgetLines({ budget: bud.id, page_size: 1000 });
+              const lines = res?.data?.results || res?.data || [];
+              const linesPermitted = lines.filter((ln) => !ln?.metadata?.cost_center_id || permittedIds.has(Number(ln.metadata.cost_center_id)));
+              const hasFinalFlag = linesPermitted.some((ln) => ln?.metadata?.final_approved === true);
+              const isBudgetApproved = ['APPROVED', 'ACTIVE'].includes(String(bud.status || '').toUpperCase());
+              const hasAnyPermitted = linesPermitted.length > 0;
+              if (hasFinalFlag || (isBudgetApproved && hasAnyPermitted)) {
+                eligible.push(bud);
+              }
+            } catch (_) {}
+          }
+        }
+        setFaBudgets(eligible);
+        if (!faBudgetId && eligible.length) setFaBudgetId(eligible[0].id);
+        if (!faCostCenterId && ccs.length) setFaCostCenterId(ccs[0].id);
+      } catch (_) {}
+    };
+    loadFilters();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const loadRows = async () => {
+      const budgetIds = Array.isArray(faBudgetId) ? faBudgetId : (faBudgetId ? [faBudgetId] : []);
+      const ccIds = Array.isArray(faCostCenterId) ? faCostCenterId : (faCostCenterId ? [faCostCenterId] : []);
+      if (!budgetIds.length || !ccIds.length) { setFaRows([]); return; }
+      setFaLoading(true);
+      try {
+        const all = [];
+        for (const bid of budgetIds) {
+          const { data } = await fetchBudgetLines({ budget: bid, page_size: 1000 });
+          let rows = data?.results || data || [];
+          // Filter to selected CC ids
+          rows = rows.filter((r) => !r?.metadata?.cost_center_id || ccIds.includes(Number(r.metadata.cost_center_id)));
+          // Final approved only; if budget is fully approved, include all rows
+          const bud = (faBudgets || []).find((b) => b.id === bid);
+          const budApproved = bud ? ['APPROVED', 'ACTIVE'].includes(String(bud.status || '').toUpperCase()) : false;
+          if (!budApproved) {
+            rows = rows.filter((r) => r?.metadata && r.metadata.final_approved === true);
+          }
+          // annotate budget id
+          rows = rows.map((r) => ({ ...r, _budget_id: bid }));
+          all.push(...rows);
+        }
+        setFaRows(all);
+      } catch (_) {
+        setFaRows([]);
+      } finally {
+        setFaLoading(false);
+      }
+    };
+    loadRows();
+  }, [faBudgetId, faCostCenterId]);
+
+  const exportFinalApprovedCsv = () => {
+    try {
+      const header = ['Item Code','Item Name','Category','Qty','Unit Price','Value'];
+      const lines = faRows.map((r) => [
+        r.item_code || '',
+        (r.item_name || '').replace(/\n|\r|\t/g, ' '),
+        r.item_category_name || r.sub_category_name || r.category_name || r.category || '',
+        Number(r.qty_limit || 0),
+        Number(r.manual_unit_price ?? r.standard_price ?? 0),
+        Number(r.value_limit || 0),
+      ]);
+      const csv = [header, ...lines].map((arr) => arr.map((x) => (typeof x === 'string' && x.includes(',') ? '"' + x.replace(/"/g, '""') + '"' : x)).join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `final_approved_items_${faBudgetId || 'all'}_${faCostCenterId || 'all'}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (_) {}
+  };
 
   const pendingOverrideCount = overrides.filter((item) => item.status === 'PENDING').length;
 
@@ -792,6 +990,53 @@ const handleOverrideSave = async () => {
                 </Space>
               </Card>
             )}
+
+            <Card title="Final Approved Items" style={{ marginTop: 16 }}>
+              <Space style={{ marginBottom: 12 }} wrap>
+                <Select
+                  style={{ minWidth: 260 }}
+                  placeholder="Select budget"
+                  mode="multiple"
+                  value={Array.isArray(faBudgetId) ? faBudgetId : (faBudgetId ? [faBudgetId] : [])}
+                  onChange={setFaBudgetId}
+                  options={(faBudgets || []).map((b) => ({ value: b.id, label: b.display_name || b.name || `Budget ${b.id}` }))}
+                />
+                <Select
+                  style={{ minWidth: 260 }}
+                  placeholder="Select cost center"
+                  mode="multiple"
+                  value={Array.isArray(faCostCenterId) ? faCostCenterId : (faCostCenterId ? [faCostCenterId] : [])}
+                  onChange={setFaCostCenterId}
+                  options={(faCostCenters || []).map((c) => ({ value: c.id, label: `${c.code} - ${c.name || ''}` }))}
+                />
+                <Button onClick={exportFinalApprovedCsv}>Export to Excel</Button>
+              </Space>
+              <Table
+                rowKey="id"
+                loading={faLoading}
+                dataSource={faRows}
+                pagination={{ pageSize: 10 }}
+                columns={[
+                  { title: 'Budget', render: (_, r) => (faBudgets.find((b) => b.id === r._budget_id)?.name || r._budget_id) },
+                  { title: 'Cost Center', render: (_, r) => (faCostCenters.find((c) => Number(c.id) === Number(r?.metadata?.cost_center_id))?.name || 'Company-wide') },
+                  { title: 'Item Code', dataIndex: 'item_code' },
+                  { title: 'Item Name', dataIndex: 'item_name' },
+                  { title: 'Category', render: (_, r) => r.item_category_name || r.sub_category_name || r.category_name || r.category || '' },
+                  { title: 'Procurement Class', dataIndex: 'procurement_class' },
+                  { title: 'Qty', dataIndex: 'qty_limit' },
+                  { title: 'Unit Price', render: (_, r) => Number(r.manual_unit_price ?? r.standard_price ?? 0).toFixed(2) },
+                  { title: 'Value', dataIndex: 'value_limit', render: (v) => Number(v || 0).toFixed(2) },
+                  { title: 'Consumed', render: (_, r) => Number(r.consumed_value || 0).toFixed(2) },
+                  { title: 'Remaining', render: (_, r) => Number(r.remaining_value || 0).toFixed(2) },
+                  { title: 'Original Qty', dataIndex: 'original_qty_limit' },
+                  { title: 'Original Unit Price', dataIndex: 'original_unit_price' },
+                  { title: 'Original Value', dataIndex: 'original_value_limit' },
+                  { title: 'Var Qty', dataIndex: 'qty_variance' },
+                  { title: 'Var Price', dataIndex: 'price_variance' },
+                  { title: 'Var Value', dataIndex: 'value_variance' },
+                ]}
+              />
+            </Card>
           </Tabs.TabPane>
 
           <Tabs.TabPane tab="Budgets" key="budgets">
@@ -995,6 +1240,7 @@ const handleOverrideSave = async () => {
             setBudgetModalOpen(false);
             budgetForm.resetFields();
             setActiveBudget(null);
+            clearEditParam();
           }}
           onOk={handleBudgetSave}
           okText="Save"

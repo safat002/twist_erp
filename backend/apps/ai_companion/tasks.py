@@ -39,6 +39,130 @@ def detect_anomalies():
         return {"status": "error", "error": str(exc)}
 
 
+@shared_task(name="apps.ai_companion.tasks.generate_operational_agenda")
+def generate_operational_agenda(days_ahead: int = 7):
+    """
+    Create proactive suggestions for upcoming operational deadlines:
+    - Budgets with entry deadlines due within N days
+    - POs overdue for delivery (pending GRN)
+    - AP bills due within N days
+    """
+    try:
+        from datetime import timedelta
+        from django.db.models import F
+        from apps.companies.models import Company
+        from apps.budgeting.models import Budget
+        from apps.procurement.models import PurchaseOrder
+        from apps.finance.models import APBill
+
+        engine = AlertEngine()
+        companies = Company.objects.filter(is_active=True)
+        today = timezone.now().date()
+        soon = today + timedelta(days=max(1, int(days_ahead)))
+
+        total_created = 0
+        for company in companies:
+            # Budgets due (entry window closing soon)
+            try:
+                budgets = Budget.objects.filter(
+                    company=company,
+                    entry_enabled=True,
+                    status=Budget.STATUS_ENTRY_OPEN,
+                    entry_end_date__isnull=False,
+                    entry_end_date__gte=today,
+                    entry_end_date__lte=soon,
+                )
+                bcount = budgets.count()
+                if bcount:
+                    next_date = budgets.order_by("entry_end_date").first().entry_end_date
+                    body = f"{bcount} budget(s) have entry deadlines within {days_ahead} day(s). Next deadline: {next_date}."
+                    metadata = {"rule_code": "budget.entry_deadline", "count": bcount, "next_deadline": next_date.isoformat()}
+                    recipients = engine._resolve_recipients(
+                        company,
+                        preferred_roles=["Finance Manager", "Budget Owner"],
+                        permission_codes=["budgeting.view_budgets"],
+                    )
+                    total_created += engine._emit_alerts(
+                        company=company,
+                        recipients=recipients,
+                        rule_code="budget.entry_deadline",
+                        title="Budget entry deadlines approaching",
+                        body=body,
+                        severity=AIProactiveSuggestion.AlertSeverity.WARNING,
+                        metadata=metadata,
+                        alert_type="budget",
+                    )
+            except Exception:
+                logger.exception("Agenda: budgets due failed for %s", company)
+
+            # POs pending GRN (overdue expected delivery)
+            try:
+                overdue_pos = (
+                    PurchaseOrder.objects.filter(
+                        company=company, expected_delivery_date__lt=today, status__in=["APPROVED", "PARTIAL"]
+                    )
+                    .values_list("po_number", flat=True)[:10]
+                )
+                pcount = len(overdue_pos)
+                if pcount:
+                    top_list = ", ".join(overdue_pos)
+                    body = f"{pcount} purchase order(s) are overdue for delivery. Examples: {top_list}."
+                    metadata = {"rule_code": "inventory.grn_pending", "po_numbers": list(overdue_pos)}
+                    recipients = engine._resolve_recipients(
+                        company,
+                        preferred_roles=["Inventory Manager", "Warehouse Manager"],
+                        permission_codes=["inventory.view_stock"],
+                    )
+                    total_created += engine._emit_alerts(
+                        company=company,
+                        recipients=recipients,
+                        rule_code="inventory.grn_pending",
+                        title="Pending GRNs for overdue POs",
+                        body=body,
+                        severity=AIProactiveSuggestion.AlertSeverity.WARNING,
+                        metadata=metadata,
+                        alert_type="inventory",
+                    )
+            except Exception:
+                logger.exception("Agenda: GRN pending scan failed for %s", company)
+
+            # AP bills due soon
+            try:
+                bills = (
+                    APBill.objects.filter(company=company, status__in=["POSTED", "PARTIAL"], due_date__gte=today, due_date__lte=soon)
+                    .annotate(outstanding=F("total_amount") - F("amount_paid"))
+                    .filter(outstanding__gt=0)
+                )
+                acount = bills.count()
+                if acount:
+                    oldest = bills.order_by("due_date").first().due_date
+                    body = f"{acount} AP bill(s) are due within {days_ahead} day(s). Earliest due: {oldest}."
+                    metadata = {"rule_code": "finance.ap_upcoming", "count": acount, "earliest_due": oldest.isoformat()}
+                    recipients = engine._resolve_recipients(
+                        company,
+                        preferred_roles=["Finance Manager", "Accountant", "Controller"],
+                        permission_codes=["finance.manage_bills", "finance.view_reports"],
+                    )
+                    total_created += engine._emit_alerts(
+                        company=company,
+                        recipients=recipients,
+                        rule_code="finance.ap_upcoming",
+                        title="AP payments due soon",
+                        body=body,
+                        severity=AIProactiveSuggestion.AlertSeverity.WARNING,
+                        metadata=metadata,
+                        alert_type="finance",
+                    )
+            except Exception:
+                logger.exception("Agenda: AP due scan failed for %s", company)
+
+        logger.info("AI Companion: operational agenda suggestions created=%s", total_created)
+        return {"status": "ok", "created": total_created}
+    except Exception as exc:
+        logger.exception("AI operational agenda generation failed: %s", exc)
+        return {"status": "error", "error": str(exc)}
+
+
 def _generate_metadata_suggestions(window_start):
     created = 0
     field_events = (

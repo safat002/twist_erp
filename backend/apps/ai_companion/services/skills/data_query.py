@@ -126,10 +126,10 @@ Analyze this request and return a JSON object:
 }}
 
 Examples:
-- "Show me pending POs above 10000" → {{"query_type": "purchase_orders", "filters": {{"status": "PENDING_APPROVAL", "amount_min": 10000}}, "confidence": 0.9}}
-- "What's my cash balance?" → {{"query_type": "cash_balance", "filters": {{}}, "confidence": 0.95}}
-- "Show AR aging" → {{"query_type": "ar_aging", "filters": {{}}, "confidence": 0.9}}
-- "Items below reorder level" → {{"query_type": "stock_levels", "filters": {{"below_reorder": true}}, "confidence": 0.85}}
+- "Show me pending POs above 10000" -> {{"query_type": "purchase_orders", "filters": {{"status": "PENDING_APPROVAL", "amount_min": 10000}}, "confidence": 0.9}}
+- "What's my cash balance?" -> {{"query_type": "cash_balance", "filters": {{}}, "confidence": 0.95}}
+- "Show AR aging" -> {{"query_type": "ar_aging", "filters": {{}}, "confidence": 0.9}}
+- "Items below reorder level" -> {{"query_type": "stock_levels", "filters": {{"below_reorder": true}}, "confidence": 0.85}}
 
 Return ONLY valid JSON, no markdown."""
 
@@ -222,7 +222,7 @@ Return ONLY valid JSON, no markdown."""
         """Format query result into human-readable response"""
 
         if not result.success:
-            return f"❌ {result.message}"
+            return f"Oops! {result.message}"
 
         query_type = query_intent.get("query_type")
 
@@ -244,7 +244,7 @@ Return ONLY valid JSON, no markdown."""
         elif query_type == "dashboard_summary":
             return self._format_dashboard_response(result)
         else:
-            return f"✓ {result.message}"
+            return f"{result.message}"
 
     def _format_po_response(self, result) -> str:
         """Format purchase orders response"""
@@ -254,7 +254,7 @@ Return ONLY valid JSON, no markdown."""
         lines = [f"**Found {len(result.data)} Purchase Order(s):**\n"]
         for po in result.data[:10]:  # Show max 10
             lines.append(
-                f"• **#{po.get('po_number')}** - {po.get('supplier__name', 'N/A')} "
+                f"- **#{po.get('po_number')}** - {po.get('supplier__name', 'N/A')} "
                 f"- {po.get('status')} - {po.get('total_amount', 0):,.2f}"
             )
 
@@ -266,12 +266,12 @@ Return ONLY valid JSON, no markdown."""
     def _format_approvals_response(self, result) -> str:
         """Format pending approvals response"""
         if not result.data:
-            return "✓ You have no pending approvals."
+            return "You have no pending approvals."
 
         lines = [f"**You have {len(result.data)} pending approval(s):**\n"]
         for approval in result.data[:10]:
             lines.append(
-                f"• **{approval.get('workflow')}** - {approval.get('task_name')} "
+                f"- **{approval.get('workflow')}** - {approval.get('task_name')} "
                 f"- {approval.get('entity_type')}"
             )
 
@@ -288,7 +288,7 @@ Return ONLY valid JSON, no markdown."""
             lines.append("**By Account:**")
             for acc in accounts:
                 lines.append(
-                    f"• {acc.get('account_name')} ({acc.get('bank_name')}): "
+                    f"- {acc.get('account_name')} ({acc.get('bank_name')}): "
                     f"{acc.get('current_balance', 0):,.2f}"
                 )
 
@@ -303,7 +303,7 @@ Return ONLY valid JSON, no markdown."""
         lines = [f"**Total Accounts Receivable: {total:,.2f}**\n"]
         lines.append("**Aging Breakdown:**")
         for bucket, amount in summary.items():
-            lines.append(f"• {bucket} days: {amount:,.2f}")
+            lines.append(f"- {bucket} days: {amount:,.2f}")
 
         return "\n".join(lines)
 
@@ -316,7 +316,7 @@ Return ONLY valid JSON, no markdown."""
         lines = [f"**Total Accounts Payable: {total:,.2f}**\n"]
         lines.append("**Aging Breakdown:**")
         for bucket, amount in summary.items():
-            lines.append(f"• {bucket} days: {amount:,.2f}")
+            lines.append(f"- {bucket} days: {amount:,.2f}")
 
         return "\n".join(lines)
 
@@ -328,7 +328,7 @@ Return ONLY valid JSON, no markdown."""
         lines = [f"**Found {len(result.data)} stock record(s):**\n"]
         for stock in result.data[:15]:
             lines.append(
-                f"• **{stock.get('item__name')}** ({stock.get('item__code')}) "
+                f"- **{stock.get('item__name')}** ({stock.get('item__code')}) "
                 f"- Warehouse: {stock.get('warehouse__name')} "
                 f"- Qty: {stock.get('quantity', 0)} "
                 f"(Reorder: {stock.get('reorder_level', 0)})"
@@ -342,16 +342,16 @@ Return ONLY valid JSON, no markdown."""
 
         lines = [
             f"**Cash Flow Analysis:**\n",
-            f"• Current Cash: {data.get('current_cash', 0):,.2f}",
-            f"• Expected Inflow: {data.get('expected_inflow', 0):,.2f}",
-            f"• Expected Outflow: {data.get('expected_outflow', 0):,.2f}",
-            f"• Projected Cash: {data.get('projected_cash', 0):,.2f}",
-            f"• Overdue Receivables: {data.get('overdue_receivables', 0):,.2f}",
+            f"- Current Cash: {data.get('current_cash', 0):,.2f}",
+            f"- Expected Inflow: {data.get('expected_inflow', 0):,.2f}",
+            f"- Expected Outflow: {data.get('expected_outflow', 0):,.2f}",
+            f"- Projected Cash: {data.get('projected_cash', 0):,.2f}",
+            f"- Overdue Receivables: {data.get('overdue_receivables', 0):,.2f}",
             f"\n**Insights:**"
         ]
 
         for insight in data.get('insights', []):
-            lines.append(f"• {insight}")
+            lines.append(f"- {insight}")
 
         return "\n".join(lines)
 
@@ -361,8 +361,9 @@ Return ONLY valid JSON, no markdown."""
 
         return f"""**Dashboard Summary:**
 
-• Cash Balance: {data.get('cash_balance', 0):,.2f}
-• Accounts Receivable: {data.get('accounts_receivable', 0):,.2f}
-• Accounts Payable: {data.get('accounts_payable', 0):,.2f}
-• Pending Approvals: {data.get('pending_approvals', 0)}
+- Cash Balance: {data.get('cash_balance', 0):,.2f}
+- Accounts Receivable: {data.get('accounts_receivable', 0):,.2f}
+- Accounts Payable: {data.get('accounts_payable', 0):,.2f}
+- Pending Approvals: {data.get('pending_approvals', 0)}
 """
+

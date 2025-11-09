@@ -165,6 +165,114 @@ def approve_workflow_instance(context: ActionContext, payload: Dict[str, Any]) -
         "state": instance.state,
     }
 
+
+@registry.register("inventory.post_grn")
+def post_goods_receipt(context: ActionContext, payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Post an existing Goods Receipt (GRN) if authorized.
+
+    Payload:
+      - goods_receipt_id (required)
+    """
+    from apps.security.services.permission_service import PermissionService
+    grn_id = payload.get("goods_receipt_id") or payload.get("grn_id")
+    if not grn_id:
+        raise ActionExecutionError("goods_receipt_id is required.")
+
+    try:
+        from apps.inventory.models import GoodsReceipt
+        grn = GoodsReceipt.objects.select_related("company", "supplier", "purchase_order").get(id=grn_id)
+    except GoodsReceipt.DoesNotExist as exc:
+        raise ActionExecutionError("Goods Receipt not found.") from exc
+
+    # Scope context to the GRN's company
+    if context.company and getattr(context.company, "id", None) != grn.company_id:
+        raise ActionExecutionError("Active company does not match the Goods Receipt company.")
+    context.company = grn.company
+
+    # Permission check
+    if not PermissionService.user_has_permission(context.user, "inventory_manage_stock_movement", f"company:{grn.company_id}"):
+        raise ActionExecutionError("You are not authorized to post goods receipts for this company.")
+
+    if grn.status == "POSTED":
+        return {"message": f"GRN {grn.receipt_number} is already posted.", "receipt_number": grn.receipt_number, "status": grn.status}
+
+    # Transition to POSTED; model save() enforces workflow approvals and performs stock/budget postings
+    try:
+        grn.status = "POSTED"
+        grn.save()
+    except Exception as exc:
+        raise ActionExecutionError(str(exc)) from exc
+
+    return {
+        "message": f"Goods Receipt {grn.receipt_number} posted successfully.",
+        "receipt_number": grn.receipt_number,
+        "grn_id": grn.id,
+        "status": grn.status,
+        "purchase_order": getattr(grn.purchase_order, "po_number", None),
+        "supplier": getattr(grn.supplier, "name", None),
+    }
+
+
+@registry.register("budget.submit")
+def submit_budget_for_approval(context: ActionContext, payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Submit a budget for approvals if authorized.
+
+    Payload:
+      - budget_id (required)
+    """
+    from apps.security.services.permission_service import PermissionService
+    budget_id = payload.get("budget_id")
+    if not budget_id:
+        raise ActionExecutionError("budget_id is required.")
+
+    try:
+        from apps.budgeting.models import Budget
+        from apps.budgeting.services import BudgetApprovalService
+        budget = Budget.objects.select_related("company", "cost_center").get(id=budget_id)
+    except Exception:
+        raise ActionExecutionError("Budget not found.")
+
+    # Scope company context
+    if context.company and getattr(context.company, "id", None) != budget.company_id:
+        raise ActionExecutionError("Active company does not match budget company.")
+    context.company = budget.company
+
+    # Permission check: allow company or cost_center scoped permission
+    allowed = False
+    if PermissionService.user_has_permission(context.user, "budgeting_submit_for_approval", f"company:{budget.company_id}"):
+        allowed = True
+    else:
+        cc_id = getattr(budget, "cost_center_id", None)
+        if cc_id and PermissionService.user_has_permission(context.user, "budgeting_submit_for_approval", f"cost_center:{cc_id}"):
+            allowed = True
+    if not allowed:
+        raise ActionExecutionError("You are not authorized to submit this budget for approval.")
+
+    # Validate state
+    from apps.budgeting.models import Budget as BudgetModel
+    if budget.status not in {BudgetModel.STATUS_DRAFT, BudgetModel.STATUS_ENTRY_OPEN}:
+        raise ActionExecutionError("Can only submit draft or entry-open budgets.")
+
+    # Submit and create CC approval tasks
+    budget.submit_for_approval(user=context.user)
+    try:
+        BudgetApprovalService.request_cost_center_approvals(budget)
+    except Exception:
+        # Soft failure on notifications/assignment
+        logger = logging.getLogger(__name__)
+        logger.exception("Failed to request cost center approvals for budget %s", budget.id)
+
+    return {
+        "message": f"Budget '{budget.name}' submitted for approval.",
+        "budget_id": budget.id,
+        "status": budget.status,
+        "period": {
+            "start": getattr(budget, "period_start", None),
+            "end": getattr(budget, "period_end", None),
+        },
+        "cost_center_id": getattr(budget, "cost_center_id", None),
+    }
+
 @registry.register("inventory.raise_reorder_alert")
 def raise_reorder_alert(context: ActionContext, payload: Dict[str, Any]) -> Dict[str, Any]:
     product_code = payload.get("product_code")

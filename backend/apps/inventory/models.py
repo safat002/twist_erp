@@ -4,7 +4,6 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-from apps.budgeting.models import BudgetUsage
 from apps.workflows.services import WorkflowService
 from apps.workflows.models import WorkflowTemplate, WorkflowInstance
 
@@ -329,6 +328,7 @@ class GoodsReceipt(models.Model):
             self._on_posted()
 
     def _on_posted(self):
+        from apps.budgeting.models import BudgetUsage
         timestamp = timezone.now()
         for line in self.lines.select_related('purchase_order_line__budget_line', 'purchase_order_line__budget_commitment'):
             po_line = line.purchase_order_line

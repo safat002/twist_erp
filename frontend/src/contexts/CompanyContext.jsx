@@ -191,7 +191,7 @@ export const CompanyProvider = ({ children }) => {
 
       if (isBackendCompany) {
         try {
-          const response = await api.post(`/companies/companies//activate/`);
+          const response = await api.post('/api/v1/companies/companies/activate/', { id: companyId });
           if (response?.data) {
             targetCompany = response.data;
             setCompanies((prev) => {

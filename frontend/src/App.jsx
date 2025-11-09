@@ -9,6 +9,7 @@ import LoginPage from './pages/LoginPage';
 
 // Layouts
 import MainLayout from './layouts/MainLayout';
+import AIWidget from './components/AIAssistant/AIWidget';
 
 // Dashboard
 import Dashboard from './pages/Dashboard/Dashboard';
@@ -90,7 +91,7 @@ import ItemCodes from './pages/Budgeting/ItemCodes';
 import Uoms from './pages/Budgeting/Uoms';
 import CostCenters from './pages/Budgeting/CostCenters';
 import BudgetEntry from './pages/Budgeting/BudgetEntry';
-import ApprovalQueue from './pages/Budgeting/ApprovalQueue';
+import ApprovalQueue from './pages/Budgeting/ApprovalQueuePage';
 import ModeratorDashboard from './pages/Budgeting/ModeratorDashboard';
 import RemarkTemplates from './pages/Budgeting/RemarkTemplates';
 import Gamification from './pages/Budgeting/Gamification';
@@ -162,134 +163,268 @@ function App() {
 }
 
 const MainApp = () => {
+
   return (
-    <MainLayout>
-      <Routes>
-        <Route path="/" element={<Dashboard />} />
 
-        {/* Finance Module */}
-        <Route path="/finance" element={<FeatureGuard module="finance"><FinanceWorkspace /></FeatureGuard>} />
-        <Route path="/finance/accounts" element={<FeatureGuard module="finance" feature="chart_of_accounts"><AccountsList /></FeatureGuard>} />
-        <Route path="/finance/journals" element={<FeatureGuard module="finance" feature="journal_vouchers"><JournalVouchersList /></FeatureGuard>} />
-        <Route path="/finance/invoices" element={<FeatureGuard module="finance"><InvoicesList /></FeatureGuard>} />
-        <Route path="/finance/payments" element={<FeatureGuard module="finance"><PaymentsList /></FeatureGuard>} />
-        <Route path="/finance/periods" element={<FeatureGuard module="finance"><PeriodsList /></FeatureGuard>} />
-        <Route path="/finance/currencies" element={<FeatureGuard module="finance"><Currencies /></FeatureGuard>} />
-        <Route path="/finance/bank-recon" element={<FeatureGuard module="finance"><BankReconciliation /></FeatureGuard>} />
-        <Route path="/finance/reports/trial-balance" element={<FeatureGuard module="finance"><TrialBalance /></FeatureGuard>} />
-        <Route path="/finance/reports/general-ledger" element={<FeatureGuard module="finance"><GeneralLedger /></FeatureGuard>} />
-        <Route path="/finance/reports/ar-aging" element={<FeatureGuard module="finance"><ARAging /></FeatureGuard>} />
-        <Route path="/finance/reports/ap-aging" element={<FeatureGuard module="finance"><APAging /></FeatureGuard>} />
-        <Route path="/finance/reports/vat-return" element={<FeatureGuard module="finance"><VATReturn /></FeatureGuard>} />
-        <Route path="/settings/calendar-sync" element={<CalendarSync />} />
+    <>
 
-        {/* Inventory Module */}
-        <Route path="/inventory" element={<FeatureGuard module="inventory"><InventoryWorkspace /></FeatureGuard>} />
-        <Route path="/inventory/products" element={<FeatureGuard module="inventory" feature="products"><ProductsList /></FeatureGuard>} />
-        <Route path="/inventory/warehouses" element={<FeatureGuard module="inventory"><WarehousesList /></FeatureGuard>} />
-        <Route path="/inventory/movements" element={<FeatureGuard module="inventory"><StockMovements /></FeatureGuard>} />
-        <Route path="/inventory/requisitions" element={<FeatureGuard module="inventory"><RequisitionsHub /></FeatureGuard>} />
-        <Route path="/inventory/requisitions/internal" element={<FeatureGuard module="inventory" feature="requisitions_internal"><InternalRequisitions /></FeatureGuard>} />
-        <Route path="/inventory/requisitions/purchase" element={<FeatureGuard module="inventory" feature="purchase_requisitions"><PurchaseRequisitions /></FeatureGuard>} />
-        <Route path="/inventory/valuation/settings" element={<FeatureGuard module="inventory"><ValuationSettings /></FeatureGuard>} />
-        <Route path="/inventory/valuation/cost-layers" element={<FeatureGuard module="inventory"><CostLayersView /></FeatureGuard>} />
-      <Route path="/inventory/valuation/report" element={<FeatureGuard module="inventory"><ValuationReport /></FeatureGuard>} />
-      <Route path="/inventory/valuation/landed-cost" element={<FeatureGuard module="inventory"><LandedCostAdjustment /></FeatureGuard>} />
+      <MainLayout>
 
-        {/* Sales Module */}
-        <Route path="/sales" element={<FeatureGuard module="sales"><SalesWorkspace /></FeatureGuard>} />
-        <Route path="/sales/customers" element={<FeatureGuard module="sales" feature="customers"><CustomersList /></FeatureGuard>} />
-        <Route path="/sales/pipeline" element={<FeatureGuard module="sales"><SalesPipeline /></FeatureGuard>} />
-        <Route path="/sales/orders" element={<FeatureGuard module="sales" feature="sales_orders"><SalesOrdersList /></FeatureGuard>} />
-      <Route path="/policies" element={<PoliciesList />} />
-      <Route path="/policies/my" element={<MyAcknowledgements />} />
-      <Route path="/ngo/programs" element={<ProgramsList />} />
-      <Route path="/ngo/donors" element={<DonorsList />} />
-      <Route path="/ngo/compliance" element={<Compliance />} />
-        <Route path="/ngo/grant-governance" element={<FeatureGuard module="ngo" feature="grant_governance"><GrantGovernance /></FeatureGuard>} />
-      <Route path="/ngo/dashboard" element={<NgoDashboard />} />
-      <Route path="/microfinance/loans" element={<LoansList />} />
-      <Route path="/microfinance/borrowers" element={<BorrowersList />} />
-      <Route path="/microfinance/products" element={<MFProductsList />} />
-      <Route path="/microfinance/dashboard" element={<MicrofinanceDashboard />} />
-      {/* Procurement Module */}
-      <Route path="/procurement" element={<FeatureGuard module="procurement"><ProcurementWorkspace /></FeatureGuard>} />
-      <Route path="/procurement/suppliers" element={<FeatureGuard module="procurement" feature="vendors"><SuppliersList /></FeatureGuard>} />
-      <Route path="/procurement/orders" element={<FeatureGuard module="procurement" feature="purchase_orders"><PurchaseOrdersList /></FeatureGuard>} />
-      
+        <Routes>
 
-      {/* Production Module */}
-      <Route path="/production" element={<FeatureGuard module="production"><ProductionWorkspace /></FeatureGuard>} />
-      <Route path="/production/boms" element={<FeatureGuard module="production" feature="bom"><ProductionBOMList /></FeatureGuard>} />
-      <Route path="/production/work-orders" element={<FeatureGuard module="production" feature="work_orders"><ProductionWorkOrders /></FeatureGuard>} />
+          <Route path="/" element={<Dashboard />} />
 
-      {/* Assets Module */}
-      <Route path="/assets" element={<FeatureGuard module="assets"><AssetsWorkspace /></FeatureGuard>} />
-      <Route path="/assets/list" element={<FeatureGuard module="assets"><AssetsList /></FeatureGuard>} />
-      <Route path="/assets/maintenance" element={<FeatureGuard module="assets"><AssetMaintenance /></FeatureGuard>} />
 
-      {/* Budgeting Module */}
-      <Route path="/budgets" element={<FeatureGuard module="budgeting"><BudgetingWorkspace /></FeatureGuard>} />
-      <Route path="/budgets/entry" element={<FeatureGuard module="budgeting"><BudgetEntry /></FeatureGuard>} />
-      <Route path="/budgets/approvals" element={<FeatureGuard module="budgeting"><ApprovalQueue /></FeatureGuard>} />
-      <Route path="/budgets/list" element={<FeatureGuard module="budgeting"><BudgetsList /></FeatureGuard>} />
-       <Route path="/budgets/monitor" element={<FeatureGuard module="budgeting"><BudgetMonitor /></FeatureGuard>} />
-       <Route path="/budgets/moderator" element={<FeatureGuard module="budgeting"><ModeratorDashboard /></FeatureGuard>} />
-       <Route path="/budgets/gamification" element={<FeatureGuard module="budgeting"><Gamification /></FeatureGuard>} />
-       <Route path="/budgets/moderator" element={<FeatureGuard module="budgeting"><ModeratorDashboard /></FeatureGuard>} />
-       <Route path="/budgets/remark-templates" element={<FeatureGuard module="budgeting"><RemarkTemplates /></FeatureGuard>} />
-       <Route path="/budgets/item-codes" element={<FeatureGuard module="budgeting"><ItemCodes /></FeatureGuard>} />
-      <Route path="/budgets/uoms" element={<FeatureGuard module="budgeting"><Uoms /></FeatureGuard>} />
-      <Route path="/budgets/cost-centers" element={<FeatureGuard module="budgeting"><CostCenters /></FeatureGuard>} />
 
-      {/* HR Module */}
-      <Route path="/hr" element={<FeatureGuard module="hr"><HRWorkspace /></FeatureGuard>} />
-      <Route path="/hr/employees" element={<FeatureGuard module="hr" feature="employees"><EmployeesList /></FeatureGuard>} />
-      <Route path="/hr/attendance" element={<FeatureGuard module="hr"><Attendance /></FeatureGuard>} />
-      <Route path="/hr/payroll" element={<FeatureGuard module="hr" feature="payroll"><PayrollList /></FeatureGuard>} />
-      <Route path="/hr/leave" element={<FeatureGuard module="hr"><LeaveManagement /></FeatureGuard>} />
-      <Route path="/hr/advances-loans" element={<FeatureGuard module="hr"><AdvancesLoansManagement /></FeatureGuard>} />
-      <Route path="/hr/recruitment" element={<FeatureGuard module="hr"><RecruitmentManagement /></FeatureGuard>} />
-      <Route path="/hr/onboarding" element={<FeatureGuard module="hr"><OnboardingManagement /></FeatureGuard>} />
-      <Route path="/hr/performance" element={<FeatureGuard module="hr"><PerformanceManagement /></FeatureGuard>} />
-      <Route path="/hr/exit-management" element={<FeatureGuard module="hr"><ExitManagement /></FeatureGuard>} />
-      <Route path="/hr/policies" element={<FeatureGuard module="hr"><PolicyManagement /></FeatureGuard>} />
-      <Route path="/hr/attendance/management" element={<FeatureGuard module="hr"><AttendanceManagement /></FeatureGuard>} />
+          {/* Finance Module */}
 
-      {/* Projects Module */}
-      <Route path="/projects" element={<FeatureGuard module="projects"><ProjectsWorkspace /></FeatureGuard>} />
-      <Route path="/projects/list" element={<FeatureGuard module="projects"><ProjectsList /></FeatureGuard>} />
-      <Route path="/projects/gantt" element={<FeatureGuard module="projects"><ProjectGantt /></FeatureGuard>} />
+          <Route path="/finance" element={<FeatureGuard module="finance"><FinanceWorkspace /></FeatureGuard>} />
 
-      {/* AI & No-Code Tools */}
-      <Route path="/ai/training-review" element={<FeatureGuard module="ai_companion"><AiTrainingReview /></FeatureGuard>} />
-      <Route path="/forms" element={<FeatureGuard module="form_builder"><FormBuilder /></FeatureGuard>} />
-      <Route path="/reports" element={<FeatureGuard module="report_builder"><ReportBuilder /></FeatureGuard>} />
-      <Route path="/schemas" element={<FeatureGuard module="form_builder"><SchemaDesigner /></FeatureGuard>} />
-      <Route path="/forms/entities/:slug" element={<FeatureGuard module="form_builder"><EntityWorkspace /></FeatureGuard>} />
-      <Route path="/workflows" element={<FeatureGuard module="workflows"><WorkflowDesigner /></FeatureGuard>} />
-      <Route path="/workflows/list" element={<FeatureGuard module="workflows"><WorkflowList /></FeatureGuard>} />
-      <Route path="/migration" element={<FeatureGuard module="data_migration"><DataMigration /></FeatureGuard>} />
-      <Route path="/approvals" element={<FeatureGuard module="workflows"><MyApprovals /></FeatureGuard>} />
-      <Route path="/onboarding" element={<OnboardingWizard />} />
-      <Route path="/settings" element={<Settings />} />
-      <Route path="/settings/profile" element={<Settings />} />
-      <Route path="/settings/preferences" element={<Settings />} />
-      {/* Tasks & Notifications */}
-      <Route path="/tasks" element={<FeatureGuard module="tasks"><MyTasks /></FeatureGuard>} />
-      <Route path="/tasks/my" element={<FeatureGuard module="tasks"><MyTasks /></FeatureGuard>} />
-      <Route path="/tasks/team" element={<FeatureGuard module="tasks"><TeamTasks /></FeatureGuard>} />
-      <Route path="/notifications" element={<FeatureGuard module="notifications"><NotificationCenter /></FeatureGuard>} />
+          <Route path="/finance/accounts" element={<FeatureGuard module="finance" feature="chart_of_accounts"><AccountsList /></FeatureGuard>} />
 
-      {/* Company & Organization Management */}
-      <Route path="/company-management" element={<CompanyManagement />} />
-      <Route path="/organization/groups" element={<CompanyGroupManagement />} />
-      <Route path="/organization/branches" element={<BranchManagement />} />
-      <Route path="/organization/departments" element={<DepartmentManagement />} />
-      <Route path="/organization/user-access" element={<UserAccessManagement />} />
-    </Routes>
-  </MainLayout>
-);
+          <Route path="/finance/journals" element={<FeatureGuard module="finance" feature="journal_vouchers"><JournalVouchersList /></FeatureGuard>} />
+
+          <Route path="/finance/invoices" element={<FeatureGuard module="finance"><InvoicesList /></FeatureGuard>} />
+
+          <Route path="/finance/payments" element={<FeatureGuard module="finance"><PaymentsList /></FeatureGuard>} />
+
+          <Route path="/finance/periods" element={<FeatureGuard module="finance"><PeriodsList /></FeatureGuard>} />
+
+          <Route path="/finance/currencies" element={<FeatureGuard module="finance"><Currencies /></FeatureGuard>} />
+
+          <Route path="/finance/bank-recon" element={<FeatureGuard module="finance"><BankReconciliation /></FeatureGuard>} />
+
+          <Route path="/finance/reports/trial-balance" element={<FeatureGuard module="finance"><TrialBalance /></FeatureGuard>} />
+
+          <Route path="/finance/reports/general-ledger" element={<FeatureGuard module="finance"><GeneralLedger /></FeatureGuard>} />
+
+          <Route path="/finance/reports/ar-aging" element={<FeatureGuard module="finance"><ARAging /></FeatureGuard>} />
+
+          <Route path="/finance/reports/ap-aging" element={<FeatureGuard module="finance"><APAging /></FeatureGuard>} />
+
+          <Route path="/finance/reports/vat-return" element={<FeatureGuard module="finance"><VATReturn /></FeatureGuard>} />
+
+          <Route path="/settings/calendar-sync" element={<CalendarSync />} />
+
+
+
+          {/* Inventory Module */}
+
+          <Route path="/inventory" element={<FeatureGuard module="inventory"><InventoryWorkspace /></FeatureGuard>} />
+
+          <Route path="/inventory/products" element={<FeatureGuard module="inventory" feature="products"><ProductsList /></FeatureGuard>} />
+
+          <Route path="/inventory/warehouses" element={<FeatureGuard module="inventory"><WarehousesList /></FeatureGuard>} />
+
+          <Route path="/inventory/movements" element={<FeatureGuard module="inventory"><StockMovements /></FeatureGuard>} />
+
+          <Route path="/inventory/requisitions" element={<FeatureGuard module="inventory"><RequisitionsHub /></FeatureGuard>} />
+
+          <Route path="/inventory/requisitions/internal" element={<FeatureGuard module="inventory" feature="requisitions_internal"><InternalRequisitions /></FeatureGuard>} />
+
+          <Route path="/inventory/requisitions/purchase" element={<FeatureGuard module="inventory" feature="purchase_requisitions"><PurchaseRequisitions /></FeatureGuard>} />
+
+          <Route path="/inventory/valuation/settings" element={<FeatureGuard module="inventory"><ValuationSettings /></FeatureGuard>} />
+
+          <Route path="/inventory/valuation/cost-layers" element={<FeatureGuard module="inventory"><CostLayersView /></FeatureGuard>} />
+
+          <Route path="/inventory/valuation/report" element={<FeatureGuard module="inventory"><ValuationReport /></FeatureGuard>} />
+
+          <Route path="/inventory/valuation/landed-cost" element={<FeatureGuard module="inventory"><LandedCostAdjustment /></FeatureGuard>} />
+
+
+
+          {/* Sales Module */}
+
+          <Route path="/sales" element={<FeatureGuard module="sales"><SalesWorkspace /></FeatureGuard>} />
+
+          <Route path="/sales/customers" element={<FeatureGuard module="sales" feature="customers"><CustomersList /></FeatureGuard>} />
+
+          <Route path="/sales/pipeline" element={<FeatureGuard module="sales"><SalesPipeline /></FeatureGuard>} />
+
+          <Route path="/sales/orders" element={<FeatureGuard module="sales" feature="sales_orders"><SalesOrdersList /></FeatureGuard>} />
+
+          <Route path="/policies" element={<PoliciesList />} />
+
+          <Route path="/policies/my" element={<MyAcknowledgements />} />
+
+          <Route path="/ngo/programs" element={<ProgramsList />} />
+
+          <Route path="/ngo/donors" element={<DonorsList />} />
+
+          <Route path="/ngo/compliance" element={<Compliance />} />
+
+          <Route path="/ngo/grant-governance" element={<FeatureGuard module="ngo" feature="grant_governance"><GrantGovernance /></FeatureGuard>} />
+
+          <Route path="/ngo/dashboard" element={<NgoDashboard />} />
+
+          <Route path="/microfinance/loans" element={<LoansList />} />
+
+          <Route path="/microfinance/borrowers" element={<BorrowersList />} />
+
+          <Route path="/microfinance/products" element={<MFProductsList />} />
+
+          <Route path="/microfinance/dashboard" element={<MicrofinanceDashboard />} />
+
+          {/* Procurement Module */}
+
+          <Route path="/procurement" element={<FeatureGuard module="procurement"><ProcurementWorkspace /></FeatureGuard>} />
+
+          <Route path="/procurement/suppliers" element={<FeatureGuard module="procurement" feature="vendors"><SuppliersList /></FeatureGuard>} />
+
+          <Route path="/procurement/orders" element={<FeatureGuard module="procurement" feature="purchase_orders"><PurchaseOrdersList /></FeatureGuard>} />
+
+          
+
+
+
+          {/* Production Module */}
+
+          <Route path="/production" element={<FeatureGuard module="production"><ProductionWorkspace /></FeatureGuard>} />
+
+          <Route path="/production/boms" element={<FeatureGuard module="production" feature="bom"><ProductionBOMList /></FeatureGuard>} />
+
+          <Route path="/production/work-orders" element={<FeatureGuard module="production" feature="work_orders"><ProductionWorkOrders /></FeatureGuard>} />
+
+
+
+          {/* Assets Module */}
+
+          <Route path="/assets" element={<FeatureGuard module="assets"><AssetsWorkspace /></FeatureGuard>} />
+
+          <Route path="/assets/list" element={<FeatureGuard module="assets"><AssetsList /></FeatureGuard>} />
+
+          <Route path="/assets/maintenance" element={<FeatureGuard module="assets"><AssetMaintenance /></FeatureGuard>} />
+
+
+
+          {/* Budgeting Module */}
+
+          <Route path="/budgets" element={<FeatureGuard module="budgeting"><BudgetingWorkspace /></FeatureGuard>} />
+
+          <Route path="/budgets/entry" element={<FeatureGuard module="budgeting"><BudgetEntry /></FeatureGuard>} />
+
+          <Route path="/budgets/approvals" element={<FeatureGuard module="budgeting"><ApprovalQueue /></FeatureGuard>} />
+
+          <Route path="/budgets/list" element={<FeatureGuard module="budgeting"><BudgetsList /></FeatureGuard>} />
+
+          <Route path="/budgets/monitor" element={<FeatureGuard module="budgeting"><BudgetMonitor /></FeatureGuard>} />
+
+          <Route path="/budgets/moderator" element={<FeatureGuard module="budgeting"><ModeratorDashboard /></FeatureGuard>} />
+
+          <Route path="/budgets/gamification" element={<FeatureGuard module="budgeting"><Gamification /></FeatureGuard>} />
+
+          <Route path="/budgets/moderator" element={<FeatureGuard module="budgeting"><ModeratorDashboard /></FeatureGuard>} />
+
+          <Route path="/budgets/remark-templates" element={<FeatureGuard module="budgeting"><RemarkTemplates /></FeatureGuard>} />
+
+          <Route path="/budgets/item-codes" element={<FeatureGuard module="budgeting"><ItemCodes /></FeatureGuard>} />
+
+          <Route path="/budgets/uoms" element={<FeatureGuard module="budgeting"><Uoms /></FeatureGuard>} />
+
+          <Route path="/budgets/cost-centers" element={<FeatureGuard module="budgeting"><CostCenters /></FeatureGuard>} />
+
+
+
+          {/* HR Module */}
+
+          <Route path="/hr" element={<FeatureGuard module="hr"><HRWorkspace /></FeatureGuard>} />
+
+          <Route path="/hr/employees" element={<FeatureGuard module="hr" feature="employees"><EmployeesList /></FeatureGuard>} />
+
+          <Route path="/hr/attendance" element={<FeatureGuard module="hr"><Attendance /></FeatureGuard>} />
+
+          <Route path="/hr/payroll" element={<FeatureGuard module="hr" feature="payroll"><PayrollList /></FeatureGuard>} />
+
+          <Route path="/hr/leave" element={<FeatureGuard module="hr"><LeaveManagement /></FeatureGuard>} />
+
+          <Route path="/hr/advances-loans" element={<FeatureGuard module="hr"><AdvancesLoansManagement /></FeatureGuard>} />
+
+          <Route path="/hr/recruitment" element={<FeatureGuard module="hr"><RecruitmentManagement /></FeatureGuard>} />
+
+          <Route path="/hr/onboarding" element={<FeatureGuard module="hr"><OnboardingManagement /></FeatureGuard>} />
+
+          <Route path="/hr/performance" element={<FeatureGuard module="hr"><PerformanceManagement /></FeatureGuard>} />
+
+          <Route path="/hr/exit-management" element={<FeatureGuard module="hr"><ExitManagement /></FeatureGuard>} />
+
+          <Route path="/hr/policies" element={<FeatureGuard module="hr"><PolicyManagement /></FeatureGuard>} />
+
+          <Route path="/hr/attendance/management" element={<FeatureGuard module="hr"><AttendanceManagement /></FeatureGuard>} />
+
+
+
+          {/* Projects Module */}
+
+          <Route path="/projects" element={<FeatureGuard module="projects"><ProjectsWorkspace /></FeatureGuard>} />
+
+          <Route path="/projects/list" element={<FeatureGuard module="projects"><ProjectsList /></FeatureGuard>} />
+
+          <Route path="/projects/gantt" element={<FeatureGuard module="projects"><ProjectGantt /></FeatureGuard>} />
+
+
+
+          {/* AI & No-Code Tools */}
+
+          <Route path="/ai/training-review" element={<FeatureGuard module="ai_companion"><AiTrainingReview /></FeatureGuard>} />
+
+          <Route path="/forms" element={<FeatureGuard module="form_builder"><FormBuilder /></FeatureGuard>} />
+
+          <Route path="/reports" element={<FeatureGuard module="report_builder"><ReportBuilder /></FeatureGuard>} />
+
+          <Route path="/schemas" element={<FeatureGuard module="form_builder"><SchemaDesigner /></FeatureGuard>} />
+
+          <Route path="/forms/entities/:slug" element={<FeatureGuard module="form_builder"><EntityWorkspace /></FeatureGuard>} />
+
+          <Route path="/workflows" element={<FeatureGuard module="workflows"><WorkflowDesigner /></FeatureGuard>} />
+
+          <Route path="/workflows/list" element={<FeatureGuard module="workflows"><WorkflowList /></FeatureGuard>} />
+
+          <Route path="/migration" element={<FeatureGuard module="data_migration"><DataMigration /></FeatureGuard>} />
+
+          <Route path="/approvals" element={<FeatureGuard module="workflows"><MyApprovals /></FeatureGuard>} />
+
+          <Route path="/onboarding" element={<OnboardingWizard />} />
+
+          <Route path="/settings" element={<Settings />} />
+
+          <Route path="/settings/profile" element={<Settings />} />
+
+          <Route path="/settings/preferences" element={<Settings />} />
+
+          {/* Tasks & Notifications */}
+
+          <Route path="/tasks" element={<FeatureGuard module="tasks"><MyTasks /></FeatureGuard>} />
+
+          <Route path="/tasks/my" element={<FeatureGuard module="tasks"><MyTasks /></FeatureGuard>} />
+
+          <Route path="/tasks/team" element={<FeatureGuard module="tasks"><TeamTasks /></FeatureGuard>} />
+
+          <Route path="/notifications" element={<FeatureGuard module="notifications"><NotificationCenter /></FeatureGuard>} />
+
+
+
+          {/* Company & Organization Management */}
+
+          <Route path="/company-management" element={<CompanyManagement />} />
+
+          <Route path="/organization/groups" element={<CompanyGroupManagement />} />
+
+          <Route path="/organization/branches" element={<BranchManagement />} />
+
+          <Route path="/organization/departments" element={<DepartmentManagement />} />
+
+          <Route path="/organization/user-access" element={<UserAccessManagement />} />
+
+        </Routes>
+
+      </MainLayout>
+
+      {/** AIWidget rendered globally in MainLayout. Removed duplicate here to avoid double badges. */}
+
+    </>
+
+  );
 
 };
 

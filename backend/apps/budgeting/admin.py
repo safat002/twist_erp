@@ -11,6 +11,7 @@ from .models import (
     BudgetItemCode,
     BudgetItemCategory,
     BudgetItemSubCategory,
+    BudgetPricePolicy,
 )
 from apps.inventory.models import UnitOfMeasure as InventoryUnitOfMeasure
 from apps.inventory.admin import UnitOfMeasureAdmin as BaseUOMAdmin
@@ -43,11 +44,70 @@ class CostCenterAdmin(admin.ModelAdmin):
 
 @admin.register(Budget)
 class BudgetAdmin(admin.ModelAdmin):
-    list_display = ["name", "cost_center", "budget_type", "period_start", "period_end", "amount", "consumed", "status", "company"]
+    # Show name approval status and window states instead of internal workflow status
+    list_display = [
+        "name",
+        "cost_center",
+        "budget_type",
+        "period_start",
+        "period_end",
+        "amount",
+        "consumed",
+        "name_status",
+        "entry_state",
+        "review_state",
+        "period_state",
+        "company",
+    ]
     list_filter = ["company", "budget_type", "status", "period_start"]
     search_fields = ["name", "cost_center__code", "cost_center__name"]
     readonly_fields = ["amount", "consumed", "created_at", "updated_at", "approved_by", "approved_at", "locked_at"]
     actions = ["mark_active", "lock_budgets", "close_budgets", "reopen_budgets", "recalculate_totals"]
+
+    def name_status(self, obj):
+        try:
+            ns = getattr(obj, 'name_status', None)
+            if ns:
+                return ns.title() if isinstance(ns, str) else ns
+        except Exception:
+            pass
+        # Fallback legacy
+        try:
+            if obj.status == getattr(Budget, 'STATUS_PENDING_NAME_APPROVAL', 'pending_name_approval'):
+                return "Draft"
+        except Exception:
+            pass
+        return "Approved"
+    name_status.short_description = "Name Status"
+
+    def _state_for_dates(self, enabled, start_date, end_date):
+        from django.utils import timezone
+        try:
+            today = timezone.now().date()
+            if enabled is False:
+                return "Closed"
+            if start_date and today < start_date:
+                return "Not Started"
+            if end_date and today > end_date:
+                return "Closed"
+            return "Open"
+        except Exception:
+            return "Unknown"
+
+    def entry_state(self, obj):
+        enabled = getattr(obj, 'entry_enabled', True)
+        return self._state_for_dates(enabled, getattr(obj, 'entry_start_date', None), getattr(obj, 'entry_end_date', None))
+    entry_state.short_description = "Entry"
+
+    def review_state(self, obj):
+        enabled = getattr(obj, 'review_enabled', False)
+        return self._state_for_dates(enabled, getattr(obj, 'review_start_date', None), getattr(obj, 'review_end_date', None))
+    review_state.short_description = "Review"
+
+    def period_state(self, obj):
+        # Budget period is always considered enabled
+        return self._state_for_dates(True, getattr(obj, 'period_start', None), getattr(obj, 'period_end', None))
+    period_state.short_description = "Period"
 
     def mark_active(self, request, queryset):
         updated = 0
@@ -88,7 +148,18 @@ class BudgetAdmin(admin.ModelAdmin):
 
 @admin.register(BudgetLine)
 class BudgetLineAdmin(admin.ModelAdmin):
-    list_display = ["budget", "budget_line_id", "item_name", "procurement_class", "value_limit", "consumed_value", "remaining_value", "is_active"]
+    list_display = [
+        "budget",
+        "cost_center_display",
+        "budget_line_id",
+        "item_name",
+        "workflow_status",
+        "procurement_class",
+        "value_limit",
+        "consumed_value",
+        "remaining_value",
+        "is_active",
+    ]
     list_filter = ["procurement_class", "is_active", "budget__company"]
     search_fields = ["item_name", "item_code", "budget__name"]
     readonly_fields = ["consumed_quantity", "consumed_value", "created_at", "updated_at"]
@@ -98,6 +169,61 @@ class BudgetLineAdmin(admin.ModelAdmin):
         return obj.sequence
     budget_line_id.short_description = "Budget Line ID"
     budget_line_id.admin_order_field = "sequence"
+
+    def cost_center_display(self, obj):
+        try:
+            cc = getattr(obj.budget, "cost_center", None)
+            if cc:
+                return str(cc)
+            # Fallback: fetch from metadata cost_center_id
+            meta = getattr(obj, "metadata", {}) or {}
+            cc_id = meta.get("cost_center_id")
+            if cc_id:
+                from .models import CostCenter
+                cc_obj = CostCenter.objects.filter(pk=cc_id).first()
+                if cc_obj:
+                    return str(cc_obj)
+        except Exception:
+            pass
+        return ""
+    cost_center_display.short_description = "Cost Center"
+
+    def workflow_status(self, obj):
+        try:
+            from .models import Budget as _Budget
+            bstatus = getattr(obj.budget, 'status', None)
+            # Item-level flags take precedence
+            meta = getattr(obj, 'metadata', {}) or {}
+            if meta.get('rejected'):
+                return 'Rejected'
+            if meta.get('approved') and bstatus in {getattr(_Budget, 'STATUS_PENDING_CC_APPROVAL', ''), getattr(_Budget, 'STATUS_CC_APPROVED', '')}:
+                return 'CC Approved'
+            if getattr(obj, 'sent_back_for_review', False):
+                return 'Sent Back for Review'
+            if getattr(obj, 'is_held_for_review', False):
+                return 'Held for Review'
+
+            # Map budget workflow to friendly display
+            mapping = {
+                getattr(_Budget, 'STATUS_PENDING_NAME_APPROVAL', ''): 'Draft',
+                getattr(_Budget, 'STATUS_DRAFT', ''): 'Draft',
+                getattr(_Budget, 'STATUS_ENTRY_OPEN', ''): 'Draft',
+                getattr(_Budget, 'STATUS_PENDING_CC_APPROVAL', ''): 'Submitted for CC Approval',
+                getattr(_Budget, 'STATUS_CC_APPROVED', ''): 'CC Approved',
+                getattr(_Budget, 'STATUS_REVIEW_OPEN', ''): 'In Review',
+                getattr(_Budget, 'STATUS_PENDING_MODERATOR_REVIEW', ''): 'In Review',
+                getattr(_Budget, 'STATUS_MODERATOR_REVIEWED', ''): 'In Review',
+                getattr(_Budget, 'STATUS_PENDING_FINAL_APPROVAL', ''): 'Submitted for Final Approval',
+                getattr(_Budget, 'STATUS_APPROVED', ''): 'Final Approved',
+                getattr(_Budget, 'STATUS_AUTO_APPROVED', ''): 'Final Approved',
+                getattr(_Budget, 'STATUS_ACTIVE', ''): 'Active',
+                getattr(_Budget, 'STATUS_CLOSED', ''): 'Closed',
+            }
+            label = mapping.get(bstatus)
+            return label or (str(bstatus).replace('_', ' ').title() if bstatus else 'Unknown')
+        except Exception:
+            return 'Unknown'
+    workflow_status.short_description = "Status"
 
     class AddForm(forms.ModelForm):
         class Meta:
@@ -310,7 +436,7 @@ class BudgetItemCodeAdmin(admin.ModelAdmin):
 
         class Meta:
             model = BudgetItemCode
-            fields = ['name', 'category', 'category_ref', 'sub_category_ref', 'uom', 'standard_price', 'is_active']  # Hide code on create
+            exclude = ['code', 'company', 'company_group']
 
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
@@ -321,7 +447,7 @@ class BudgetItemCodeAdmin(admin.ModelAdmin):
     class ChangeForm(forms.ModelForm):
         class Meta:
             model = BudgetItemCode
-            fields = ['code', 'name', 'category', 'category_ref', 'sub_category_ref', 'uom', 'standard_price', 'is_active']  # Show code on edit
+            fields = '__all__'
 
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
@@ -344,26 +470,18 @@ class BudgetItemCodeAdmin(admin.ModelAdmin):
     company_group.short_description = "Company Group"
 
     def _generate_item_code(self, group: CompanyGroup) -> str:
-        prefix = "IC"
-        width = 6
-        existing = BudgetItemCode.objects.filter(
-            company__company_group=group,
-            code__startswith=prefix,
-        ).values_list('code', flat=True)
-        max_num = 0
-        for code in existing:
-            suffix = code[len(prefix):]
-            if suffix.isdigit():
-                try:
-                    max_num = max(max_num, int(suffix))
-                except ValueError:
-                    pass
-        i = max_num + 1
-        while True:
-            candidate = f"{prefix}{i:06d}"
-            if not BudgetItemCode.objects.filter(company__company_group=group, code=candidate).exists():
-                return candidate
-            i += 1
+        prefix = "IC-"
+        last_code = BudgetItemCode.objects.filter(company_group=group, code__startswith=prefix).order_by('code').last()
+        if last_code:
+            try:
+                last_number = int(last_code.code.split('-')[1])
+                new_number = last_number + 1
+            except (IndexError, ValueError):
+                # Fallback if the last code is not in the expected format
+                new_number = (BudgetItemCode.objects.filter(company_group=group, code__startswith=prefix).count() or 0) + 1
+        else:
+            new_number = 1
+        return f"{prefix}{new_number:06d}"
 
     def save_model(self, request, obj, form, change):
         if not getattr(obj, 'company_id', None):
@@ -583,4 +701,43 @@ class BudgetUnitOfMeasureAdmin(BaseUOMAdmin):
             if exists:
                 raise ValidationError({"code": "A UOM with this code already exists for this group."})
             obj.company = company
+        super().save_model(request, obj, form, change)
+
+
+@admin.register(BudgetPricePolicy)
+class BudgetPricePolicyAdmin(admin.ModelAdmin):
+    list_display = [
+        "company",
+        "primary_source",
+        "secondary_source",
+        "tertiary_source",
+        "avg_lookback_days",
+        "fallback_on_zero",
+    ]
+    list_filter = ["company__company_group"]
+    search_fields = ["company__name", "company__code"]
+    fields = [
+        "company",
+        "primary_source",
+        "secondary_source",
+        "tertiary_source",
+        "avg_lookback_days",
+        "fallback_on_zero",
+    ]
+    readonly_fields = ["company"]
+
+    def has_add_permission(self, request):
+        # Allow adding, but one policy per company (enforced in save)
+        return True
+
+    def save_model(self, request, obj, form, change):
+        if not getattr(obj, "company_id", None):
+            # If company not set (should normally be set), try user's default
+            company = getattr(request, "company", None) or getattr(getattr(request, "user", None), "default_company", None)
+            if not company:
+                raise ValidationError({"company": "Please select a company."})
+            obj.company = company
+        exists = BudgetPricePolicy.objects.filter(company=obj.company).exclude(pk=getattr(obj, "pk", None)).exists()
+        if exists:
+            raise ValidationError({"company": "A price policy already exists for this company."})
         super().save_model(request, obj, form, change)

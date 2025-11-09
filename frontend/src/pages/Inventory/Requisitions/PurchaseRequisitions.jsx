@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Button, Card, DatePicker, Drawer, Form, Input, InputNumber, Modal, Select, Space, Table, Tag, Typography, message, Checkbox } from 'antd';
+import { Button, Card, DatePicker, Form, Input, InputNumber, Modal, Select, Space, Table, Tag, Typography, message, Checkbox } from 'antd';
 import { PlusOutlined, CloseOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import api from '../../../services/api';
@@ -9,14 +9,14 @@ const { Title, Text } = Typography;
 
 const STORAGE_KEY = 'twist_erp.requisitions.purchase.v1';
 
-const useProducts = () => {
+const useBudgetItems = () => {
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState([]);
   useEffect(() => {
     const load = async () => {
       try {
         setLoading(true);
-        const { data } = await api.get('/api/v1/inventory/products/');
+        const { data } = await api.get('/api/v1/budgets/item-codes/');
         const list = Array.isArray(data) ? data : data?.results || [];
         setItems(list);
       } catch (_e) {
@@ -44,7 +44,7 @@ const PurchaseRequisitions = ({ openNew = false, onCloseNew }) => {
   const [blOptions, setBlOptions] = useState([]);
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [dateRange, setDateRange] = useState([]);
-  const { items: products, loading: productsLoading } = useProducts();
+  const { items: budgetItems, loading: budgetItemsLoading } = useBudgetItems();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [selectedCostCenter, setSelectedCostCenter] = useState(null);
@@ -144,18 +144,18 @@ const PurchaseRequisitions = ({ openNew = false, onCloseNew }) => {
     },
   ];
 
-  const BudgetInfo = ({ productId, costCenterId }) => {
+  const BudgetInfo = ({ productId, costCenterId, requestDate }) => {
     const [info, setInfo] = useState({ qty: '', used: '', remaining: '' });
     useEffect(() => {
       let cancelled = false;
       const load = async () => {
-        if (!productId || !costCenterId) { setInfo({ qty: '', used: '', remaining: '' }); return; }
+        if (!productId || !costCenterId || !requestDate) { setInfo({ qty: '', used: '', remaining: '' }); return; }
         try {
-          const { data } = await api.get('/api/v1/budgets/lines/', { params: { cost_center: costCenterId, product: productId } });
+          const { data } = await api.get('/api/v1/budgets/lines/', { params: { cost_center: costCenterId, product: productId, date: requestDate.format('YYYY-MM-DD') } });
           const line = Array.isArray(data?.results) ? data.results[0] : Array.isArray(data) ? data[0] : null;
           if (!cancelled) {
             setInfo({
-              qty: line?.qty_limit ?? '',
+              qty: line?.approved_quantity ?? '',
               used: line?.consumed_quantity ?? '',
               remaining: line?.remaining_quantity ?? line?.available_quantity ?? '',
             });
@@ -166,7 +166,7 @@ const PurchaseRequisitions = ({ openNew = false, onCloseNew }) => {
       };
       load();
       return () => { cancelled = true; };
-    }, [productId, costCenterId]);
+    }, [productId, costCenterId, requestDate]);
     return (
       <>
         <Form.Item label="Budget Qty"><Input disabled value={info.qty} /></Form.Item>
@@ -176,31 +176,44 @@ const PurchaseRequisitions = ({ openNew = false, onCloseNew }) => {
     );
   };
 
-  const LineRow = ({ name, restField, onRemove }) => {
-    const productId = Form.useWatch([name, 'item_id'], formCreate);
+  const LineRow = ({ name, restField, onRemove, form }) => {
+    const productId = Form.useWatch([name, 'item_id'], form);
+    const requestDate = Form.useWatch('request_date', form);
+    const selectedItem = useMemo(() => (budgetItems || []).find(p => p.id === productId), [productId, budgetItems]);
+
+    useEffect(() => {
+      if (selectedItem) {
+        const lines = form.getFieldValue('lines');
+        if (lines && lines[name]) {
+          lines[name].uom = selectedItem.uom;
+          form.setFieldsValue({ lines });
+        }
+      }
+    }, [selectedItem, name, form]);
+
     return (
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 1fr) 120px 100px 240px 160px 160px 160px auto', columnGap: 8, alignItems: 'end', marginBottom: 8 }}>
         <Form.Item {...restField} name={[name, 'item_id']} label="Item" rules={[{ required: true, message: 'Select item' }]}>
           <Select
             showSearch
             filterOption={(input, option) => (option?.label || '').toLowerCase().includes(input.toLowerCase())}
-            loading={productsLoading}
+            loading={budgetItemsLoading}
             placeholder="Select item"
             optionFilterProp="label"
             style={{ minWidth: 260 }}
-            options={(products || []).map((p) => ({ value: p.id, label: `${p.code || p.sku || ''} ${p.name}` }))}
+            options={(budgetItems || []).map((p) => ({ value: p.id, label: `${p.code || ''} ${p.name}` }))}
           />
         </Form.Item>
         <Form.Item {...restField} name={[name, 'quantity']} label="Qty" rules={[{ required: true, message: 'Qty' }] }>
           <InputNumber min={0.001} step={1} style={{ width: 120 }} />
         </Form.Item>
         <Form.Item {...restField} name={[name, 'uom']} label="UoM">
-          <Input placeholder="EA" style={{ width: 100 }} />
+          <Input placeholder="EA" style={{ width: 100 }} disabled />
         </Form.Item>
         <Form.Item {...restField} name={[name, 'notes']} label="Notes">
           <Input placeholder="Optional" style={{ width: 240 }} />
         </Form.Item>
-        <BudgetInfo productId={productId} costCenterId={selectedCostCenter} />
+        <BudgetInfo productId={productId} costCenterId={selectedCostCenter} requestDate={requestDate} />
         <Button
           aria-label="Remove line"
           type="text"
@@ -223,7 +236,7 @@ const PurchaseRequisitions = ({ openNew = false, onCloseNew }) => {
       lines: (values.lines || []).map((ln, idx) => ({
         line_no: idx + 1,
         item_id: ln.item_id,
-        item_name: products.find((p) => String(p.id) === String(ln.item_id))?.name || '',
+        item_name: budgetItems.find((p) => String(p.id) === String(ln.item_id))?.name || '',
         quantity: Number(ln.quantity) || 0,
         uom: ln.uom || 'EA',
         notes: ln.notes || '',
@@ -309,16 +322,27 @@ const PurchaseRequisitions = ({ openNew = false, onCloseNew }) => {
         })} columns={columns} pagination={{ pageSize: 10 }} />
       </Card>
 
-      <Drawer
+      <Modal
         title="Create Purchase Requisition"
         open={open}
-        width={960}
-        styles={{ body: { overflowX: 'auto' } }}
-        onClose={() => {
+        width={1200}
+        bodyStyle={{ overflowX: 'auto' }}
+        onCancel={() => {
           setOpen(false);
           if (onCloseNew) onCloseNew();
         }}
         destroyOnClose
+        footer={[
+          <Button key="back" onClick={() => {
+            setOpen(false);
+            if (onCloseNew) onCloseNew();
+          }}>
+            Cancel
+          </Button>,
+          <Button key="submit" type="primary" loading={submitting} onClick={() => formCreate.submit()}>
+            Submit
+          </Button>,
+        ]}
       >
         <Form layout="vertical" form={formCreate} onFinish={handleCreate} initialValues={{ request_date: dayjs(), lines: [{}, {}], _cc: selectedCostCenter }}>
           <Space size={16} style={{ display: 'flex', marginBottom: 8 }}>
@@ -350,18 +374,13 @@ const PurchaseRequisitions = ({ openNew = false, onCloseNew }) => {
             {(fields, { add, remove }) => (
               <Card title="Items" size="small" extra={<Button onClick={() => add()}>Add Line</Button>}>
                 {fields.map(({ key, name, ...restField }) => (
-                  <LineRow key={key} name={name} restField={restField} onRemove={() => remove(name)} />
+                  <LineRow key={key} name={name} restField={restField} onRemove={() => remove(name)} form={formCreate} />
                 ))}
               </Card>
             )}
           </Form.List>
-
-          <Space style={{ marginTop: 16 }}>
-            <Button onClick={() => { setOpen(false); if (onCloseNew) onCloseNew(); }}>Cancel</Button>
-            <Button type="primary" htmlType="submit" loading={submitting}>Submit</Button>
-          </Space>
         </Form>
-      </Drawer>
+      </Modal>
       <Modal
         title={`Convert Draft ${convertTarget?.requisition_number || ''}`}
         open={convertOpen}

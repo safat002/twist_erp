@@ -6,7 +6,14 @@
       "Bash(if exist \"backend\\apps\\finance\\views\" dir \"backend\\apps\\finance\\views\" /B)",
       "Bash(timeout 30 python:*)",
       "Bash(taskkill:*)",
-      "Bash(cmd.exe //c \"taskkill //F //PID 25524\")"
+      "Bash(cmd.exe //c \"taskkill //F //PID 25524\")",
+      "Bash(tasklist:*)",
+      "Bash(findstr:*)",
+      "Bash(netstat:*)",
+      "Bash(python manage.py runserver:*)",
+      "Bash(timeout /t 3)",
+      "Bash(python manage.py shell:*)",
+      "Bash(python -c:*)"
     ],
     "deny": [],
     "ask": []

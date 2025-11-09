@@ -145,9 +145,9 @@ class CompanyContextMiddleware(MiddlewareMixin):
             request, context_ids.get('company_group_id'), org_access
         )
 
-        if not company_group:
-            self._clear_context(request)
-            return
+        # if not company_group:
+        #     self._clear_context(request)
+        #     return
 
         # 2. Set Company (must belong to the group)
         company = self._set_company(
@@ -184,6 +184,9 @@ class CompanyContextMiddleware(MiddlewareMixin):
                 if org_access:
                     if not org_access.access_groups.filter(id=company_group.id).exists():
                         company_group = None
+                
+                if company_group and not request.user.company_groups.filter(id=company_group.id).exists():
+                    company_group = None
 
                 if company_group:
                     request.company_group = company_group
@@ -193,16 +196,16 @@ class CompanyContextMiddleware(MiddlewareMixin):
                     return company_group
             except CompanyGroup.DoesNotExist:
                 pass
-
+        
         return None
 
     def _set_company(self, request, company_id, company_group, org_access):
         """Set company context."""
         if not company_id:
             # Fall back to user's primary company in this group
-            if org_access and org_access.primary_company and org_access.primary_company.company_group_id == company_group.id:
+            if org_access and org_access.primary_company and company_group and org_access.primary_company.company_group_id == company_group.id:
                 company_id = org_access.primary_company_id
-            else:
+            elif company_group:
                 # Get user's first accessible company in this group
                 accessible_companies = request.user.companies.filter(
                     company_group=company_group,
@@ -215,9 +218,10 @@ class CompanyContextMiddleware(MiddlewareMixin):
             try:
                 company = Company.objects.get(
                     id=company_id,
-                    company_group=company_group,
                     is_active=True
                 )
+                if company_group and company.company_group != company_group:
+                    return None
 
                 # Validate user has access
                 if not request.user.companies.filter(id=company.id).exists():
@@ -228,6 +232,14 @@ class CompanyContextMiddleware(MiddlewareMixin):
                 settings.CURRENT_COMPANY = company
                 settings.CURRENT_COMPANY_ID = company.id
                 request.session['active_company_id'] = str(company.id)
+                
+                # After setting company, also set company_group from the company object if it wasn't set before
+                if not getattr(request, 'company_group', None) and company.company_group:
+                    request.company_group = company.company_group
+                    settings.CURRENT_COMPANY_GROUP = company.company_group
+                    settings.CURRENT_COMPANY_GROUP_ID = company.company_group.id
+                    request.session['active_company_group_id'] = str(company.company_group.id)
+
                 return company
             except Company.DoesNotExist:
                 pass

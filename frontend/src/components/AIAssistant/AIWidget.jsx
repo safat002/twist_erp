@@ -44,6 +44,7 @@ import {
   sendAIFeedback,
   trainAI,
   updateAISuggestion,
+  fetchAIAgenda,
 } from '../../services/ai';
 import { useCompany } from '../../contexts/CompanyContext';
 
@@ -73,6 +74,7 @@ const AIWidget = () => {
   const [conversationId, setConversationId] = useState(null);
   const [unreadAlerts, setUnreadAlerts] = useState(0);
   const [suggestions, setSuggestions] = useState([]);
+  const [agenda, setAgenda] = useState(null);
   const [feedbackSending, setFeedbackSending] = useState(false);
   const [historyHydrated, setHistoryHydrated] = useState(false);
   const [preferences, setPreferences] = useState([]);
@@ -85,6 +87,9 @@ const AIWidget = () => {
   const [prefForm] = Form.useForm();
   const messagesEndRef = useRef(null);
   const pollingRef = useRef(null);
+  const lastUnreadRef = useRef(0);
+  const hydratedUnreadRef = useRef(false);
+  const [pulse, setPulse] = useState(false);
 
   const loadUnreadAlerts = useCallback(async () => {
     try {
@@ -92,7 +97,17 @@ const AIWidget = () => {
       const count = Number(
         data?.count ?? data?.unread ?? data?.total ?? data?.unread_count ?? 0,
       );
-      setUnreadAlerts(Number.isFinite(count) ? count : 0);
+      const safeCount = Number.isFinite(count) ? count : 0;
+      if (hydratedUnreadRef.current) {
+        if (safeCount > (lastUnreadRef.current || 0)) {
+          setPulse(true);
+          window.setTimeout(() => setPulse(false), 3000);
+        }
+      } else {
+        hydratedUnreadRef.current = true;
+      }
+      lastUnreadRef.current = safeCount;
+      setUnreadAlerts(safeCount);
     } catch (error) {
       if (error?.response?.status === 401) {
         setUnreadAlerts(0);
@@ -109,6 +124,15 @@ const AIWidget = () => {
       setSuggestions(data?.results || data || []);
     } catch (error) {
       console.warn('Failed to load AI suggestions', error);
+    }
+  }, []);
+
+  const loadAgenda = useCallback(async () => {
+    try {
+      const { data } = await fetchAIAgenda();
+      setAgenda(data || null);
+    } catch (error) {
+      console.warn('Failed to load AI agenda', error);
     }
   }, []);
 
@@ -138,11 +162,12 @@ const AIWidget = () => {
   useEffect(() => {
     if (visible) {
       loadSuggestions();
+      loadAgenda();
       if (!historyHydrated) {
         hydrateConversation();
       }
     }
-  }, [visible, historyHydrated, conversationId, loadSuggestions]);
+  }, [visible, historyHydrated, conversationId, loadSuggestions, loadAgenda]);
 
   useEffect(() => {
     scrollToBottom();
@@ -521,24 +546,24 @@ const AIWidget = () => {
 
   return (
     <>
-      <Badge count={unreadAlerts} offset={[-5, 5]}>
-        <Button
-          type="primary"
-          shape="circle"
-          size="large"
-          icon={<RobotOutlined />}
-          onClick={() => setVisible(true)}
-          style={{
-            position: 'fixed',
-            bottom: 24,
-            right: 24,
-            width: 60,
-            height: 60,
-            zIndex: 1000,
-            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-          }}
-        />
-      </Badge>
+        <Badge count={unreadAlerts} overflowCount={99}>
+          <Button
+            type="primary"
+            shape="circle"
+            size="large"
+            icon={<RobotOutlined />}
+            onClick={() => setVisible(true)}
+            style={{
+              position: 'fixed',
+              bottom: 24,
+              right: 24,
+              width: 60,
+              height: 60,
+              zIndex: 1000,
+              boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            }}
+          />
+        </Badge>
 
       <Drawer
         title={
@@ -629,6 +654,42 @@ const AIWidget = () => {
                   </Card>
                 ))}
               </Space>
+            </div>
+          )}
+
+          {agenda && (
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0' }}>
+              <Card size="small" title="My Agenda" extra={
+                <Space size={8}>
+                  <Tag color="geekblue">Approvals: {agenda.counts?.approvals ?? 0}</Tag>
+                  <Tag color="green">Budgets: {agenda.counts?.budgets_due ?? 0}</Tag>
+                  <Tag color="orange">GRN: {agenda.counts?.pos_pending_grn ?? 0}</Tag>
+                  <Tag color="volcano">AP: {agenda.counts?.ap_due ?? 0}</Tag>
+                </Space>
+              }>
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  {(agenda.agenda?.approvals || []).slice(0, 3).map((a, idx) => (
+                    <Text key={`appr-${idx}`}>
+                      - Approval: {a.workflow} – {a.task_name}
+                    </Text>
+                  ))}
+                  {(agenda.agenda?.budgets_due || []).slice(0, 3).map((b) => (
+                    <Text key={`bd-${b.id}`}>
+                      - Budget: {b.name} (due {new Date(b.entry_end_date).toLocaleDateString()})
+                    </Text>
+                  ))}
+                  {(agenda.agenda?.pos_pending_grn || []).slice(0, 3).map((p) => (
+                    <Text key={`po-${p.id}`}>
+                      - PO {p.po_number} – {p['supplier__name']} (ETA {new Date(p.expected_delivery_date).toLocaleDateString()})
+                    </Text>
+                  ))}
+                  {(agenda.agenda?.ap_due || []).slice(0, 3).map((i) => (
+                    <Text key={`ap-${i.id}`}>
+                      - AP Bill {i.bill_number} – {i['supplier__name']} (due {new Date(i.due_date).toLocaleDateString()})
+                    </Text>
+                  ))}
+                </Space>
+              </Card>
             </div>
           )}
 
@@ -725,6 +786,43 @@ const AIWidget = () => {
           </div>
         </div>
       </Drawer>
+      {/* Floating AI button with notification badge (pulses on new alerts) */}
+      <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 1000 }}>
+        <style>{`
+          @keyframes aiFabPulse {
+            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(24, 144, 255, 0.4); }
+            50% { transform: scale(1.06); box-shadow: 0 0 0 10px rgba(24, 144, 255, 0); }
+            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(24, 144, 255, 0); }
+          }
+          .ai-fab-pulse {
+            animation: aiFabPulse 0.7s ease-in-out;
+            animation-iteration-count: 4;
+          }
+          .ai-fab-pulse .ant-badge-count, .ai-fab-pulse .ant-badge-dot {
+            animation: aiFabPulse 0.7s ease-in-out;
+            animation-iteration-count: 4;
+          }
+        `}</style>
+        <div className={pulse ? 'ai-fab-pulse' : ''}>
+          <Badge
+            count={unreadAlerts > 0 ? unreadAlerts : null}
+            dot={unreadAlerts === 0}
+            overflowCount={99}
+            offset={[-4, 6]}
+          >
+            <Button
+              type="primary"
+              shape="circle"
+              size="large"
+              icon={<RobotOutlined />}
+              onClick={() => setVisible(true)}
+              aria-label="Open AI Assistant"
+              style={{ width: 60, height: 60 }}
+              title="AI Assistant"
+            />
+          </Badge>
+        </div>
+      </div>
       <Modal
         title={pendingAction?.label || 'Confirm action'}
         open={actionModalVisible}

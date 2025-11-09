@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Card, Table, Space, Button, message, Select, Row, Col, Statistic, Modal, Form, Input } from 'antd';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Card, Table, Space, Button, message, Select, Row, Col, Statistic, Modal, Form, Input, InputNumber } from 'antd';
+import api from '../../services/api';
 import dayjs from 'dayjs';
 import {
   fetchDeclaredBudgetsEntry,
@@ -9,6 +10,8 @@ import {
   getEntryPrice,
   addBudgetItem,
   submitEntry,
+  openEntry,
+  deleteBudgetLine,
 } from '../../services/budget';
 import EntryPeriodStatus from '../../components/Budgeting/EntryPeriodStatus';
 
@@ -23,12 +26,18 @@ const BudgetEntry = () => {
   const [lines, setLines] = useState([]);
   const [addOpen, setAddOpen] = useState(false);
   const [form] = Form.useForm();
+  const [newRow, setNewRow] = useState({ item_code: '', item_name: '', quantity: 1, manual_unit_price: 0 });
+  const [itemOptions, setItemOptions] = useState([]);
+  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+  const [filters, setFilters] = useState({ code: '', name: '' });
+  // Ref to item code select for quick focus after add
+  const itemCodeRef = useRef(null);
 
   const load = async () => {
     setLoading(true);
     try {
       const [declRes, ccRes] = await Promise.all([
-        fetchDeclaredBudgetsEntry(),
+        fetchDeclaredBudgetsEntry({ cost_center: selectedCC }),
         fetchPermittedCostCentersEntry(),
       ]);
       const dec = declRes.data || [];
@@ -74,6 +83,20 @@ const BudgetEntry = () => {
     run();
   }, [selectedBudget, selectedCC]);
 
+  // load item options (budget item codes) for dropdowns
+  useEffect(() => {
+    const run = async () => {
+      try {
+        const res = await api.get('/api/v1/budgets/item-codes/?page_size=1000');
+        const list = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+        setItemOptions(list.map((x) => ({ code: x.code, name: x.name, standard_price: Number(x.standard_price ?? 0) })));
+      } catch (_) {
+        setItemOptions([]);
+      }
+    };
+    run();
+  }, []);
+
   const handleSubmit = async () => {
     try {
       if (!selectedBudget || !selectedCC) return;
@@ -102,7 +125,12 @@ const BudgetEntry = () => {
               placeholder="Select declared budget"
               value={selectedBudget}
               onChange={(v) => setSelectedBudget(v)}
-              options={(declared || []).map((b) => ({ value: b.id, label: `${b.name} (${b.period_start} → ${b.period_end})` }))}
+              options={(declared || []).map((b) => {
+                const name = (b.display_name || b.name || '').trim();
+                const period = b.period_start && b.period_end ? `${b.period_start} → ${b.period_end}` : '';
+                const label = name ? `${name}${period ? ` (${period})` : ''}` : (period || `Budget ${b.id}`);
+                return { value: b.id, label };
+              })}
             />
             <Select
               style={{ minWidth: 240 }}
@@ -124,28 +152,270 @@ const BudgetEntry = () => {
       </Row>
 
       <Space style={{ marginBottom: 8 }}>
-        <Button type="primary" onClick={() => setAddOpen(true)} disabled={!selectedBudget || !selectedCC}>Add Budget Item</Button>
-        <Button onClick={handleSubmit} disabled={!selectedBudget || !selectedCC}>Submit This Cost Center</Button>
+        <Button onClick={() => message.success('Saved as draft')} disabled={!selectedBudget || !selectedCC}>Save as Draft</Button>
+        <Button type="primary" onClick={handleSubmit} disabled={!selectedBudget || !selectedCC}>Submit</Button>
+        {selectedRowKeys && selectedRowKeys.length > 0 ? (
+          <Button
+            danger
+            onClick={async () => {
+              try {
+                const deletable = (lines || []).filter((r) => selectedRowKeys.includes(r.id) && r.can_delete);
+                if (deletable.length === 0) {
+                  message.warning('No selected rows can be deleted');
+                  return;
+                }
+                await Promise.all(deletable.map((r) => deleteBudgetLine(r.id)));
+                message.success(`Deleted ${deletable.length} row(s)`);
+                setSelectedRowKeys([]);
+                const [sum, lin] = await Promise.all([
+                  fetchEntrySummary(selectedBudget),
+                  fetchEntryLines(selectedBudget, selectedCC),
+                ]);
+                setSummary(sum.data || summary);
+                setCcBudget(lin.data?.cc_budget || null);
+                setLines(lin.data?.lines || []);
+              } catch (e) {
+                message.error(e?.response?.data?.detail || 'Failed to delete selected rows');
+              }
+            }}
+          >
+            Delete Selected
+          </Button>
+        ) : null}
+        {/* Open Entry button removed: entry opens automatically by window */}
       </Space>
+
+      {/* Inline entry now merged into main table as the first row */}
 
       <Table
         rowKey="id"
         loading={loading}
-        dataSource={lines}
+        dataSource={(selectedBudget && selectedCC) ? ([{ id: '__new__', _isNew: true, ...newRow }, ...lines]) : lines}
         pagination={{ pageSize: 10 }}
+        rowSelection={{
+          selectedRowKeys,
+          onChange: (keys) => setSelectedRowKeys(keys.filter((k) => k !== '__new__')),
+          getCheckboxProps: (record) => ({ disabled: record._isNew || !record.can_delete }),
+        }}
         columns={[
-          { title: 'Item Code', dataIndex: 'item_code' },
-          { title: 'Item Name', dataIndex: 'item_name' },
-          { title: 'Quantity', dataIndex: 'qty_limit' },
-          { title: 'Unit Price', dataIndex: 'standard_price' },
-          { title: 'Value', dataIndex: 'value_limit' },
+          {
+            title: 'Item Code',
+            dataIndex: 'item_code',
+            filterDropdown: ({ confirm, clearFilters }) => (
+              <div style={{ padding: 8 }}>
+                <Input
+                  placeholder="Search code"
+                  value={filters.code}
+                  onChange={(e) => setFilters((f) => ({ ...f, code: e.target.value }))}
+                  onPressEnter={() => confirm()}
+                  style={{ width: 188, marginBottom: 8, display: 'block' }}
+                />
+                <Space>
+                  <Button type="primary" size="small" onClick={() => confirm()}>Filter</Button>
+                  <Button size="small" onClick={() => { setFilters((f) => ({ ...f, code: '' })); clearFilters && clearFilters(); }}>Reset</Button>
+                </Space>
+              </div>
+            ),
+            onFilter: () => true,
+            render: (v, record) => record._isNew ? (
+              <Select
+                ref={itemCodeRef}
+                showSearch
+                style={{ width: '100%' }}
+                placeholder="Select item code"
+                value={newRow.item_code || undefined}
+                optionFilterProp="label"
+                optionLabelProp="label"
+                onChange={async (val) => {
+                  const found = itemOptions.find((o) => o.code === val);
+                  // Optimistically set price from master data, then refine using policy endpoint
+                  setNewRow((r) => ({
+                    ...r,
+                    item_code: val,
+                    item_name: found?.name || r.item_name,
+                    manual_unit_price: typeof found?.standard_price === 'number' ? found.standard_price : r.manual_unit_price,
+                  }));
+                  if (val) {
+                    try {
+                      const { data } = await getEntryPrice(val);
+                      const p = Number(data?.unit_price);
+                      setNewRow((r) => ({ ...r, manual_unit_price: (isFinite(p) && p > 0) ? p : r.manual_unit_price }));
+                    } catch (_) {
+                      // keep optimistic standard price if policy lookup fails
+                    }
+                  }
+                }}
+                options={(itemOptions || []).map((o) => ({ value: o.code, label: `${o.code} - ${o.name}` }))}
+              />
+            ) : (
+              <span>
+                {record.item_code}
+                {record.item_name ? ` - ${record.item_name}` : ''}
+              </span>
+            )
+          },
+          {
+            title: 'Category',
+            dataIndex: 'item_category_name',
+            render: (v, record) => (record._isNew ? '-' : (v || record.item_category_name || record.category_name || record.category || '-')),
+          },
+          {
+            title: 'Sub-Category',
+            dataIndex: 'sub_category_name',
+            render: (v, record) => (record._isNew ? '-' : (v || '-')),
+          },
+          {
+            title: 'Quantity',
+            dataIndex: 'qty_limit',
+            render: (v, record) => record._isNew ? (
+              <InputNumber
+                min={0}
+                step={0.01}
+                value={newRow.quantity}
+                onChange={(val) => setNewRow((r) => ({ ...r, quantity: Number(val || 0) }))}
+                onKeyDown={async (e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    // invoke the same add action as the button
+                    try {
+                      if (!newRow.item_code || !newRow.quantity) {
+                        message.error('Item code and quantity are required');
+                        return;
+                      }
+                      if (!(Number(newRow.manual_unit_price) > 0)) {
+                        message.error('Unit price must be greater than 0');
+                        return;
+                      }
+                      await addBudgetItem({
+                        budget: selectedBudget,
+                        cost_center: selectedCC,
+                        item_code: newRow.item_code,
+                        item_name: newRow.item_name,
+                        quantity: newRow.quantity,
+                        manual_unit_price: newRow.manual_unit_price,
+                      });
+                      message.success('Item added');
+                      setNewRow({ item_code: '', item_name: '', quantity: 1, manual_unit_price: 0 });
+                      const [sum, lin] = await Promise.all([
+                        fetchEntrySummary(selectedBudget),
+                        fetchEntryLines(selectedBudget, selectedCC),
+                      ]);
+                      setSummary(sum.data || summary);
+                      setCcBudget(lin.data?.cc_budget || null);
+                      setLines(lin.data?.lines || []);
+                      // Focus back to item code select for faster entry loop
+                      setTimeout(() => {
+                        try { itemCodeRef.current?.focus?.(); } catch (_) {}
+                      }, 0);
+                    } catch (err) {
+                      message.error(err?.response?.data?.detail || 'Failed to add item');
+                    }
+                  }
+                }}
+                style={{ width: '100%' }}
+              />
+            ) : v
+          },
+          {
+            title: 'Unit Price',
+            dataIndex: 'unit_price',
+            render: (v, record) => record._isNew ? (
+              <InputNumber
+                min={0.01}
+                step={0.01}
+                value={newRow.manual_unit_price}
+                onChange={(val) => setNewRow((r) => ({ ...r, manual_unit_price: Number(val || 0) }))}
+                style={{ width: '100%' }}
+              />
+            ) : (typeof v !== 'undefined' && v !== null ? v : (record && typeof record.manual_unit_price !== 'undefined' && record.manual_unit_price !== null ? record.manual_unit_price : record.standard_price))
+          },
+          {
+            title: 'Value',
+            dataIndex: 'value_limit',
+            render: (v, record) => record._isNew ? (
+              <span>{(Number(newRow.quantity || 0) * Number(newRow.manual_unit_price || 0)).toFixed(2)}</span>
+            ) : v
+          },
+          {
+            title: 'Status',
+            dataIndex: 'status',
+            render: (v) => (v ? String(v).replace('_', ' ') : 'draft'),
+          },
+          {
+            title: 'Action',
+            key: 'action',
+            render: (v, record) => record._isNew ? (
+              <Button
+                type="primary"
+                onClick={async () => {
+                  try {
+                    if (!newRow.item_code || !newRow.quantity) {
+                      message.error('Item code and quantity are required');
+                      return;
+                    }
+                    if (!(Number(newRow.manual_unit_price) > 0)) {
+                      message.error('Unit price must be greater than 0');
+                      return;
+                    }
+                    await addBudgetItem({
+                      budget: selectedBudget,
+                      cost_center: selectedCC,
+                      item_code: newRow.item_code,
+                      item_name: newRow.item_name,
+                      quantity: newRow.quantity,
+                      manual_unit_price: newRow.manual_unit_price,
+                    });
+                    message.success('Item added');
+                    setNewRow({ item_code: '', item_name: '', quantity: 1, manual_unit_price: 0 });
+                    const [sum, lin] = await Promise.all([
+                      fetchEntrySummary(selectedBudget),
+                      fetchEntryLines(selectedBudget, selectedCC),
+                    ]);
+                    setSummary(sum.data || summary);
+                    setCcBudget(lin.data?.cc_budget || null);
+                    setLines(lin.data?.lines || []);
+                  } catch (e) {
+                    message.error(e?.response?.data?.detail || 'Failed to add item');
+                  }
+                }}
+              >
+                Add
+              </Button>
+            ) : (
+              record && record.can_delete ? (
+                <Button
+                  danger
+                  size="small"
+                  onClick={async () => {
+                    try {
+                      await deleteBudgetLine(record.id);
+                      message.success('Row deleted');
+                      const [sum, lin] = await Promise.all([
+                        fetchEntrySummary(selectedBudget),
+                        fetchEntryLines(selectedBudget, selectedCC),
+                      ]);
+                      setSummary(sum.data || summary);
+                      setCcBudget(lin.data?.cc_budget || null);
+                      setLines(lin.data?.lines || []);
+                    } catch (e) {
+                      message.error(e?.response?.data?.detail || 'Failed to delete row');
+                    }
+                  }}
+                >
+                  Delete
+                </Button>
+              ) : null
+            )
+          }
         ]}
       />
 
+      {/* Retain modal for fallback, can be removed later */}
       <Modal
         title="Add Budget Item"
         open={addOpen}
-        destroyOnClose
+        destroyOnHidden
+        forceRender
         onCancel={() => { setAddOpen(false); form.resetFields(); }}
         onOk={async () => {
           try {
@@ -184,14 +454,12 @@ const BudgetEntry = () => {
               } catch (_) {}
             }} />
           </Form.Item>
-          <Form.Item label="Item Name" name="item_name">
-            <Input placeholder="Optional item name" />
-          </Form.Item>
+          {/* Item Name hidden per request */}
           <Form.Item label="Quantity" name="quantity" rules={[{ required: true }] }>
             <Input type="number" min={0} step={0.01} />
           </Form.Item>
-          <Form.Item label="Unit Price (auto / manual)" name="manual_unit_price">
-            <Input type="number" min={0} step={0.01} />
+          <Form.Item label="Unit Price (auto / manual)" name="manual_unit_price" rules={[{ validator: (_, v) => (v && Number(v) > 0 ? Promise.resolve() : Promise.reject(new Error('Unit price must be greater than 0'))) }]}>
+            <Input type="number" min={0.01} step={0.01} />
           </Form.Item>
         </Form>
       </Modal>
@@ -200,3 +468,6 @@ const BudgetEntry = () => {
 };
 
 export default BudgetEntry;
+
+
+

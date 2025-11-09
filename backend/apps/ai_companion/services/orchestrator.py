@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional
+import re
 
 from django.db import models, transaction
 from django.utils import timezone
@@ -131,6 +132,16 @@ class AIOrchestrator:
             metadata=metadata or {},
         )
 
+    @staticmethod
+    def _normalize_text(text: Optional[str]) -> Optional[str]:
+        if not isinstance(text, str):
+            return text
+        # Replace common bullet-like characters at line starts with a standard dash
+        text = re.sub(r"(?m)^[ \t]*[•●▪‣►◦–—]\s*", "- ", text)
+        # Remove stray replacement characters if present
+        text = text.replace("\uFFFD", "")
+        return text
+
     # ------------------------------------------------------------------ #
     # Routing                                                             #
     # ------------------------------------------------------------------ #
@@ -209,6 +220,8 @@ class AIOrchestrator:
 
             try:
                 result = skill.handle(message=message, context=context)
+                # Normalize any odd characters in the assistant message
+                result.message = self._normalize_text(result.message)
                 success = True
             except Exception as exc:
                 logger.exception("Skill %s failed: %s", skill.name, exc)

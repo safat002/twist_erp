@@ -14,6 +14,7 @@ BUDGETING_PERMISSIONS = [
     {"code": "budgeting_approve_cc", "description": "Can approve as cost center owner", "category": "Budgeting", "scope_required": True, "is_sensitive": True},
     {"code": "budgeting_reject_cc", "description": "Can reject as cost center owner", "category": "Budgeting", "scope_required": True, "is_sensitive": True},
     {"code": "budgeting_request_final_approval", "description": "Can request final approval", "category": "Budgeting", "scope_required": True},
+    {"code": "budgeting_moderate_budget", "description": "Can moderate budgets (review, remarks, batch ops)", "category": "Budgeting", "scope_required": True},
     {"code": "budgeting_approve_final", "description": "Can approve as budget module owner", "category": "Budgeting", "scope_required": True, "is_sensitive": True},
     {"code": "budgeting_reject_final", "description": "Can reject as budget module owner", "category": "Budgeting", "scope_required": True, "is_sensitive": True},
     {"code": "budgeting_view_monitor", "description": "Can view budget monitor and usage", "category": "Budgeting", "scope_required": True},

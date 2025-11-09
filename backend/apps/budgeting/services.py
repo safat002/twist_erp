@@ -114,12 +114,28 @@ class BudgetPermissionService:
             return True
         if not company:
             return False
-        return PermissionService.user_has_permission(user, "budgeting_manage_budget_plan", f"company:{company.id}")
+
+        # Check for Budget Module Owner
+        if BudgetPermissionService.user_is_budget_module_owner(user, company):
+            return True
+
+        # Check for Budget Moderator
+        if BudgetPermissionService.user_is_budget_moderator(user, company):
+            return True
+
+        # Check for deputy owner of any cost center in the company
+        if CostCenter.objects.filter(company=company, deputy_owner=user).exists():
+            return True
+
+        return False
 
     @staticmethod
     def user_can_enter_for_cost_center(user, cost_center: CostCenter) -> bool:
         if not user or not getattr(user, "id", None):
             return False
+        # superusers/system admins can enter for any cost center
+        if getattr(user, "is_superuser", False) or getattr(user, "is_system_admin", False):
+            return True
         if cost_center.owner_id == user.id or cost_center.deputy_owner_id == user.id:
             return True
         return cost_center.budget_entry_users.filter(id=user.id).exists()
@@ -144,6 +160,21 @@ class BudgetPermissionService:
         if not company:
             return False
         return PermissionService.user_has_permission(user, "budgeting_moderate_budget", f"company:{company.id}")
+
+    @staticmethod
+    def user_is_budget_name_approver(user, company) -> bool:
+        """Only Superuser or Budget Module Owner/Co-Owner can approve budget names.
+
+        Co-owner is expected to have the same permission as owner
+        (e.g., "budgeting_approve_budget") via role assignment.
+        """
+        if getattr(user, "is_superuser", False):
+            return True
+        if not company:
+            return False
+
+        # Restrict strictly to module owner/co-owner permission.
+        return BudgetPermissionService.user_is_budget_module_owner(user, company)
 
 
 class BudgetAIService:
@@ -394,29 +425,64 @@ class BudgetApprovalService:
 
     @staticmethod
     def approve_by_cost_center_owner(budget: Budget, user, comments: str = "", modifications: Optional[dict] = None):
-        approval = BudgetApproval.objects.filter(
+        # Try to find the pending approval for this user or for a cost center they own/deputy own
+        base_qs = BudgetApproval.objects.filter(
             budget=budget,
             approver_type=BudgetApproval.ApproverType.COST_CENTER_OWNER,
             status=BudgetApproval.Status.PENDING,
-        ).first()
+        ).select_related("cost_center")
+        approval = base_qs.filter(approver=user).first()
+        if not approval:
+            approval = base_qs.filter(
+                models.Q(cost_center__owner=user) | models.Q(cost_center__deputy_owner=user)
+            ).first()
         if not approval:
             return
-        approval.status = BudgetApproval.Status.APPROVED
+        # Only finalize approval when all items in this CC are cleared (approved or sent back)
+        # Otherwise, keep the task pending and just record comments/modifications
+        try:
+            cc = approval.cost_center or getattr(budget, 'cost_center', None)
+            cleared = False
+            if cc:
+                lines = list(budget.lines.all())
+                cc_lines = [bl for bl in lines if (getattr(bl, 'metadata', {}) or {}).get('cost_center_id') == cc.id or getattr(budget, 'cost_center_id', None) == cc.id]
+                if cc_lines:
+                    total = len(cc_lines)
+                    ok = 0
+                    for bl in cc_lines:
+                        m = getattr(bl, 'metadata', {}) or {}
+                        if m.get('approved') is True or getattr(bl, 'sent_back_for_review', False):
+                            ok += 1
+                    cleared = (ok == total)
+        except Exception:
+            cleared = False
+
+        # Always store comments/modifications
         approval.comments = comments or ""
         approval.modifications_made = modifications or {}
-        approval.approver = user or approval.approver
-        approval.decision_date = timezone.now()
-        approval.save(update_fields=["status", "comments", "modifications_made", "approver", "decision_date"])
-        budget.status = Budget.STATUS_CC_APPROVED
-        budget.save(update_fields=["status", "updated_at"])
+        if cleared:
+            approval.status = BudgetApproval.Status.APPROVED
+            approval.approver = user or approval.approver
+            approval.decision_date = timezone.now()
+            approval.save(update_fields=["status", "comments", "modifications_made", "approver", "decision_date"])
+            # Move to moderator review per workflow
+            budget.status = Budget.STATUS_PENDING_MODERATOR_REVIEW
+            budget.save(update_fields=["status", "updated_at"])
+        else:
+            approval.save(update_fields=["comments", "modifications_made"])  # keep pending
 
     @staticmethod
     def reject_by_cost_center_owner(budget: Budget, user, comments: str = ""):
-        approval = BudgetApproval.objects.filter(
+        base_qs = BudgetApproval.objects.filter(
             budget=budget,
             approver_type=BudgetApproval.ApproverType.COST_CENTER_OWNER,
             status=BudgetApproval.Status.PENDING,
-        ).first()
+        ).select_related("cost_center")
+        approval = base_qs.filter(approver=user).first()
+        if not approval:
+            approval = base_qs.filter(
+                models.Q(cost_center__owner=user) | models.Q(cost_center__deputy_owner=user)
+            ).first()
         if not approval:
             return
         approval.status = BudgetApproval.Status.REJECTED
@@ -465,24 +531,108 @@ class BudgetApprovalService:
             seen.add(u.id)
             unique_approvers.append(u)
 
+        created_any = False
+        created_for_users: list = []
         if not unique_approvers:
             # Create a generic final approval record without an explicit approver
-            BudgetApproval.objects.get_or_create(
+            _, created = BudgetApproval.objects.get_or_create(
                 budget=budget,
                 approver_type=BudgetApproval.ApproverType.BUDGET_MODULE_OWNER,
                 defaults={"status": BudgetApproval.Status.PENDING},
             )
+            created_any = created or created_any
         else:
             for user in unique_approvers:
-                BudgetApproval.objects.get_or_create(
+                obj, created = BudgetApproval.objects.get_or_create(
                     budget=budget,
                     approver_type=BudgetApproval.ApproverType.BUDGET_MODULE_OWNER,
                     approver=user,
                     defaults={"status": BudgetApproval.Status.PENDING},
                 )
+                if created:
+                    created_any = True
+                    created_for_users.append(user)
 
         budget.status = Budget.STATUS_PENDING_FINAL_APPROVAL
         budget.save(update_fields=["status", "updated_at"])
+
+        # Notify intended approvers when the final-approval task is created
+        try:
+            if created_any:
+                title = f"Budget final approval requested: {budget.name}"
+                body = "Moderator review complete. Please review and approve."
+                if created_for_users:
+                    for u in created_for_users:
+                        if not u:
+                            continue
+                        Notification.objects.create(
+                            company=budget.company,
+                            user=u,
+                            title=title,
+                            body=body,
+                            severity=NotificationSeverity.INFO,
+                            entity_type="Budget",
+                            entity_id=str(budget.id),
+                        )
+        except Exception:
+            pass
+        return True
+
+    @staticmethod
+    def request_budget_name_approval(budget: Budget):
+        import logging
+        logger = logging.getLogger(__name__)
+        company = budget.company
+        approvers = []
+
+        # Find Budget Module Owners
+        perm = SecPermission.objects.filter(code="budgeting_approve_budget").first()
+        if perm:
+            role_ids = list(SecRolePermission.objects.filter(permission=perm).values_list("role_id", flat=True))
+            if role_ids:
+                user_roles = SecUserRole.objects.filter(role_id__in=role_ids)
+                if perm.scope_required:
+                    scope_qs = SecScope.objects.filter(scope_type="company", object_id=str(company.id))
+                    urs = SecUserRoleScope.objects.filter(scope__in=scope_qs, user_role__in=user_roles)
+                    approvers.extend([ur.user_role.user for ur in urs.select_related("user_role", "user_role__user")])
+                else:
+                    approvers.extend([ur.user for ur in user_roles.select_related("user")])
+
+            direct_qs = SecUserDirectPermission.objects.filter(permission=perm)
+            if perm.scope_required:
+                scope_qs = SecScope.objects.filter(scope_type="company", object_id=str(company.id))
+                direct_qs = direct_qs.filter(scope__in=scope_qs)
+            approvers.extend([dp.user for dp in direct_qs.select_related("user")])
+
+        # NOTE: For name approval, only Budget Module Owners (or superuser) are required.
+        # Do NOT include deputy owners to avoid multiple pending tasks that linger after first approval.
+
+        # Deduplicate approvers
+        seen = set()
+        unique_approvers = []
+        for u in approvers:
+            if not u:
+                continue
+            if u.id in seen:
+                continue
+            seen.add(u.id)
+            unique_approvers.append(u)
+
+        created = 0
+        for user in unique_approvers:
+            _, was_created = BudgetApproval.objects.get_or_create(
+                budget=budget,
+                approver_type=BudgetApproval.ApproverType.BUDGET_NAME_APPROVER,
+                approver=user,
+                defaults={"status": BudgetApproval.Status.PENDING},
+            )
+            if was_created:
+                created += 1
+        try:
+            logger.info(f"[BudgetApprovalService.request_budget_name_approval] budget_id={budget.id} approvers={len(unique_approvers)} created={created}")
+        except Exception:
+            pass
+        
         return True
 
 
@@ -737,7 +887,8 @@ class BudgetReviewPeriodService:
         new_price: Optional[Decimal] = None,
         new_value: Optional[Decimal] = None,
         reason: str = "",
-        role: str = "cc_owner"
+        role: str = "cc_owner",
+        metadata: Optional[dict] = None
     ) -> BudgetLine:
         """
         Update a budget line and create variance audit trail.
@@ -782,14 +933,27 @@ class BudgetReviewPeriodService:
         budget_line.modified_at = timezone.now()
         budget_line.modification_reason = reason
 
+        if metadata is not None:
+            budget_line.metadata = metadata
+
         budget_line.save()
 
         # Create audit record
         budget = budget_line.budget
+        # Determine change type based on effective changes
+        qty_changed = (new_qty is not None and new_qty != old_qty)
+        price_changed = (new_price is not None and new_price != old_price) or (new_value is not None and new_value != old_value)
+        if qty_changed and price_changed:
+            change_type = BudgetVarianceAudit.ChangeType.BOTH_CHANGE
+        elif qty_changed:
+            change_type = BudgetVarianceAudit.ChangeType.QTY_CHANGE
+        else:
+            change_type = BudgetVarianceAudit.ChangeType.PRICE_CHANGE
+
         BudgetVarianceAudit.objects.create(
             budget_line=budget_line,
             modified_by=user,
-            change_type="modification" if new_value else "quantity_change" if new_qty else "price_change",
+            change_type=change_type,
             role_of_modifier=role,
             original_qty=old_qty,
             new_qty=budget_line.qty_limit,
@@ -798,8 +962,6 @@ class BudgetReviewPeriodService:
             original_value=old_value,
             new_value=budget_line.value_limit,
             justification=reason,
-            review_period_active=budget.is_review_period_active(),
-            grace_period_active=False,  # Can check dates if needed
         )
 
         # Update budget-level variance totals
@@ -814,7 +976,7 @@ class BudgetReviewPeriodService:
     @staticmethod
     def close_review_period(budget: Budget) -> bool:
         """
-        Close the review period and move to next stage (moderator review).
+        Close the review period and auto-forward non-held items to final approval.
         Returns True if successful.
         """
         from datetime import date
@@ -824,11 +986,32 @@ class BudgetReviewPeriodService:
 
         # Disable review period
         budget.review_enabled = False
-        budget.status = Budget.STATUS_PENDING_MODERATOR_REVIEW
+
+        # Auto-forward non-held items to final approval: mark as not_reviewed
+        try:
+            auto_lines = budget.lines.filter(is_held_for_review=False)
+            for bl in auto_lines:
+                meta = getattr(bl, 'metadata', {}) or {}
+                if not meta.get('not_reviewed'):
+                    meta['not_reviewed'] = True
+                    bl.metadata = meta
+                    bl.save(update_fields=["metadata", "updated_at"])
+        except Exception:
+            pass
+
+        # Move directly to final approval per policy
+        try:
+            BudgetApprovalService.request_final_approval(budget)
+        except Exception:
+            # Fallback to moderator review if final approval could not be requested
+            budget.status = Budget.STATUS_PENDING_MODERATOR_REVIEW
+            budget.save(update_fields=["review_enabled", "status", "updated_at"])
+            BudgetNotificationService.notify_review_period_ended(budget)
+            return True
+
+        budget.status = Budget.STATUS_PENDING_FINAL_APPROVAL
         budget.save(update_fields=["review_enabled", "status", "updated_at"])
-
         BudgetNotificationService.notify_review_period_ended(budget)
-
         return True
 
     @staticmethod
@@ -880,6 +1063,9 @@ class BudgetModeratorService:
         remark_text: str,
         remark_template_id: Optional[int] = None
     ) -> BudgetLine:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Adding remark to line {budget_line.id}")
         """
         Add moderator remark to a budget line.
         Optionally increment usage count if using a template.
@@ -901,6 +1087,28 @@ class BudgetModeratorService:
             except BudgetRemarkTemplate.DoesNotExist:
                 pass
 
+        # Workflow change: when a moderator remarks an item, ensure a final approval task
+        # exists for this budget (so it appears under Final Approvals for module owners).
+        budget = budget_line.budget
+        from .models import BudgetApproval as BA
+        # Avoid duplicates and skip if already finalized/active
+        terminal_statuses = {
+            Budget.STATUS_APPROVED,
+            Budget.STATUS_AUTO_APPROVED,
+            Budget.STATUS_ACTIVE,
+        }
+        if budget and budget.status not in terminal_statuses:
+            exists = BA.objects.filter(
+                budget=budget,
+                approver_type=BA.ApproverType.BUDGET_MODULE_OWNER,
+                status=BA.Status.PENDING,
+            ).exists()
+            if not exists:
+                logger.info(f"Requesting final approval for budget {budget.id}")
+                # This will also move budget to PENDING_FINAL_APPROVAL
+                BudgetApprovalService.request_final_approval(budget)
+                logger.info(f"Final approval requested for budget {budget.id}")
+
         return budget_line
 
     @staticmethod
@@ -911,8 +1119,13 @@ class BudgetModeratorService:
         """
         from django.utils import timezone
 
-        # Validate budget is in moderator review stage
-        if budget.status != Budget.STATUS_PENDING_MODERATOR_REVIEW:
+        # New rule: allow moderation anytime before review_end_date; block after it
+        today = timezone.now().date()
+        try:
+            end = getattr(budget, "review_end_date", None)
+        except Exception:
+            end = None
+        if end is not None and today > end:
             return False
 
         # Mark as reviewed
@@ -927,6 +1140,13 @@ class BudgetModeratorService:
             budget.metadata = metadata
 
         budget.save(update_fields=["moderator_reviewed_by", "moderator_reviewed_at", "status", "metadata", "updated_at"])
+
+        # After moderator review, request final approval from budget module owners
+        try:
+            BudgetApprovalService.request_final_approval(budget)
+        except Exception:
+            # Do not fail the action if final approval request cannot be created
+            pass
 
         # Notify budget module owner that moderator review is complete
         from apps.notifications.models import Notification, NotificationSeverity
@@ -977,7 +1197,7 @@ class BudgetModeratorService:
 
         return {
             "budget_id": budget.id,
-            "budget_name": budget.name,
+            "budget_name": (str(budget) if budget else None),
             "status": budget.status,
             "moderator_reviewed": budget.status == Budget.STATUS_MODERATOR_REVIEWED,
             "moderator_reviewed_by": budget.moderator_reviewed_by.get_full_name() if budget.moderator_reviewed_by else None,
@@ -1025,6 +1245,37 @@ class BudgetModeratorService:
                 template.save(update_fields=["usage_count"])
             except BudgetRemarkTemplate.DoesNotExist:
                 pass
+
+        # After adding remarks, trigger final approval for the affected budgets
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info("Attempting to trigger final approval for budgets after batch remarks.")
+        
+        from .models import Budget
+        budget_ids = BudgetLine.objects.filter(id__in=budget_line_ids).values_list('budget_id', flat=True).distinct()
+        budgets = Budget.objects.filter(id__in=budget_ids)
+        logger.info(f"Found {len(budgets)} budgets to process for final approval.")
+        for budget in budgets:
+            from .models import BudgetApproval as BA
+            # Avoid duplicates and skip if already finalized/active
+            terminal_statuses = {
+                Budget.STATUS_APPROVED,
+                Budget.STATUS_AUTO_APPROVED,
+                Budget.STATUS_ACTIVE,
+            }
+            if budget and budget.status not in terminal_statuses:
+                exists = BA.objects.filter(
+                    budget=budget,
+                    approver_type=BA.ApproverType.BUDGET_MODULE_OWNER,
+                    status=BA.Status.PENDING,
+                ).exists()
+                if not exists:
+                    logger.info(f"Requesting final approval for budget {budget.id}")
+                    BudgetApprovalService.request_final_approval(budget)
+                else:
+                    logger.info(f"Final approval for budget {budget.id} already exists.")
+            else:
+                logger.info(f"Budget {budget.id} is in a terminal status, skipping final approval request.")
 
         return {
             "success_count": success_count,

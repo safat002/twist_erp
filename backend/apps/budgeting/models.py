@@ -100,7 +100,8 @@ class CostCenter(models.Model):
 
 class Budget(models.Model):
     # Revised workflow statuses aligned with Budget-Module-Final-Requirements.md
-    STATUS_DRAFT = "DRAFT"
+    STATUS_PENDING_NAME_APPROVAL = "pending_name_approval"
+    STATUS_DRAFT = "draft"
     STATUS_ENTRY_OPEN = "ENTRY_OPEN"
     STATUS_ENTRY_CLOSED_REVIEW_PENDING = "ENTRY_CLOSED_REVIEW_PENDING"
     STATUS_REVIEW_OPEN = "REVIEW_OPEN"
@@ -161,12 +162,28 @@ class Budget(models.Model):
 
     # Optional: when null, budget is company-wide (no cost center)
     cost_center = models.ForeignKey(CostCenter, on_delete=models.PROTECT, null=True, blank=True, related_name='budgets')
+    # Optional: restrict which CCs can enter lines against this budget (company-wide cases)
+    applicable_cost_centers = models.ManyToManyField(CostCenter, blank=True, related_name='applicable_budgets')
     # For CC budgets derived from a declared budget
     parent_declared = models.ForeignKey('self', on_delete=models.PROTECT, null=True, blank=True, related_name='cc_budgets')
     company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name='budgets')
     name = models.CharField(max_length=255, default="Untitled Budget")
     budget_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default=TYPE_OPERATIONAL)
     description = models.TextField(blank=True)
+
+    # Budget Name approval status (separate from workflow of lines)
+    NAME_STATUS_DRAFT = "DRAFT"
+    NAME_STATUS_APPROVED = "APPROVED"
+    NAME_STATUS_REJECTED = "REJECTED"
+    NAME_STATUS_CHOICES = [
+        (NAME_STATUS_DRAFT, "Draft"),
+        (NAME_STATUS_APPROVED, "Approved"),
+        (NAME_STATUS_REJECTED, "Rejected"),
+    ]
+    name_status = models.CharField(max_length=16, choices=NAME_STATUS_CHOICES, default=NAME_STATUS_DRAFT)
+    name_approved_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='name_approved_budgets')
+    name_approved_at = models.DateTimeField(null=True, blank=True)
+    auto_activate = models.BooleanField(default=False, help_text="If ON, auto-activate on period start (excludes held lines)")
 
     # CUSTOM DURATION SETTINGS (NEW - Section 2.1)
     duration_type = models.CharField(
@@ -462,6 +479,7 @@ class Budget(models.Model):
 
     def open_entry(self, *, start_date=None, end_date=None, user=None):
         self.status = self.STATUS_ENTRY_OPEN
+        self.entry_enabled = True
         if start_date:
             self.entry_start_date = start_date
         elif not self.entry_start_date:
@@ -469,7 +487,7 @@ class Budget(models.Model):
         if end_date:
             self.entry_end_date = end_date
         self.updated_by = user or self.updated_by
-        self.save(update_fields=["status", "entry_start_date", "entry_end_date", "updated_by", "updated_at"])
+        self.save(update_fields=["status", "entry_enabled", "entry_start_date", "entry_end_date", "updated_by", "updated_at"])
 
     def is_entry_period_active(self) -> bool:
         """Check if entry period is active and entry is enabled"""
@@ -526,17 +544,33 @@ class Budget(models.Model):
         return self.get_duration_type_display()
 
     def can_user_enter_budget(self, user, cost_center=None) -> bool:
-        if not user or not user.is_authenticated:
+        # Authentication
+        if not user or not getattr(user, 'is_authenticated', False):
             return False
+        # Superusers/system admins can always enter
+        if getattr(user, 'is_superuser', False) or getattr(user, 'is_system_admin', False):
+            return True
+        # Must be within entry period
         if not self.is_entry_period_active():
             return False
-        cc = cost_center or self.cost_center
-        # cost center owner, deputy, or explicitly granted entry users
-        return bool(
-            (cc.owner_id and user.id == cc.owner_id)
-            or (cc.deputy_owner_id and user.id == cc.deputy_owner_id)
-            or cc.budget_entry_users.filter(id=user.id).exists()
-        )
+        # Determine applicable cost center
+        cc = cost_center or getattr(self, 'cost_center', None)
+        if cc is None:
+            # Company-wide budget: require company‑level permission
+            try:
+                from apps.permissions.permissions import has_permission
+                return has_permission(user, 'budgeting_manage_budget_plan', self.company)
+            except Exception:
+                return False
+        # Cost center budget: owner, deputy, or explicitly granted entry users
+        try:
+            return bool(
+                (getattr(cc, 'owner_id', None) and user.id == cc.owner_id)
+                or (getattr(cc, 'deputy_owner_id', None) and user.id == cc.deputy_owner_id)
+                or cc.budget_entry_users.filter(id=user.id).exists()
+            )
+        except Exception:
+            return False
 
     def submit_for_approval(self, user=None):
         # Move budget to pending cc approval
@@ -573,6 +607,7 @@ class BudgetLine(models.Model):
     sequence = models.PositiveIntegerField(default=1)
     procurement_class = models.CharField(max_length=20, choices=ProcurementClass.choices)
     item_code = models.CharField(max_length=64, blank=True)
+    budget_item = models.ForeignKey('budgeting.BudgetItemCode', on_delete=models.SET_NULL, null=True, blank=True, related_name='budget_lines')
 
     # REFACTORED: Split product field into sales.Product and inventory.Item
     # For revenue budgets only - links to saleable products
@@ -1001,6 +1036,7 @@ class BudgetCommitment(models.Model):
 
 class BudgetApproval(models.Model):
     class ApproverType(models.TextChoices):
+        BUDGET_NAME_APPROVER = "budget_name_approver", "Budget Name Approver"
         COST_CENTER_OWNER = "cost_center_owner", "Cost Center Owner"
         BUDGET_MODULE_OWNER = "budget_module_owner", "Budget Module Owner"
 
@@ -1094,7 +1130,7 @@ class BudgetConsumptionSnapshot(models.Model):
 
 class BudgetItemCategory(models.Model):
     """Top-level item category for budgeting, shared within a company group."""
-    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name='budget_item_categories')
+    company = models.ForeignKey(Company, on_delete=models.PROTECT, null=True, blank=True, related_name='budget_item_categories')
     company_group = models.ForeignKey(CompanyGroup, on_delete=models.PROTECT, null=True, blank=True, related_name='+')
     code = models.CharField(max_length=50)
     name = models.CharField(max_length=255)
@@ -1109,7 +1145,7 @@ class BudgetItemCategory(models.Model):
         ]
         indexes = [
             models.Index(fields=["company", "code"]),
-            models.Index(fields=["company", "is_active"]),
+            # models.Index(fields=["company", "is_active"]),
         ]
 
     def save(self, *args, **kwargs):
@@ -1126,7 +1162,7 @@ class BudgetItemCategory(models.Model):
 
 class BudgetItemSubCategory(models.Model):
     """Second-level item category. Must have a parent category."""
-    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name='budget_item_subcategories')
+    company = models.ForeignKey(Company, on_delete=models.PROTECT, null=True, blank=True, related_name='budget_item_subcategories')
     company_group = models.ForeignKey(CompanyGroup, on_delete=models.PROTECT, null=True, blank=True, related_name='+')
     category = models.ForeignKey(BudgetItemCategory, on_delete=models.PROTECT, related_name='subcategories')
     code = models.CharField(max_length=50)
@@ -1157,7 +1193,7 @@ class BudgetItemSubCategory(models.Model):
         return f"{self.category.code}:{self.code} - {self.name}"
 
 class BudgetItemCode(models.Model):
-    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name='budget_item_codes')
+    company = models.ForeignKey(Company, on_delete=models.PROTECT, null=True, blank=True, related_name='budget_item_codes')
     company_group = models.ForeignKey(CompanyGroup, on_delete=models.PROTECT, null=True, blank=True, related_name='+')
     code = models.CharField(max_length=64)
     name = models.CharField(max_length=255)
@@ -1170,13 +1206,11 @@ class BudgetItemCode(models.Model):
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
     class Meta:
-        unique_together = ("company", "code")
+        unique_together = ("company_group", "code")
         ordering = ["code"]
         indexes = [
-            models.Index(fields=["company", "code"]),
-            models.Index(fields=["company", "is_active"]),
+            # models.Index(fields=["company", "is_active"]),
         ]
 
     def __str__(self) -> str:
