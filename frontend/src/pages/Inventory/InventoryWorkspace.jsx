@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Row,
   Col,
@@ -13,6 +13,7 @@ import {
   Timeline,
   Typography,
   Divider,
+  message,
 } from 'antd';
 import {
   PlusOutlined,
@@ -241,6 +242,75 @@ const InventoryWorkspace = () => {
   const [automationRecipes, setAutomationRecipes] = useState(INITIAL_AUTOMATIONS);
   const [stockLedgerSummary, setStockLedgerSummary] = useState(INITIAL_STOCK_LEDGER_SUMMARY);
   const [stockEventStream, setStockEventStream] = useState(INITIAL_STOCK_EVENT_STREAM);
+  const [masterSummary, setMasterSummary] = useState({});
+  const [movementEventCount, setMovementEventCount] = useState(0);
+  const [replenishmentSuggestions, setReplenishmentSuggestions] = useState([]);
+  const fetchTransferPipeline = useCallback(async () => {
+    try {
+      const params = { type: 'TRANSFER', status: 'IN_TRANSIT', page_size: 50 };
+      if (currentCompany?.id) {
+        params.company = currentCompany.id;
+      }
+      const response = await api.get('/api/v1/inventory/stock-movements/', { params });
+      const payload = response.data || {};
+      const records = Array.isArray(payload?.results)
+        ? payload.results
+        : Array.isArray(payload)
+          ? payload
+          : [];
+      const mapped = records.map((movement) => ({
+        id: movement.id,
+        title: `${movement.movement_number || 'TRANSFER'} · ${
+          movement.from_warehouse_name || 'Source'
+        } → ${movement.to_warehouse_name || 'Destination'}`,
+        status: movement.status,
+        eta: movement.movement_date || '',
+      }));
+      setTransferPipeline(mapped.length ? mapped : INITIAL_TRANSFER_PIPELINE);
+    } catch (error) {
+      console.warn('Transfer pipeline fallback data used:', error?.message);
+      setTransferPipeline(INITIAL_TRANSFER_PIPELINE);
+    }
+  }, [currentCompany]);
+
+  const confirmTransferReceipt = useCallback(
+    async (transferId) => {
+      try {
+        await api.post(`/api/v1/inventory/stock-movements/${transferId}/confirm_receipt/`);
+        message.success('Transfer receipt confirmed');
+        await fetchTransferPipeline();
+      } catch (error) {
+        message.error(error?.response?.data?.detail || 'Unable to confirm receipt');
+      }
+    },
+    [fetchTransferPipeline],
+  );
+
+  const fetchReplenishmentSuggestions = useCallback(async () => {
+    try {
+      const response = await api.get('/api/v1/inventory/replenishment/suggestions/');
+      const payload = response.data || {};
+      const rows = Array.isArray(payload.results) ? payload.results : [];
+      setReplenishmentSuggestions(rows);
+    } catch (error) {
+      console.warn('Replenishment suggestions fallback data used:', error?.message);
+      setReplenishmentSuggestions([]);
+    }
+  }, [currentCompany]);
+
+  const handleAutoPR = useCallback(
+    async (configId) => {
+      if (!configId) return;
+      try {
+        await api.post('/api/v1/inventory/replenishment/auto-pr/', { config_ids: [configId] });
+        message.success('Auto purchase requisition created');
+        await fetchReplenishmentSuggestions();
+      } catch (error) {
+        message.error(error?.response?.data?.error || 'Unable to create purchase requisition');
+      }
+    },
+    [fetchReplenishmentSuggestions],
+  );
 
   useEffect(() => {
     const loadOverview = async () => {
@@ -282,7 +352,7 @@ const InventoryWorkspace = () => {
         if (
           payload.replenishment_board &&
           payload.replenishment_board.columns &&
-          payload.replenishment_board.items
+          payload.replenishment_board.budget_items
         ) {
           setReplenishmentBoard(payload.replenishment_board);
         } else {
@@ -340,14 +410,16 @@ const InventoryWorkspace = () => {
             records.length
               ? records.map((record, index) => ({
                   id: record.id || `stock-event-${index}`,
-                  label: record.event || record.label || 'stock.event',
+                  label: record.event || record.event_type || record.label || 'stock.event',
                   reference: record.reference || record.reference_code || '',
                   journalImpact:
                     record.journal_impact ||
                     record.description ||
-                    INITIAL_STOCK_EVENT_STREAM[index % INITIAL_STOCK_EVENT_STREAM.length].journalImpact,
+                    `${record.qty_change ?? ''} ${record.stock_uom_code ?? ''}`.trim(),
                   status: record.status || record.sync_state || 'synced',
-                  timestamp: record.timestamp || record.created_at || '',
+                  timestamp: record.timestamp || record.event_date || record.created_at || '',
+                  itemCode: record.budget_item_code || '',
+                  warehouseCode: record.warehouse_code || '',
                 }))
               : INITIAL_STOCK_EVENT_STREAM,
           );
@@ -355,6 +427,10 @@ const InventoryWorkspace = () => {
           console.warn('Stock event stream fallback data used:', eventErr?.message);
           setStockEventStream(INITIAL_STOCK_EVENT_STREAM);
         }
+        await fetchTransferPipeline();
+        await fetchReplenishmentSuggestions();
+        setMasterSummary(payload.master_summary || {});
+        setMovementEventCount(Number(payload.movement_events || 0));
       } catch (error) {
         console.warn('Inventory overview fallback data used:', error?.message);
         setOverviewKpis(INITIAL_KPIS);
@@ -365,13 +441,15 @@ const InventoryWorkspace = () => {
         setAutomationRecipes(INITIAL_AUTOMATIONS);
         setStockLedgerSummary(INITIAL_STOCK_LEDGER_SUMMARY);
         setStockEventStream(INITIAL_STOCK_EVENT_STREAM);
+        setMasterSummary({});
+        setMovementEventCount(0);
       } finally {
         setLoading(false);
       }
     };
 
     loadOverview();
-  }, [currentCompany]);
+  }, [currentCompany, fetchTransferPipeline, fetchReplenishmentSuggestions]);
 
   const stockCoverageConfig = useMemo(() => {
     const safeData = (Array.isArray(stockCoverage) ? stockCoverage : []).map((item) => ({
@@ -432,6 +510,20 @@ const InventoryWorkspace = () => {
     return value;
   }, [stockLedgerSummary]);
 
+  const masterHealth = useMemo(() => {
+    const summary = masterSummary || {};
+    const gaps = summary.gaps || {};
+    return {
+      items: Number(summary.budget_items || 0),
+      operationalProfiles: Number(summary.operational_profiles || 0),
+      warehouseConfigs: Number(summary.warehouse_configs || 0),
+      globalConfigs: Number(summary.global_configs || 0),
+      uomConversions: Number(summary.uom_conversions || 0),
+      missingProfiles: Number(gaps.missing_operational_profile || 0),
+      missingConversions: Number(gaps.missing_conversion_definition || 0),
+    };
+  }, [masterSummary]);
+
   const stockLedgerLastMovement = useMemo(() => {
     if (!stockLedgerSummary?.lastMovementAt) {
       return 'No movement yet';
@@ -467,7 +559,7 @@ const InventoryWorkspace = () => {
   const boardTotals = useMemo(() => {
     const totals = {};
     Object.values(replenishmentBoard.columns).forEach((column) => {
-      totals[column.id] = column.itemIds.length;
+      totals[column.id] = column.itemIds?.length || 0;
     });
     return totals;
   }, [replenishmentBoard]);
@@ -578,6 +670,93 @@ const InventoryWorkspace = () => {
       </Row>
 
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24} lg={16}>
+          <Card title="Item Master Separation" loading={loading}>
+            <Space size="large" wrap>
+              <Statistic title="Budget Items" value={masterHealth.budget_items} />
+              <Statistic title="Operational Profiles" value={masterHealth.operationalProfiles} suffix={`/ ${masterHealth.budget_items}`} />
+              <Statistic title="Warehouse Configs" value={masterHealth.warehouseConfigs} />
+              <Statistic title="UoM Conversions" value={masterHealth.uomConversions} />
+              <Tag color={masterHealth.missingProfiles ? 'red' : 'green'}>
+                Missing Profiles: {masterHealth.missingProfiles}
+              </Tag>
+              <Tag color={masterHealth.missingConversions ? 'orange' : 'green'}>
+                Missing Conversions: {masterHealth.missingConversions}
+              </Tag>
+            </Space>
+          </Card>
+        </Col>
+        <Col xs={24} lg={8}>
+          <Card title="Movement Events (rolling 24h)" loading={loading}>
+            <Space direction="vertical">
+              <Statistic value={movementEventCount} suffix="events" />
+              <Text type="secondary">
+                Every transaction now posts a MovementEvent entry for immutable audit reconstruction.
+              </Text>
+            </Space>
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24}>
+          <Card
+            title="Auto Replenishment"
+            extra={
+              <Button
+                type="link"
+                icon={<ReloadOutlined />}
+                onClick={fetchReplenishmentSuggestions}
+                disabled={loading}
+              >
+                Refresh
+              </Button>
+            }
+            loading={loading && !replenishmentSuggestions.length}
+          >
+            <List
+              locale={{ emptyText: 'All items are above ROP thresholds' }}
+              dataSource={replenishmentSuggestions}
+              renderItem={(item) => (
+                <List.Item
+                  key={`${item.config_id}-${item.warehouse_id}`}
+                  actions={[
+                    <Button
+                      size="small"
+                      type="primary"
+                      disabled={!item.supplier_id || !(item.recommended_qty > 0)}
+                      onClick={() => handleAutoPR(item.config_id)}
+                    >
+                      Auto PR
+                    </Button>,
+                  ]}
+                >
+                  <Space direction="vertical" size={0}>
+                    <Space>
+                      <ThunderboltOutlined style={{ color: '#faad14' }} />
+                      <Text strong>
+                        {item.budget_item_code} · {item.warehouse_name}
+                      </Text>
+                    </Space>
+                    <Text type="secondary">
+                      On-hand {Number(item.on_hand || 0).toLocaleString()} · ROP{' '}
+                      {Number(item.rop || 0).toLocaleString()} · Available{' '}
+                      {Number(item.available || 0).toLocaleString()}
+                    </Text>
+                    <Text>
+                      Recommended: <strong>{Number(item.recommended_qty || 0).toLocaleString()}</strong>{' '}
+                      units {item.supplier_name ? `via ${item.supplier_name}` : '(No supplier)'}
+                    </Text>
+                    {item.reason ? <Text type="secondary">{item.reason}</Text> : null}
+                  </Space>
+                </List.Item>
+              )}
+            />
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} lg={8}>
           <Card title="Stock Ledger Overview" loading={loading}>
             <Space direction="vertical" size="small" style={{ width: '100%' }}>
@@ -644,6 +823,11 @@ const InventoryWorkspace = () => {
                       </Tag>
                     </Space>
                     <Text type="secondary">{item.journalImpact}</Text>
+                    {item.budget_itemCode ? (
+                      <Text type="secondary">
+                        {item.budget_itemCode} {item.warehouseCode ? `· ${item.warehouseCode}` : ''}
+                      </Text>
+                    ) : null}
                     {item.reference ? <Text type="secondary">Ref: {item.reference}</Text> : null}
                     {item.timestamp ? <Text type="secondary">{item.timestamp}</Text> : null}
                   </Space>
@@ -838,8 +1022,20 @@ const InventoryWorkspace = () => {
           <Card title="Transfer Pipeline" style={{ marginBottom: 16 }} loading={loading}>
             <List
               dataSource={transferPipeline}
+              locale={{ emptyText: 'No transfers in transit' }}
               renderItem={(item) => (
-                <List.Item key={item.id}>
+                <List.Item
+                  key={item.id || item.title}
+                  actions={
+                    item.id && item.status === 'IN_TRANSIT'
+                      ? [
+                          <Button size="small" onClick={() => confirmTransferReceipt(item.id)}>
+                            Confirm Receipt
+                          </Button>,
+                        ]
+                      : []
+                  }
+                >
                   <Space direction="vertical" size={0}>
                     <Space>
                       <DeploymentUnitOutlined style={{ color: '#52c41a' }} />

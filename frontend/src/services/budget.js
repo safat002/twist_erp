@@ -122,6 +122,9 @@ export const batchSendBackForReview = ({ budget_line_ids, reason }) =>
 export const batchApplyTemplateToCategory = ({ budget_id, category, remark_template_id }) =>
   api.post('/api/v1/budgets/lines/batch_apply_template_to_category/', { budget_id, category, remark_template_id });
 
+export const moderatorApproveLines = ({ budget_line_ids }) =>
+  api.post('/api/v1/budgets/lines/batch_moderator_approve/', { budget_line_ids });
+
 // Templates and variance audit
 export const fetchRemarkTemplates = (params = {}) => api.get('/api/v1/budgets/remark-templates/', { params });
 export const createRemarkTemplate = (payload) => api.post('/api/v1/budgets/remark-templates/', payload);

@@ -14,6 +14,8 @@ from ..models import (
     JournalVoucher,
 )
 from ..models import FiscalPeriod, FiscalPeriodStatus
+from apps.budgeting.models import CostCenter
+from apps.projects.models import Project
 from .config import enforce_period_posting, enforce_segregation_of_duties
 
 class JournalService:
@@ -77,6 +79,19 @@ class JournalService:
             if not account.allow_direct_posting:
                 raise ValueError(f"Direct posting is not allowed for account: {account.code} {account.name}")
 
+            cost_center = raw.get('cost_center')
+            if cost_center:
+                if isinstance(cost_center, int):
+                    cost_center = CostCenter.objects.get(pk=cost_center, company=company)
+                elif cost_center.company_id != company.id:
+                    raise ValueError("Cost center company mismatch.")
+            project = raw.get('project')
+            if project:
+                if isinstance(project, int):
+                    project = Project.objects.get(pk=project, company=company)
+                elif project.company_id != company.id:
+                    raise ValueError("Project company mismatch.")
+
             prepared.append(
                 {
                     'account': account,
@@ -84,6 +99,8 @@ class JournalService:
                     'credit': credit,
                     'description': raw.get('description', ''),
                     'line_number': index + 1,
+                    'cost_center': cost_center,
+                    'project': project,
                 }
             )
             total_debit += debit
@@ -153,6 +170,8 @@ class JournalService:
                     debit_amount=entry['debit'],
                     credit_amount=entry['credit'],
                     description=entry['description'],
+                    cost_center=entry.get('cost_center'),
+                    project=entry.get('project'),
                 )
                 for entry in prepared_entries
             ]

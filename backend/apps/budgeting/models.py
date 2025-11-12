@@ -9,6 +9,8 @@ from django.db.models import Sum
 from django.utils import timezone
 
 from apps.companies.models import Company, CompanyGroup, Branch, Department
+from apps.inventory.models import UnitOfMeasure
+from apps.finance.models import Account
 
 User = settings.AUTH_USER_MODEL
 
@@ -620,15 +622,6 @@ class BudgetLine(models.Model):
         help_text='For revenue budgets only - saleable product'
     )
 
-    # For expense/capex/operational budgets - links to inventory items
-    item = models.ForeignKey(
-        'inventory.Item',
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name='budget_lines',
-        help_text='For expense/capex/operational budgets - inventory item'
-    )
 
     # Sub-category for hierarchical classification
     sub_category = models.ForeignKey(
@@ -768,6 +761,47 @@ class BudgetLine(models.Model):
         blank=True,
         help_text="CC Owner notes for modifications"
     )
+
+    # WORKFLOW STATES (canonical, line-wise)
+    class CCDecision(models.TextChoices):
+        PENDING = "PENDING", "Pending"
+        APPROVED = "APPROVED", "Approved"
+        SENT_BACK = "SENT_BACK", "Sent Back"
+
+    cc_decision = models.CharField(max_length=16, choices=CCDecision.choices, default=CCDecision.PENDING)
+    cc_decision_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='cc_decided_budget_lines',
+        help_text="User who made CC decision"
+    )
+    cc_decision_at = models.DateTimeField(null=True, blank=True)
+
+    class ModeratorState(models.TextChoices):
+        NONE = "NONE", "None"
+        REMARKED = "REMARKED", "Remarked"
+        HELD = "HELD", "Held"
+        SENT_BACK = "SENT_BACK", "Sent Back"
+
+    moderator_state = models.CharField(max_length=16, choices=ModeratorState.choices, default=ModeratorState.NONE)
+
+    class FinalDecision(models.TextChoices):
+        PENDING = "PENDING", "Pending"
+        APPROVED = "APPROVED", "Approved"
+        REJECTED = "REJECTED", "Rejected"
+
+    final_decision = models.CharField(max_length=16, choices=FinalDecision.choices, default=FinalDecision.PENDING)
+    final_decision_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='final_decided_budget_lines',
+        help_text="User who made final decision"
+    )
+    final_decision_at = models.DateTimeField(null=True, blank=True)
 
     # Consumption Tracking
     tolerance_percent = models.PositiveIntegerField(default=5)
@@ -1067,6 +1101,35 @@ class BudgetApproval(models.Model):
         return f"{self.budget_id}:{self.approver_type}:{self.status}"
 
 
+class BudgetApprovalLine(models.Model):
+    class Stage(models.TextChoices):
+        CC_APPROVAL = "CC_APPROVAL", "Cost Center Approval"
+        FINAL_APPROVAL = "FINAL_APPROVAL", "Final Approval"
+
+    class LineStatus(models.TextChoices):
+        PENDING = "PENDING", "Pending"
+        APPROVED = "APPROVED", "Approved"
+        REJECTED = "REJECTED", "Rejected"
+        SENT_BACK = "SENT_BACK", "Sent Back"
+
+    approval = models.ForeignKey(BudgetApproval, on_delete=models.CASCADE, related_name="approval_lines")
+    line = models.ForeignKey('budgeting.BudgetLine', on_delete=models.CASCADE, related_name="approval_scopes")
+    stage = models.CharField(max_length=20, choices=Stage.choices)
+    status = models.CharField(max_length=16, choices=LineStatus.choices, default=LineStatus.PENDING)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("approval", "line")
+        indexes = [
+            models.Index(fields=["approval", "stage", "status"], name="bal_appr_sts"),
+            models.Index(fields=["line", "stage", "status"], name="bal_line_sts"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.approval_id}:{self.line_id}:{self.stage}:{self.status}"
+
+
 class BudgetOverrideRequest(models.Model):
     STATUS_PENDING = "PENDING"
     STATUS_APPROVED = "APPROVED"
@@ -1193,24 +1256,116 @@ class BudgetItemSubCategory(models.Model):
         return f"{self.category.code}:{self.code} - {self.name}"
 
 class BudgetItemCode(models.Model):
+    """
+    Master item record for all modules (Budgeting, Inventory, Procurement, Finance).
+    Replaces separate inventory.Item - all item metadata lives here.
+    """
+    # Core identification
     company = models.ForeignKey(Company, on_delete=models.PROTECT, null=True, blank=True, related_name='budget_item_codes')
     company_group = models.ForeignKey(CompanyGroup, on_delete=models.PROTECT, null=True, blank=True, related_name='+')
     code = models.CharField(max_length=64)
     name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, help_text="Detailed item description")
+
+    # Classification
     # Back-compat free-text field (kept); prefer category_ref/sub_category_ref
     category = models.CharField(max_length=120, blank=True)
     category_ref = models.ForeignKey('budgeting.BudgetItemCategory', on_delete=models.PROTECT, null=True, blank=True, related_name='item_codes')
     sub_category_ref = models.ForeignKey('budgeting.BudgetItemSubCategory', on_delete=models.PROTECT, null=True, blank=True, related_name='item_codes')
-    uom = models.ForeignKey('inventory.UnitOfMeasure', on_delete=models.PROTECT, related_name='budget_item_codes')
-    standard_price = models.DecimalField(max_digits=20, decimal_places=2, default=Decimal("0.00"))
-    is_active = models.BooleanField(default=True)
+
+    # Item type (GOODS/SERVICE/TAX/OTHER)
+    ITEM_TYPE_GOODS = 'GOODS'
+    ITEM_TYPE_SERVICE = 'SERVICE'
+    ITEM_TYPE_TAX = 'TAX'
+    ITEM_TYPE_OTHER = 'OTHER'
+    ITEM_TYPE_CHOICES = [
+        (ITEM_TYPE_GOODS, 'Goods'),
+        (ITEM_TYPE_SERVICE, 'Service'),
+        (ITEM_TYPE_TAX, 'Tax'),
+        (ITEM_TYPE_OTHER, 'Other'),
+    ]
+    item_type = models.CharField(max_length=20, choices=ITEM_TYPE_CHOICES, default=ITEM_TYPE_GOODS)
+
+    # UOM
+    uom = models.ForeignKey('inventory.UnitOfMeasure', on_delete=models.PROTECT, related_name='budget_item_codes', help_text="Base unit of measure")
+    stock_uom = models.ForeignKey(UnitOfMeasure, on_delete=models.PROTECT, null=True, blank=True, related_name='+', help_text="UOM for stock tracking")
+
+    # Pricing & Costing
+    standard_price = models.DecimalField(max_digits=20, decimal_places=2, default=Decimal("0.00"), help_text="Standard/list price")
+    valuation_rate = models.DecimalField(max_digits=20, decimal_places=4, null=True, blank=True, help_text="Current valuation rate for Material Issue")
+    cost_price = models.DecimalField(max_digits=20, decimal_places=2, default=Decimal("0.00"), help_text="Current cost price")
+    standard_cost = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True, help_text="Standard cost for variance calculation")
+
+    # Valuation method
+    VALUATION_METHOD_FIFO = 'FIFO'
+    VALUATION_METHOD_LIFO = 'LIFO'
+    VALUATION_METHOD_WEIGHTED_AVG = 'WEIGHTED_AVG'
+    VALUATION_METHOD_STANDARD_COST = 'STANDARD_COST'
+    VALUATION_METHOD_CHOICES = [
+        (VALUATION_METHOD_FIFO, 'First In, First Out'),
+        (VALUATION_METHOD_LIFO, 'Last In, First Out'),
+        (VALUATION_METHOD_WEIGHTED_AVG, 'Weighted Average'),
+        (VALUATION_METHOD_STANDARD_COST, 'Standard Cost'),
+    ]
+    valuation_method = models.CharField(
+        max_length=20,
+        choices=VALUATION_METHOD_CHOICES,
+        default=VALUATION_METHOD_FIFO,
+        help_text="Inventory valuation method"
+    )
+
+    # Inventory tracking flags
+    track_inventory = models.BooleanField(default=True, help_text="Whether to track stock levels")
+    is_batch_tracked = models.BooleanField(default=False, help_text="Track by batch/lot number")
+    is_serial_tracked = models.BooleanField(default=False, help_text="Track by serial number")
+    requires_fefo = models.BooleanField(default=False, help_text="First Expire, First Out required")
+    is_tradable = models.BooleanField(default=False, help_text="Can be linked to saleable products")
+
+    # Expiry management
+    prevent_expired_issuance = models.BooleanField(default=True, help_text="Prevent issuing expired stock")
+    expiry_warning_days = models.PositiveIntegerField(default=0, help_text="Days before expiry to warn (0=disabled)")
+
+    # Reordering & procurement
+    reorder_level = models.DecimalField(max_digits=15, decimal_places=3, default=Decimal("0"), help_text="Minimum stock level for reorder trigger")
+    reorder_quantity = models.DecimalField(max_digits=15, decimal_places=3, default=Decimal("0"), help_text="Quantity to reorder")
+    lead_time_days = models.IntegerField(default=0, help_text="Procurement lead time in days")
+
+    # GL accounts
+    inventory_account = models.ForeignKey(Account, on_delete=models.PROTECT, null=True, blank=True, related_name='budget_item_inventory_accounts', help_text="Inventory asset account")
+    expense_account = models.ForeignKey(Account, on_delete=models.PROTECT, null=True, blank=True, related_name='budget_item_expense_accounts', help_text="Expense account for issues")
+
+    # Lifecycle management & governance
+    STATUS_PLANNING = 'PLANNING'
+    STATUS_ACTIVE = 'ACTIVE'
+    STATUS_OBSOLETE = 'OBSOLETE'
+    STATUS_CHOICES = [
+        (STATUS_PLANNING, 'Planning'),
+        (STATUS_ACTIVE, 'Active'),
+        (STATUS_OBSOLETE, 'Obsolete'),
+    ]
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_PLANNING,
+        help_text="PLANNING: budgeting only; ACTIVE: inventory operations enabled; OBSOLETE: historical only"
+    )
+    department = models.ForeignKey(Department, on_delete=models.SET_NULL, null=True, blank=True, related_name='budget_items', help_text="Owning department")
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_budget_items')
+
+    # Legacy & status
+    is_active = models.BooleanField(default=True, help_text="Active flag (legacy, prefer status field)")
+
+    # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
     class Meta:
         unique_together = ("company_group", "code")
         ordering = ["code"]
         indexes = [
-            # models.Index(fields=["company", "is_active"]),
+            models.Index(fields=["company", "status"]),
+            models.Index(fields=["company", "item_type", "status"]),
+            models.Index(fields=["status", "is_active"]),
         ]
 
     def __str__(self) -> str:
@@ -1223,6 +1378,205 @@ class BudgetItemCode(models.Model):
             except Exception:
                 pass
         super().save(*args, **kwargs)
+
+    def can_use_for_inventory(self) -> bool:
+        """Check if item is ready for inventory operations"""
+        return self.status == self.STATUS_ACTIVE and self.track_inventory
+
+    def can_use_for_budgeting(self) -> bool:
+        """Check if item can be used in budgets"""
+        return self.status in (self.STATUS_PLANNING, self.STATUS_ACTIVE)
+
+
+class BudgetItemInventoryProfile(models.Model):
+    """
+    Optional: Inventory-specific metadata for a budget item.
+    Allows inventory team to manage their data independently.
+    """
+    budget_item = models.OneToOneField(
+        BudgetItemCode,
+        on_delete=models.CASCADE,
+        related_name='inventory_profile',
+        help_text="Budget item this profile extends"
+    )
+
+    # Warehouse-specific settings
+    preferred_warehouse = models.ForeignKey(
+        'inventory.Warehouse',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+        help_text="Default warehouse for this item"
+    )
+    preferred_bin = models.ForeignKey(
+        'inventory.WarehouseBin',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+        help_text="Default bin location"
+    )
+
+    # Safety stock & replenishment
+    safety_stock_level = models.DecimalField(
+        max_digits=15,
+        decimal_places=3,
+        default=Decimal("0"),
+        help_text="Safety stock to maintain"
+    )
+    max_stock_level = models.DecimalField(
+        max_digits=15,
+        decimal_places=3,
+        default=Decimal("0"),
+        help_text="Maximum stock level"
+    )
+    auto_replenish = models.BooleanField(
+        default=False,
+        help_text="Automatically create replenishment requests"
+    )
+
+    # Physical attributes
+    weight = models.DecimalField(
+        max_digits=10,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        help_text="Weight per unit"
+    )
+    weight_uom = models.CharField(
+        max_length=10,
+        blank=True,
+        help_text="Weight unit (kg, lbs, etc.)"
+    )
+    volume = models.DecimalField(
+        max_digits=10,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        help_text="Volume per unit"
+    )
+    volume_uom = models.CharField(
+        max_length=10,
+        blank=True,
+        help_text="Volume unit (m3, L, etc.)"
+    )
+
+    # Shelf life
+    shelf_life_days = models.IntegerField(
+        default=0,
+        help_text="Shelf life in days (0=no expiry)"
+    )
+
+    # Metadata
+    notes = models.TextField(blank=True, help_text="Inventory-specific notes")
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'budget_item_inventory_profile'
+        verbose_name = 'Item Inventory Profile'
+        verbose_name_plural = 'Item Inventory Profiles'
+
+    def __str__(self):
+        return f"Inventory Profile: {self.budget_item.code}"
+
+
+class BudgetItemFinanceProfile(models.Model):
+    """
+    Optional: Finance-specific metadata for a budget item.
+    Allows finance team to manage GL settings independently.
+    """
+    budget_item = models.OneToOneField(
+        BudgetItemCode,
+        on_delete=models.CASCADE,
+        related_name='finance_profile',
+        help_text="Budget item this profile extends"
+    )
+
+    # Default cost center for transactions
+    default_cost_center = models.ForeignKey(
+        CostCenter,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+        help_text="Default cost center for this item"
+    )
+
+    # Additional GL accounts
+    cogs_account = models.ForeignKey(
+        'finance.Account',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+        help_text="Cost of Goods Sold account"
+    )
+    variance_account = models.ForeignKey(
+        'finance.Account',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+        help_text="Price/quantity variance account"
+    )
+    accrual_account = models.ForeignKey(
+        'finance.Account',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+        help_text="Accrual account for this item"
+    )
+
+    # Tax settings
+    tax_category = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text="Tax category code"
+    )
+    is_tax_exempt = models.BooleanField(
+        default=False,
+        help_text="Exempt from taxes"
+    )
+
+    # Budget control
+    require_budget_check = models.BooleanField(
+        default=True,
+        help_text="Require budget availability before transactions"
+    )
+    allow_over_budget = models.BooleanField(
+        default=False,
+        help_text="Allow transactions exceeding budget"
+    )
+
+    # Metadata
+    notes = models.TextField(blank=True, help_text="Finance-specific notes")
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'budget_item_finance_profile'
+        verbose_name = 'Item Finance Profile'
+        verbose_name_plural = 'Item Finance Profiles'
+
+    def __str__(self):
+        return f"Finance Profile: {self.budget_item.code}"
 
 
 class BudgetPricePolicy(models.Model):

@@ -1,0 +1,13 @@
+rm: cannot remove './apps/procurement/__pycache__/__init__.cpython-310.pyc': Permission denied
+rm: cannot remove './apps/sales/migrations/__pycache__/0007_fix_salesorderline_to_sales_product.cpython-310.pyc': Permission denied
+rm: cannot remove './apps/sales/serializers/__pycache__/__init__.cpython-310.pyc': Permission denied
+rm: cannot remove './apps/security/services/__pycache__/permission_service.cpython-310.pyc': Permission denied
+rm: cannot remove './apps/security/__pycache__/models.cpython-310.pyc': Permission denied
+rm: cannot remove './apps/security/__pycache__/permission_registry.cpython-310.pyc': Permission denied
+rm: cannot remove './apps/tasks/migrations/__pycache__/__init__.cpython-310.pyc': Permission denied
+rm: cannot remove './apps/tasks/__pycache__/apps.cpython-310.pyc': Permission denied
+rm: cannot remove './apps/users/__pycache__/views.cpython-310.pyc': Permission denied
+rm: cannot remove './apps/workflows/__pycache__/models.cpython-310.pyc': Permission denied
+rm: cannot remove './apps/workflows/__pycache__/urls.cpython-310.pyc': Permission denied
+rm: cannot remove './apps/__pycache__/__init__.cpython-310.pyc': Permission denied
+rm: cannot remove './core/__pycache__/__init__.cpython-310.pyc': Permission denied

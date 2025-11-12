@@ -121,7 +121,7 @@ const InternalRequisitions = ({ openNew = false, onCloseNew }) => {
     if (!product || !selectedCostCenter) return null;
     const name = (product.name || '').toLowerCase();
     const matches = (budgetLines || []).filter(bl => {
-      const itemName = (bl.item_name || '').toLowerCase();
+      const itemName = (bl.budget_item_name || '').toLowerCase();
       return itemName.includes(name);
     });
     return matches[0] || null;
@@ -138,7 +138,12 @@ const InternalRequisitions = ({ openNew = false, onCloseNew }) => {
   };
 
   const columns = [
-    { title: 'Req No', dataIndex: 'req_no', key: 'req_no' },
+    {
+      title: 'Req No',
+      dataIndex: 'req_no',
+      key: 'req_no',
+      render: (value, record) => value || record.requisition_number || record.number || '-',
+    },
     { title: 'Requested On', dataIndex: 'request_date', key: 'request_date', render: (v) => (v ? dayjs(v).format('YYYY-MM-DD') : '-') },
     { title: 'Needed By', dataIndex: 'needed_by', key: 'needed_by', render: (v) => (v ? dayjs(v).format('YYYY-MM-DD') : '-') },
     { title: 'Items', dataIndex: 'lines', key: 'lines', render: (lines) => (Array.isArray(lines) ? lines.length : 0) },
@@ -164,7 +169,7 @@ const InternalRequisitions = ({ openNew = false, onCloseNew }) => {
   ];
 
   const BudgetInfo = ({ productId, costCenterId, requestDate }) => {
-    const [info, setInfo] = useState({ qty: '', used: '', remaining: '' });
+    const [info, setInfo] = useState({ qty: '', used: '', remaining: '', uom: '' });
     useEffect(() => {
       let cancelled = false;
       const load = async () => {
@@ -177,10 +182,11 @@ const InternalRequisitions = ({ openNew = false, onCloseNew }) => {
               qty: data?.approved_quantity ?? '',
               used: data?.consumed_quantity ?? '',
               remaining: data?.remaining_quantity ?? '',
+              uom: data?.uom || '',
             });
           }
         } catch (_e) {
-          if (!cancelled) setInfo({ qty: '', used: '', remaining: '' });
+          if (!cancelled) setInfo({ qty: '', used: '', remaining: '', uom: '' });
         }
       };
       load();
@@ -188,28 +194,29 @@ const InternalRequisitions = ({ openNew = false, onCloseNew }) => {
     }, [productId, costCenterId, requestDate]);
     return (
       <>
-        <Form.Item label="Budget Qty"><Input disabled value={info.qty} /></Form.Item>
-        <Form.Item label="Used Qty"><Input disabled value={info.used} /></Form.Item>
-        <Form.Item label="Remaining Qty"><Input disabled value={info.remaining} /></Form.Item>
+        <Form.Item label={`Budget Qty ${info.uom ? `(${info.uom})` : ''}`}><Input disabled value={info.qty} /></Form.Item>
+        <Form.Item label={`Used Qty ${info.uom ? `(${info.uom})` : ''}`}><Input disabled value={info.used} /></Form.Item>
+        <Form.Item label={`Remaining Qty ${info.uom ? `(${info.uom})` : ''}`}><Input disabled value={info.remaining} /></Form.Item>
       </>
     );
   };
 
-  const LineRow = ({ name, restField, remove, form }) => {
-    const productId = Form.useWatch([name, 'item_id'], form);
-    const requestDate = Form.useWatch('request_date', form);
-    const selectedItem = useMemo(() => (budgetItems || []).find(p => String(p.id) === String(productId)), [productId, budgetItems]);
+  const budgetItemMap = useMemo(() => {
+    const map = new Map();
+    (budgetItems || []).forEach((item) => {
+      map.set(String(item.id), item);
+    });
+    return map;
+  }, [budgetItems]);
 
-    useEffect(() => {
-      if (selectedItem) {
-        const uomText = selectedItem.uom_name || selectedItem.uom || 'EA';
-        let lines = form.getFieldValue('lines') || [];
-        const next = Array.isArray(lines) ? [...lines] : [];
-        const current = next[name] || {};
-        next[name] = { ...current, uom: uomText };
-        form.setFieldsValue({ lines: next });
-      }
-    }, [selectedItem, name, form]);
+  const LineRow = ({ name, restField, remove, form }) => {
+    const productId = Form.useWatch(['lines', name, 'item_id'], form);
+    const requestDate = Form.useWatch('request_date', form);
+    const selectedItem = useMemo(() => budgetItemMap.get(String(productId)), [productId, budgetItemMap]);
+    const selectedUom = useMemo(() => {
+      if (!selectedItem) return 'EA';
+      return selectedItem?.uom?.name || selectedItem?.uom_name || selectedItem?.uom_code || selectedItem?.uom || 'EA';
+    }, [selectedItem]);
 
     return (
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 1fr) 120px 100px 240px 160px 160px 160px auto', columnGap: 8, alignItems: 'end', marginBottom: 8 }}>
@@ -227,8 +234,8 @@ const InternalRequisitions = ({ openNew = false, onCloseNew }) => {
         <Form.Item {...restField} name={[name, 'quantity']} label="Qty" rules={[{ required: true, message: 'Qty' }]}>
           <InputNumber min={0.001} step={1} style={{ width: 120 }} />
         </Form.Item>
-        <Form.Item {...restField} name={[name, 'uom']} label="UoM">
-          <Input placeholder="EA" style={{ width: 100 }} disabled />
+        <Form.Item label="UoM">
+          <Input placeholder="EA" style={{ width: 100 }} disabled value={selectedUom} />
         </Form.Item>
         <Form.Item {...restField} name={[name, 'notes']} label="Notes">
           <Input placeholder="Optional" style={{ width: 240 }} />
@@ -254,14 +261,18 @@ const InternalRequisitions = ({ openNew = false, onCloseNew }) => {
       warehouse: values.warehouse || null,
       purpose: values.purpose || '',
       status: 'SUBMITTED',
-      lines: (values.lines || []).map((ln, idx) => ({
+      lines: (values.lines || []).map((ln, idx) => {
+        const itemRef = budgetItemMap.get(String(ln.budget_item_id)) || {};
+        const uomLabel = itemRef?.uom?.name || itemRef?.uom_name || itemRef?.uom_code || itemRef?.uom || 'EA';
+        return {
         line_no: idx + 1,
-        item_id: ln.item_id,
-        item_name: budgetItems.find((p) => String(p.id) === String(ln.item_id))?.name || '',
+        item_id: ln.budget_item_id,
+        item_name: budgetItems.find((p) => String(p.id) === String(ln.budget_item_id))?.name || '',
         quantity: Number(ln.quantity) || 0,
-        uom: ln.uom || 'EA',
+        uom: uomLabel,
         notes: ln.notes || '',
-      })),
+      };
+      }),
     };
 
     try {
@@ -316,7 +327,7 @@ const InternalRequisitions = ({ openNew = false, onCloseNew }) => {
       purpose: r.purpose || '',
     }));
     const header = 'Number,Date,Needed By,Status,Items,Purpose\n';
-    const body = rows.map((x) => `${x.number},${x.date},${x.needed_by},${x.status},${x.items},"${(x.purpose || '').replace(/"/g,'""')}"`).join('\n');
+    const body = rows.map((x) => `${x.number},${x.date},${x.needed_by},${x.status},${x.budget_items},"${(x.purpose || '').replace(/"/g,'""')}"`).join('\n');
     const blob = new Blob([header + body], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');

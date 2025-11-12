@@ -129,14 +129,22 @@ class GeminiAPIKeyAdmin(admin.ModelAdmin):
     status_badge.short_description = 'Status'
 
     def usage_today(self, obj):
-        percentage = (obj.requests_today / obj.daily_limit * 100) if obj.daily_limit > 0 else 0
+        requests_today = obj.requests_today or 0
+        daily_limit = obj.daily_limit or 0
+        if daily_limit > 0:
+            percentage = (requests_today / daily_limit) * 100
+            percentage_label = f"{percentage:.0f}%"
+        else:
+            percentage = 0
+            percentage_label = '—'
         color = 'green' if percentage < 70 else 'orange' if percentage < 90 else 'red'
+        limit_label = daily_limit if daily_limit > 0 else '∞'
         return format_html(
-            '<span style="color: {};">{} / {} ({:.0f}%)</span>',
+            '<span style="color: {};">{} / {} ({})</span>',
             color,
-            obj.requests_today,
-            obj.daily_limit,
-            percentage
+            requests_today,
+            limit_label,
+            percentage_label
         )
     usage_today.short_description = 'Usage Today'
 

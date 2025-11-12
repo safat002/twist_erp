@@ -44,7 +44,7 @@ class WorkOrderPriority(models.TextChoices):
 class BillOfMaterial(models.Model):
     company_group = models.ForeignKey("companies.CompanyGroup", on_delete=models.PROTECT)
     company = models.ForeignKey("companies.Company", on_delete=models.PROTECT)
-    product = models.ForeignKey("inventory.Item", on_delete=models.PROTECT, related_name="boms")
+    product = models.ForeignKey("budgeting.BudgetItemCode", on_delete=models.PROTECT, related_name="boms")
     code = models.CharField(max_length=32, blank=True)
     version = models.CharField(max_length=16, default="1.0")
     name = models.CharField(max_length=255, blank=True)
@@ -78,7 +78,7 @@ class BillOfMaterial(models.Model):
 class BillOfMaterialComponent(models.Model):
     bom = models.ForeignKey(BillOfMaterial, on_delete=models.CASCADE, related_name="components")
     sequence = models.PositiveIntegerField(default=1)
-    component = models.ForeignKey("inventory.Item", on_delete=models.PROTECT, related_name="bom_components")
+    component = models.ForeignKey("budgeting.BudgetItemCode", on_delete=models.PROTECT, related_name="bom_components")
     quantity = models.DecimalField(max_digits=15, decimal_places=3)
     uom = models.ForeignKey("inventory.UnitOfMeasure", on_delete=models.PROTECT, null=True, blank=True)
     scrap_percent = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
@@ -101,7 +101,7 @@ class WorkOrder(models.Model):
     company_group = models.ForeignKey("companies.CompanyGroup", on_delete=models.PROTECT)
     company = models.ForeignKey("companies.Company", on_delete=models.PROTECT)
     number = models.CharField(max_length=40, blank=True)
-    product = models.ForeignKey("inventory.Item", on_delete=models.PROTECT, related_name="work_orders")
+    product = models.ForeignKey("budgeting.BudgetItemCode", on_delete=models.PROTECT, related_name="work_orders")
     bom = models.ForeignKey(BillOfMaterial, on_delete=models.SET_NULL, null=True, blank=True, related_name="work_orders")
     quantity_planned = models.DecimalField(max_digits=15, decimal_places=3)
     quantity_completed = models.DecimalField(max_digits=15, decimal_places=3, default=Decimal("0.000"))
@@ -376,7 +376,7 @@ class WorkOrder(models.Model):
 class WorkOrderComponent(models.Model):
     work_order = models.ForeignKey(WorkOrder, on_delete=models.CASCADE, related_name="components")
     component = models.ForeignKey(
-        "inventory.Item",
+        "budgeting.BudgetItemCode",
         on_delete=models.PROTECT,
         related_name="work_order_components",
         help_text="Component item required for production"
@@ -419,7 +419,7 @@ class MaterialIssueLine(models.Model):
     issue = models.ForeignKey(MaterialIssue, on_delete=models.CASCADE, related_name="lines")
     component = models.ForeignKey(WorkOrderComponent, on_delete=models.CASCADE, related_name="issues")
     item = models.ForeignKey(
-        "inventory.Item",
+        "budgeting.BudgetItemCode",
         on_delete=models.PROTECT,
         related_name="material_issue_lines",
         help_text="Item being issued for production"

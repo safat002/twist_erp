@@ -28,6 +28,9 @@ import {
   BankOutlined,
   AuditOutlined,
   LinkOutlined,
+  InboxOutlined,
+  SendOutlined,
+  DatabaseOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../services/api';
@@ -36,6 +39,7 @@ import { useCompany } from '../contexts/CompanyContext';
 import { useFeatures } from '../contexts/FeatureContext';
 import CompanySelector from '../components/Common/CompanySelector';
 import AIWidget from '../components/AIAssistant/AIWidget';
+import { CommandPalette } from '../components/Inventory';
 import logo from '../assets/twist_erp_logo.png';
 import icon from '../assets/twist_erp_icon.png';
 
@@ -54,6 +58,7 @@ const MainLayout = ({ children }) => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [createVisible, setCreateVisible] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [commandPaletteVisible, setCommandPaletteVisible] = useState(false);
   const [form] = Form.useForm();
 
   useEffect(() => {
@@ -87,6 +92,19 @@ const MainLayout = ({ children }) => {
       clearInterval(id);
     };
   }, [currentCompany?.id, isAuthenticated]);
+
+  // Command Palette keyboard shortcut (Ctrl+K or Cmd+K)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setCommandPaletteVisible(true);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const iconFromFeature = (moduleKey, featureKey = 'module') => {
     try {
@@ -127,9 +145,10 @@ const MainLayout = ({ children }) => {
       icon: iconFromFeature('finance') || <DollarOutlined />,
       label: 'Finance',
       children: [
-        { key: '/finance', label: 'Finance Control Tower', icon: iconFromFeature('finance') },
-        { key: '/finance/accounts', label: 'Chart of Accounts', icon: iconFromFeature('finance', 'chart_of_accounts') },
-        { key: '/finance/journals', label: 'Journal Vouchers', icon: iconFromFeature('finance', 'journal_vouchers') },
+          { key: '/finance', label: 'Finance Control Tower', icon: iconFromFeature('finance') },
+          { key: '/finance/accounts', label: 'Chart of Accounts', icon: iconFromFeature('finance', 'chart_of_accounts') },
+          { key: '/finance/gl-posting-rules', label: 'GL Posting Rules', icon: iconFromFeature('finance', 'inventory_posting_rules') },
+          { key: '/finance/journals', label: 'Journal Vouchers', icon: iconFromFeature('finance', 'journal_vouchers') },
         { key: '/finance/invoices', label: 'Invoices', icon: iconFromFeature('finance', 'invoices') },
         { key: '/finance/payments', label: 'Payments', icon: iconFromFeature('finance', 'payments') },
         { key: '/finance/periods', label: 'Fiscal Periods', icon: iconFromFeature('finance', 'periods') },
@@ -153,21 +172,55 @@ const MainLayout = ({ children }) => {
       icon: iconFromFeature('inventory') || <AppstoreOutlined />,
       label: 'Inventory',
       children: [
-        { key: '/inventory', label: 'Inventory Control Tower', icon: iconFromFeature('inventory') },
-        { key: '/inventory/products', label: 'Products', icon: iconFromFeature('inventory', 'products') },
-        { key: '/inventory/warehouses', label: 'Warehouses', icon: iconFromFeature('inventory', 'warehouses') },
-        { key: '/inventory/movements', label: 'Stock Movements', icon: iconFromFeature('inventory', 'stock_movements') },
-        { key: '/inventory/requisitions', label: 'Requisitions', icon: iconFromFeature('inventory', 'requisitions_internal') },
+        { key: '/inventory', label: 'Dashboard', icon: <DashboardOutlined /> },
         {
-          key: '/inventory/valuation',
-          label: 'Valuation',
+          key: 'inventory-master',
+          label: 'Master Data',
+          icon: <DatabaseOutlined />,
+          children: [
+            { key: '/inventory/products', label: 'Items & Products', icon: iconFromFeature('inventory', 'products') },
+            { key: '/inventory/warehouses', label: 'Warehouses & Bins', icon: iconFromFeature('inventory', 'warehouses') },
+          ]
+        },
+        {
+          key: 'inventory-inbound',
+          label: 'Inbound Operations',
+          icon: <InboxOutlined />,
+          children: [
+            { key: '/inventory/goods-receipts', label: 'Goods Receipts (GRN)' },
+            { key: '/inventory/landed-cost-vouchers', label: 'Landed Cost Vouchers' },
+            { key: '/inventory/return-to-vendor', label: 'Return To Vendor', icon: <SwapOutlined /> },
+          ]
+        },
+        {
+          key: 'inventory-outbound',
+          label: 'Outbound Operations',
+          icon: <SendOutlined />,
+          children: [
+            { key: '/inventory/material-issues', label: 'Material Issues' },
+            { key: '/inventory/requisitions', label: 'Requisitions', icon: iconFromFeature('inventory', 'requisitions_internal') },
+          ]
+        },
+        { key: '/inventory/movements', label: 'Stock Movements', icon: <SwapOutlined /> },
+        {
+          key: 'inventory-valuation',
+          label: 'Valuation & Finance',
           icon: <DollarOutlined />,
           children: [
-        { key: '/inventory/valuation/settings', label: 'Valuation Settings' },
-        { key: '/inventory/valuation/cost-layers', label: 'Cost Layers' },
-        { key: '/inventory/valuation/report', label: 'Valuation Report' },
-        { key: '/inventory/valuation/landed-cost', label: 'Landed Cost Adjustment' },
-      ],
+            { key: '/inventory/valuation/settings', label: 'Valuation Settings' },
+            { key: '/inventory/valuation/cost-layers', label: 'Cost Layers' },
+            { key: '/inventory/valuation/report', label: 'Valuation Report' },
+            { key: '/inventory/valuation/landed-cost', label: 'Landed Cost Adjustment' },
+          ],
+        },
+        {
+          key: 'inventory-qc',
+          label: 'Quality & Compliance',
+          icon: <SafetyCertificateOutlined />,
+          children: [
+            { key: '/inventory/quality-control', label: 'Quality Inspections' },
+            { key: '/inventory/qc/stock-holds', label: 'Stock Holds' },
+          ]
         },
       ],
     },
@@ -721,6 +774,10 @@ const MainLayout = ({ children }) => {
           </Form>
         </Modal>
         <AIWidget />
+        <CommandPalette
+          visible={commandPaletteVisible}
+          onClose={() => setCommandPaletteVisible(false)}
+        />
     </Layout>
     </Layout>
   );

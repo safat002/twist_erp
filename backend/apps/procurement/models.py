@@ -54,6 +54,25 @@ class Supplier(models.Model):
         return f"{self.company.code if hasattr(self.company, 'code') else self.company_id}::{self.code}"
 
 
+class SupplierBlackoutWindow(models.Model):
+    """Supplier availability blackout periods (no deliveries)."""
+
+    supplier = models.ForeignKey(Supplier, on_delete=models.CASCADE, related_name='blackout_windows')
+    start_date = models.DateField()
+    end_date = models.DateField()
+    reason = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['start_date']
+        indexes = [
+            models.Index(fields=['supplier', 'start_date', 'end_date']),
+        ]
+
+    def __str__(self):
+        return f"{self.supplier.code} blackout {self.start_date} - {self.end_date}"
+
+
 class PurchaseRequisition(models.Model):
     class Status(models.TextChoices):
         DRAFT = "draft", "Draft"

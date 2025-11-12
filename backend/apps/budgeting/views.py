@@ -30,6 +30,7 @@ from .models import (
     BudgetRemarkTemplate,
     BudgetVarianceAudit,
     BudgetApproval,
+    BudgetApprovalLine,
 )
 from .serializers import (
     BudgetLineSerializer,
@@ -389,6 +390,17 @@ class BudgetViewSet(viewsets.ModelViewSet):
             comments,
             modifications,
         )
+        # Check if all CC lines are now cleared and advance status if so
+        all_cleared = True
+        for line in budget.lines.all():
+            if (line.metadata or {}).get('cost_center_id') == budget.cost_center_id:
+                if not (line.metadata or {}).get('approved') and not line.sent_back_for_review:
+                    all_cleared = False
+                    break
+        if all_cleared:
+            budget.status = Budget.STATUS_PENDING_MODERATOR_REVIEW
+            budget.save(update_fields=["status", "updated_at"])
+            
         return Response(self.get_serializer(budget).data)
 
     @action(detail=True, methods=["post"])
@@ -930,8 +942,9 @@ class BudgetLineViewSet(viewsets.ModelViewSet):
                 "budget__cost_center",
                 "budget_owner",
                 "sub_category",
-                "item",
-                "item__category",
+                "budget_item",
+                "budget_item__category_ref",
+                "budget_item__sub_category_ref",
             )
         )
         if company and not getattr(user, "is_superuser", False):
@@ -1021,38 +1034,23 @@ class BudgetLineViewSet(viewsets.ModelViewSet):
             Q(metadata__cost_center_id=cid)
         )
 
-        # Filter budgets that are final approved/active and whose period includes the date
+        allowed_statuses = [
+            getattr(Budget, "STATUS_AUTO_APPROVED", "AUTO_APPROVED"),
+            getattr(Budget, "STATUS_APPROVED", "APPROVED"),
+            getattr(Budget, "STATUS_ACTIVE", "ACTIVE"),
+        ]
         qs = qs.filter(
-            budget__status__in=[Budget.STATUS_APPROVED, Budget.STATUS_ACTIVE],
+            budget__status__in=allowed_statuses,
             budget__period_start__lte=target_date,
             budget__period_end__gte=target_date,
         )
-        # Filter budgets that are final approved/active and whose period includes the date
-        qs = qs.filter(
-            budget__status__in=[
-                Budget.STATUS_APPROVED,
-                Budget.STATUS_ACTIVE,
-                Budget.STATUS_CC_APPROVED,
-                Budget.STATUS_MODERATOR_REVIEWED,
-                Budget.STATUS_AUTO_APPROVED,
-                Budget.STATUS_PENDING_FINAL_APPROVAL,
-            ],
-            budget__period_start__lte=target_date,
-            budget__period_end__gte=target_date,
-        )
-        # Only include lines from approved/active budgets; per-line approval flag is not required here.
-        # If you use a per-line approval flag in metadata, you can re-enable this:
-        # qs = qs.filter(metadata__approved=True)
+        qs = qs.filter(final_decision=BudgetLine.FinalDecision.APPROVED)
 
-        # Match product by approximate name/code mapping like get_queryset does
-        # Prefer explicit budget item code id mapping
         if item_code_id:
             try:
-                from .models import BudgetItemCode as BIC
-                bic = BIC.objects.filter(id=int(item_code_id)).first()
+                bic = BudgetItemCode.objects.filter(id=int(item_code_id)).first()
                 if bic:
-                    cond = Q(item_code__iexact=bic.code)
-                    qs = qs.filter(cond)
+                    qs = qs.filter(item_code__iexact=bic.code)
             except Exception:
                 pass
         elif product:
@@ -1080,6 +1078,42 @@ class BudgetLineViewSet(viewsets.ModelViewSet):
         total_qty = agg.get("total_qty") or Decimal("0")
         total_used = agg.get("total_used") or Decimal("0")
         remaining = total_qty - total_used
+
+        bic_for_uom = None
+        if item_code_id:
+            try:
+                bic_for_uom = BudgetItemCode.objects.select_related("uom").filter(id=int(item_code_id)).first()
+            except Exception:
+                bic_for_uom = None
+
+        uom_label = ""
+        try:
+            first_line = qs.order_by("id").select_related("budget_item").first()
+            if first_line:
+                if getattr(first_line, "budget_item", None) and getattr(first_line.budget_item, "unit_of_measure", None):
+                    uom_label = getattr(first_line.budget_item.unit_of_measure, "name", None) or getattr(first_line.budget_item.unit_of_measure, "code", "")
+                if not uom_label:
+                    meta = getattr(first_line, "metadata", {}) or {}
+                    uom_label = meta.get("uom_name") or meta.get("uom_code") or meta.get("uom") or ""
+                if not uom_label:
+                    source_item = bic_for_uom
+                    if not source_item and first_line.item_code:
+                        company_group_id = getattr(getattr(first_line.budget, "company", None), "company_group_id", None)
+                        item_code_qs = BudgetItemCode.objects.select_related("uom").filter(code=first_line.item_code)
+                        if company_group_id:
+                            item_code_qs = item_code_qs.filter(
+                                Q(company__company_group_id=company_group_id) |
+                                Q(company_group_id=company_group_id)
+                            )
+                        source_item = item_code_qs.first()
+                    if source_item and getattr(source_item, "uom", None):
+                        uom_label = getattr(source_item.uom, "name", None) or getattr(source_item.uom, "code", "")
+        except Exception:
+            uom_label = ""
+
+        if not uom_label and bic_for_uom and getattr(bic_for_uom, "uom", None):
+            uom_label = getattr(bic_for_uom.uom, "name", None) or getattr(bic_for_uom.uom, "code", "")
+
         return Response({
             "date": target_date.isoformat(),
             "cost_center": cid,
@@ -1087,6 +1121,7 @@ class BudgetLineViewSet(viewsets.ModelViewSet):
             "approved_quantity": float(total_qty),
             "consumed_quantity": float(total_used),
             "remaining_quantity": float(remaining),
+            "uom": uom_label,
         })
 
     def perform_create(self, serializer):
@@ -1504,6 +1539,42 @@ class BudgetLineViewSet(viewsets.ModelViewSet):
         )
 
         return Response(result)
+
+    @action(detail=False, methods=["post"], url_path="batch_moderator_approve")
+    def batch_moderator_approve(self, request):
+        """
+        Approve multiple budget lines as a moderator.
+        Request body: { "budget_line_ids": [1, 2, 3] }
+        """
+        company = getattr(request, "company", None)
+        user = request.user
+
+        if not BudgetPermissionService.user_is_budget_moderator(user, company):
+            return Response(
+                {"detail": "Only moderators can approve lines."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        budget_line_ids = request.data.get("budget_line_ids", [])
+        if not budget_line_ids:
+            return Response({"detail": "budget_line_ids are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        lines_to_approve = BudgetLine.objects.filter(id__in=budget_line_ids)
+        
+        # Verify all lines belong to the moderator's company
+        for line in lines_to_approve:
+            if line.budget.company != company:
+                return Response({"detail": "You can only approve lines within your company."}, status=status.HTTP_403_FORBIDDEN)
+
+        updated_count = 0
+        for line in lines_to_approve:
+            metadata = line.metadata or {}
+            metadata['moderator_approved'] = True
+            line.metadata = metadata
+            line.save(update_fields=["metadata"])
+            updated_count += 1
+
+        return Response({"detail": f"{updated_count} lines approved by moderator."})
 
     @action(detail=False, methods=["post"])
     def batch_apply_template_to_category(self, request):
@@ -2151,6 +2222,7 @@ class DeclaredBudgetsView(APIView):
                         data.append({
                             "id": b.id,
                             "name": b.name,
+                            "display_name": str(b),
                             "budget_type": b.budget_type,
                             "period_start": b.period_start,
                             "period_end": b.period_end,
@@ -2421,6 +2493,24 @@ class SubmitEntryView(APIView):
                 status=BA.Status.PENDING,
                 defaults={"approver": approver},
             )
+            # Ensure approval line scope contains all CC lines in PENDING
+            try:
+                from .models import BudgetApprovalLine as BAL
+                # Scope: lines in this budget that belong to the CC (metadata.cost_center_id or budget.cost_center)
+                raw_qs = BudgetLine.objects.filter(budget_id=declared.id)
+                for bl in raw_qs:
+                    meta = getattr(bl, 'metadata', {}) or {}
+                    belongs = (meta.get('cost_center_id') == cc.id) or (getattr(declared, 'cost_center_id', None) == cc.id)
+                    if not belongs:
+                        continue
+                    # Create scope row if not exists
+                    BAL.objects.get_or_create(
+                        approval=approval,
+                        line=bl,
+                        defaults={"stage": BAL.Stage.CC_APPROVAL, "status": BAL.LineStatus.PENDING}
+                    )
+            except Exception:
+                pass
             if approver and approval.approver_id is None:
                 approval.approver = approver
                 approval.save(update_fields=["approver"])
@@ -2531,19 +2621,18 @@ class BudgetApprovalViewSet(viewsets.ReadOnlyModelViewSet):
         approval_instance = self.get_object()
         budget = approval_instance.budget
         
-        # Get budget lines with moderator remarks
-        remarked_lines = budget.lines.exclude(moderator_remarks="").exclude(moderator_remarks__isnull=True)
-        
+        # Scoped lines via BudgetApprovalLine
+        from .models import BudgetApprovalLine as BAL
+        stage = BAL.Stage.FINAL_APPROVAL if approval_instance.approver_type == BudgetApproval.ApproverType.BUDGET_MODULE_OWNER else BAL.Stage.CC_APPROVAL
+        scoped = BAL.objects.select_related("line").filter(approval=approval_instance, stage=stage)
+        lines = [x.line for x in scoped]
+
         approval_data = self.get_serializer(approval_instance).data
-        approval_data['remarked_lines'] = BudgetLineSerializer(remarked_lines, many=True, context={"request": request}).data
-        # Include auto-forwarded lines (not reviewed) for final approvals
-        try:
-            if approval_instance.approver_type == BudgetApproval.ApproverType.BUDGET_MODULE_OWNER:
-                not_reviewed = budget.lines.filter(metadata__not_reviewed=True)
-                approval_data['not_reviewed_lines'] = BudgetLineSerializer(not_reviewed, many=True, context={"request": request}).data
-        except Exception:
+        approval_data['scoped_lines'] = BudgetLineSerializer(lines, many=True, context={"request": request}).data
+        # Backward-compat fields used by some UIs
+        if approval_instance.approver_type == BudgetApproval.ApproverType.BUDGET_MODULE_OWNER:
+            approval_data['remarked_lines'] = approval_data['scoped_lines']
             approval_data['not_reviewed_lines'] = []
-        
         return Response(approval_data)
 
     @action(detail=True, methods=["post"])
@@ -2554,24 +2643,34 @@ class BudgetApprovalViewSet(viewsets.ReadOnlyModelViewSet):
         if not line_ids:
             return Response({"detail": "line_ids are required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        lines_to_approve = BudgetLine.objects.filter(id__in=line_ids, budget=approval_instance.budget)
+        from .models import BudgetApproval as BA, BudgetApprovalLine as BAL
+        stage = BAL.Stage.FINAL_APPROVAL if approval_instance.approver_type == BA.ApproverType.BUDGET_MODULE_OWNER else BAL.Stage.CC_APPROVAL
+        # Validate scope
+        scoped_map = {x.line_id: x for x in BAL.objects.filter(approval=approval_instance, stage=stage, line_id__in=line_ids)}
+        missing = [lid for lid in line_ids if lid not in scoped_map]
+        if missing:
+            return Response({"detail": "Some lines do not belong to this approval task.", "missing": missing}, status=status.HTTP_400_BAD_REQUEST)
 
-        from .models import BudgetApproval as BA
+        lines_to_approve = BudgetLine.objects.filter(id__in=list(scoped_map.keys()), budget=approval_instance.budget)
+
         if approval_instance.approver_type == BA.ApproverType.BUDGET_MODULE_OWNER:
-            # Final approver marks final_approved
+            # Final approver: update line final_decision
+            from django.utils import timezone
             for line in lines_to_approve:
-                metadata = line.metadata or {}
-                metadata['final_approved'] = True
-                line.metadata = metadata
-                line.save(update_fields=["metadata"])
+                line.final_decision = line.FinalDecision.APPROVED
+                line.final_decision_by = request.user
+                line.final_decision_at = timezone.now()
+                md = line.metadata or {}
+                md['final_approved'] = True
+                md.pop('final_rejected', None)
+                line.metadata = md
+                line.save(update_fields=["final_decision", "final_decision_by", "final_decision_at", "metadata"])
+                al = scoped_map.get(line.id)
+                if al:
+                    al.status = BAL.LineStatus.APPROVED
+                    al.save(update_fields=["status", "updated_at"])
 
-            # If all remarked lines are approved, mark this approval task as APPROVED
-            budget = approval_instance.budget
-            try:
-                remaining = budget.lines.exclude(moderator_remarks="").exclude(moderator_remarks__isnull=True).exclude(metadata__final_approved=True).count()
-            except Exception:
-                remaining = 0
-
+            remaining = approval_instance.approval_lines.filter(stage=stage, status=BAL.LineStatus.PENDING).count()
             if remaining == 0 and approval_instance.status == BA.Status.PENDING:
                 from django.utils import timezone
                 approval_instance.status = BA.Status.APPROVED
@@ -2580,24 +2679,23 @@ class BudgetApprovalViewSet(viewsets.ReadOnlyModelViewSet):
                 approval_instance.decision_date = timezone.now()
                 approval_instance.save(update_fields=["status", "approver", "decision_date"])
         elif approval_instance.approver_type == BA.ApproverType.COST_CENTER_OWNER:
-            # CC approver marks approved=true
+            # CC approver: update line cc_decision
+            from django.utils import timezone
             for line in lines_to_approve:
-                metadata = line.metadata or {}
-                metadata['approved'] = True
-                metadata['rejected'] = False
-                line.metadata = metadata
-                line.save(update_fields=["metadata"])
-            # If all lines for this CC are either approved or sent_back, approve task
-            budget = approval_instance.budget
-            cc = approval_instance.cost_center or getattr(budget, 'cost_center', None)
-            remaining = 0
-            if cc:
-                cc_lines = list(budget.lines.all())
-                target = [bl for bl in cc_lines if (getattr(bl, 'metadata', {}) or {}).get('cost_center_id') == cc.id or getattr(budget, 'cost_center_id', None) == cc.id]
-                for bl in target:
-                    meta = getattr(bl, 'metadata', {}) or {}
-                    if not meta.get('approved') and not getattr(bl, 'sent_back_for_review', False):
-                        remaining += 1
+                line.cc_decision = line.CCDecision.APPROVED
+                line.cc_decision_by = request.user
+                line.cc_decision_at = timezone.now()
+                md = line.metadata or {}
+                md['approved'] = True
+                md['rejected'] = False
+                line.metadata = md
+                line.save(update_fields=["cc_decision", "cc_decision_by", "cc_decision_at", "metadata"])
+                al = scoped_map.get(line.id)
+                if al:
+                    al.status = BAL.LineStatus.APPROVED
+                    al.save(update_fields=["status", "updated_at"])
+
+            remaining = approval_instance.approval_lines.filter(stage=stage, status=BAL.LineStatus.PENDING).count()
             if remaining == 0 and approval_instance.status == BA.Status.PENDING:
                 from django.utils import timezone
                 approval_instance.status = BA.Status.APPROVED
@@ -2616,31 +2714,37 @@ class BudgetApprovalViewSet(viewsets.ReadOnlyModelViewSet):
         if not line_ids:
             return Response({"detail": "line_ids are required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        lines_to_reject = BudgetLine.objects.filter(id__in=line_ids, budget=approval_instance.budget)
-
-        from .models import BudgetApproval as BA
+        from .models import BudgetApproval as BA, BudgetApprovalLine as BAL
         if approval_instance.approver_type != BA.ApproverType.BUDGET_MODULE_OWNER:
             return Response({"detail": "Reject lines is only supported for final approvers."}, status=status.HTTP_400_BAD_REQUEST)
+        # Validate scope
+        stage = BAL.Stage.FINAL_APPROVAL
+        scoped_map = {x.line_id: x for x in BAL.objects.filter(approval=approval_instance, stage=stage, line_id__in=line_ids)}
+        missing = [lid for lid in line_ids if lid not in scoped_map]
+        if missing:
+            return Response({"detail": "Some lines do not belong to this approval task.", "missing": missing}, status=status.HTTP_400_BAD_REQUEST)
+
+        lines_to_reject = BudgetLine.objects.filter(id__in=list(scoped_map.keys()), budget=approval_instance.budget)
 
         # Mark final_rejected
+        from django.utils import timezone
         for line in lines_to_reject:
+            line.final_decision = line.FinalDecision.REJECTED
+            line.final_decision_by = request.user
+            line.final_decision_at = timezone.now()
             metadata = line.metadata or {}
             metadata['final_rejected'] = True
-            # Ensure not final approved
             metadata.pop('final_approved', None)
             line.metadata = metadata
-            line.save(update_fields=["metadata"])
+            line.save(update_fields=["final_decision", "final_decision_by", "final_decision_at", "metadata"])
+            al = scoped_map.get(line.id)
+            if al:
+                al.status = BAL.LineStatus.REJECTED
+                al.save(update_fields=["status", "updated_at"])
 
-        # Determine if any remarked/not-reviewed lines remain undecided
-        budget = approval_instance.budget
-        try:
-            remaining = budget.lines.exclude(moderator_remarks="").exclude(moderator_remarks__isnull=True).exclude(metadata__final_approved=True).exclude(metadata__final_rejected=True).count()
-        except Exception:
-            remaining = 0
-
+        remaining = approval_instance.approval_lines.filter(stage=stage, status=BAL.LineStatus.PENDING).count()
         if remaining == 0 and approval_instance.status == BA.Status.PENDING:
             # Consider task completed
-            from django.utils import timezone
             approval_instance.status = BA.Status.APPROVED
             if not approval_instance.approver:
                 approval_instance.approver = request.user
@@ -2701,10 +2805,8 @@ class BudgetApprovalQueueView(APIView):
 
             approvals = qs.filter(predicate).order_by("-created_at")
 
-        # Build data grouped by budget + cost center
-        # For each budget with pending approval, show separate rows for each cost center that has budget lines
+        # Build data grouped by approval (each approval already scoped to a budget/cost center)
         data = []
-        processed_combinations = set()  # Track (budget_id, cost_center_id) to avoid duplicates
         by_type_count = {"name": 0, "cc": 0, "final": 0}
 
         for a in approvals:
@@ -2739,121 +2841,133 @@ class BudgetApprovalQueueView(APIView):
             except Exception:
                 pass
 
-            # Get all unique cost centers from budget lines metadata for this budget
-            budget_lines = BudgetLine.objects.filter(budget=budget)
+            display_status = "pending"
+            stage_value = BudgetApprovalLine.Stage.CC_APPROVAL if a.approver_type == BA.ApproverType.COST_CENTER_OWNER else BudgetApprovalLine.Stage.FINAL_APPROVAL
+            scoped_entries = list(
+                a.approval_lines.filter(stage=stage_value).select_related("line", "line__budget")
+            )
+            total_count = len(scoped_entries)
+            approved_count = sum(1 for entry in scoped_entries if entry.status == BudgetApprovalLine.LineStatus.APPROVED)
+            pending_count = sum(1 for entry in scoped_entries if entry.status == BudgetApprovalLine.LineStatus.PENDING)
+            sent_back_count = sum(1 for entry in scoped_entries if entry.status == BudgetApprovalLine.LineStatus.SENT_BACK)
 
-            # Extract unique cost center IDs from metadata
-            cost_center_ids = set()
-            for line in budget_lines:
-                metadata = getattr(line, "metadata", {}) or {}
-                cc_id = metadata.get("cost_center_id")
-                if cc_id:
-                    cost_center_ids.add(cc_id)
+            if a.approver_type == BA.ApproverType.COST_CENTER_OWNER:
+                if total_count == 0:
+                    display_status = "pending"
+                elif sent_back_count and sent_back_count == total_count:
+                    display_status = "sent_back"
+                elif approved_count == total_count:
+                    display_status = "approved"
+                elif approved_count and approved_count < total_count:
+                    display_status = "partially_approved"
+                else:
+                    display_status = "pending"
+            elif a.approver_type == BA.ApproverType.BUDGET_MODULE_OWNER:
+                if total_count == 0:
+                    display_status = "pending_final"
+                elif approved_count == total_count:
+                    display_status = "approved"
+                elif approved_count and approved_count < total_count:
+                    display_status = "partially_approved"
+                elif sent_back_count == total_count:
+                    display_status = "sent_back"
+                else:
+                    display_status = "pending_final"
 
-            # If no cost centers found in metadata, check budget's cost_center or show as company-wide
-            if not cost_center_ids:
-                budget_cost_center = getattr(budget, "cost_center", None)
-                if budget_cost_center:
-                    cost_center_ids.add(budget_cost_center.id)
+            if a.approver_type == BA.ApproverType.BUDGET_MODULE_OWNER:
+                grouped_lines = {}
+                for entry in scoped_entries:
+                    line = entry.line
+                    meta = getattr(line, "metadata", {}) or {}
+                    cid = meta.get("cost_center_id") or getattr(line.budget, "cost_center_id", None)
+                    grouped_lines.setdefault(cid, []).append(entry)
 
-            # If still no cost centers, add a company-wide entry
-            if not cost_center_ids:
-                combination_key = (budget.id, None)
-                if combination_key not in processed_combinations:
-                    processed_combinations.add(combination_key)
-                    # not reviewed count for full budget
-                    try:
-                        nr_count = 0
-                        try_lines = BudgetLine.objects.filter(budget=budget)
-                        for bl in try_lines:
-                            meta = getattr(bl, 'metadata', {}) or {}
-                            if bool(meta.get('not_reviewed')):
-                                nr_count += 1
-                    except Exception:
-                        nr_count = 0
+                if not grouped_lines:
+                    grouped_lines = {getattr(budget, "cost_center_id", None): scoped_entries}
+
+                for grouped_cc_id, entries in grouped_lines.items():
+                    subset_total = len(entries)
+                    subset_pending = sum(1 for entry in entries if entry.status == BudgetApprovalLine.LineStatus.PENDING)
+                    subset_approved = sum(1 for entry in entries if entry.status == BudgetApprovalLine.LineStatus.APPROVED)
+                    subset_sent = sum(1 for entry in entries if entry.status == BudgetApprovalLine.LineStatus.SENT_BACK)
+
+                    if subset_total == 0:
+                        subset_display = "pending_final"
+                    elif subset_approved == subset_total:
+                        subset_display = "approved"
+                    elif subset_approved and subset_approved < subset_total:
+                        subset_display = "partially_approved"
+                    elif subset_sent == subset_total:
+                        subset_display = "sent_back"
+                    else:
+                        subset_display = "pending_final"
+
+                    if grouped_cc_id:
+                        cost_center = CostCenter.objects.filter(pk=grouped_cc_id).first()
+                    else:
+                        cost_center = getattr(budget, "cost_center", None)
+                    if cost_center:
+                        cc_display = getattr(cost_center, "name", None) or getattr(cost_center, "code", "Cost Center")
+                    else:
+                        cc_display = "Company-wide"
+
                     data.append({
-                        "id": f"{a.id}_company",
+                        "id": f"{a.id}_{grouped_cc_id or 'company'}",
                         "approval_id": a.id,
                         "budget_id": a.budget_id,
+                        "cc_budget_id": None,
                         "budget_name": str(budget),
                         "budget_type": getattr(budget, "budget_type", None),
                         "budget_status": getattr(budget, "status", None),
                         "approver_type": a.approver_type,
                         "status": a.status,
-                        "not_reviewed_count": nr_count,
-                        "cost_center": "Company-wide",
-                        "cost_center_id": None,
+                        "display_status": subset_display,
+                        "approved_count": subset_approved,
+                        "total_count": subset_total,
+                        "pending_count": subset_pending,
+                        "cc_can_approve": False,
+                        "cost_center": cc_display,
+                        "cost_center_id": grouped_cc_id,
                         "created_at": a.created_at,
                     })
+                continue
             else:
-                # Create a row for each cost center
-                for cc_id in cost_center_ids:
-                    # Check if we already added this combination
-                    combination_key = (budget.id, cc_id)
-                    if combination_key in processed_combinations:
-                        continue
-                    processed_combinations.add(combination_key)
-
-                    # Fetch cost center details
-                    try:
-                        cost_center = CostCenter.objects.get(pk=cc_id)
-                        cc_name = getattr(cost_center, "name", "")
-                        cc_display = cc_name or "Unnamed Cost Center"
-                    except CostCenter.DoesNotExist:
-                        cc_display = f"Cost Center (ID: {cc_id})"
-
-                    # Try to locate CC-specific child budget if this is a declared budget with per-CC budgets
+                cost_center = a.cost_center or getattr(budget, "cost_center", None)
+                cc_id = getattr(cost_center, 'id', None)
+                if a.approver_type == BA.ApproverType.BUDGET_MODULE_OWNER:
+                    cc_display = "Company-wide"
+                elif cost_center:
+                    cc_display = getattr(cost_center, "name", None) or getattr(cost_center, "code", "Cost Center")
+                else:
+                    cc_display = "Company-wide"
+    
+                cc_budget_id = None
+                if cc_id:
                     try:
                         cc_budget = Budget.objects.filter(parent_declared=budget, cost_center_id=cc_id).order_by('-revision_no').first()
                         cc_budget_id = getattr(cc_budget, 'id', None)
                     except Exception:
                         cc_budget_id = None
 
-                    # Compute display status for CC rows (partial approvals)
-                    display_status = a.status
-                    approved_count = 0
-                    total_count = 0
-                    pending_count = 0
-                    try:
-                        cc_lines = []
-                        for line in budget_lines:
-                            meta = getattr(line, "metadata", {}) or {}
-                            if meta.get("cost_center_id") == cc_id:
-                                cc_lines.append(line)
-                        if cc_lines:
-                            for bl in cc_lines:
-                                meta = getattr(bl, "metadata", {}) or {}
-                                if bool(meta.get("approved")):
-                                    approved_count += 1
-                                else:
-                                    # Pending if not approved and not sent back
-                                    if not getattr(bl, 'sent_back_for_review', False):
-                                        pending_count += 1
-                            total_count = len(cc_lines)
-                            if 0 < approved_count < total_count:
-                                display_status = "partially_approved"
-                    except Exception:
-                        pass
-
-                    data.append({
-                        "id": f"{a.id}_{cc_id}",
-                        "approval_id": a.id,
-                        "budget_id": a.budget_id,
-                        "cc_budget_id": cc_budget_id,
-                        "budget_name": str(budget),
-                        "budget_type": getattr(budget, "budget_type", None),
-                        "budget_status": getattr(budget, "status", None),
-                        "approver_type": a.approver_type,
-                        "status": a.status,
-                        "display_status": display_status,
-                        "approved_count": approved_count,
-                        "total_count": total_count,
-                        "pending_count": pending_count,
-                        "cc_can_approve": cc_can_approve,
-                        "cost_center": cc_display,
-                        "cost_center_id": cc_id,
-                        "created_at": a.created_at,
-                    })
+                data.append({
+                    "id": f"{a.id}_{cc_id or 'company'}",
+                    "approval_id": a.id,
+                    "budget_id": a.budget_id,
+                    "cc_budget_id": cc_budget_id,
+                    "budget_name": str(budget),
+                    "budget_type": getattr(budget, "budget_type", None),
+                    "budget_status": getattr(budget, "status", None),
+                    "approver_type": a.approver_type,
+                    "status": a.status,
+                    "display_status": display_status,
+                    "approved_count": approved_count,
+                    "total_count": total_count,
+                    "pending_count": pending_count,
+                    "cc_can_approve": cc_can_approve,
+                    "cost_center": cc_display,
+                    "cost_center_id": cc_id,
+                    "created_at": a.created_at,
+                })
 
         # Fallback: include registry-only budgets pending final approval even if
         # a BudgetApproval record is missing (older records). Only visible to

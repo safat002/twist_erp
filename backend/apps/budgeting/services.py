@@ -533,28 +533,72 @@ class BudgetApprovalService:
 
         created_any = False
         created_for_users: list = []
+        approvals_created = []
         if not unique_approvers:
-            # Create a generic final approval record without an explicit approver
-            _, created = BudgetApproval.objects.get_or_create(
+            obj = BudgetApproval.objects.filter(
                 budget=budget,
                 approver_type=BudgetApproval.ApproverType.BUDGET_MODULE_OWNER,
-                defaults={"status": BudgetApproval.Status.PENDING},
-            )
-            created_any = created or created_any
+                approver__isnull=True,
+                status=BudgetApproval.Status.PENDING,
+            ).order_by("id").first()
+            if not obj:
+                obj = BudgetApproval.objects.create(
+                    budget=budget,
+                    approver_type=BudgetApproval.ApproverType.BUDGET_MODULE_OWNER,
+                    status=BudgetApproval.Status.PENDING,
+                )
+                approvals_created.append(obj)
+                created_any = True
         else:
             for user in unique_approvers:
-                obj, created = BudgetApproval.objects.get_or_create(
+                obj = BudgetApproval.objects.filter(
                     budget=budget,
                     approver_type=BudgetApproval.ApproverType.BUDGET_MODULE_OWNER,
                     approver=user,
-                    defaults={"status": BudgetApproval.Status.PENDING},
-                )
-                if created:
+                    status=BudgetApproval.Status.PENDING,
+                ).order_by("id").first()
+                if not obj:
+                    obj = BudgetApproval.objects.create(
+                        budget=budget,
+                        approver_type=BudgetApproval.ApproverType.BUDGET_MODULE_OWNER,
+                        approver=user,
+                        status=BudgetApproval.Status.PENDING,
+                    )
+                    approvals_created.append(obj)
                     created_any = True
                     created_for_users.append(user)
 
         budget.status = Budget.STATUS_PENDING_FINAL_APPROVAL
         budget.save(update_fields=["status", "updated_at"])
+
+        # Ensure final approval scope lines exist for all pending approvals on this budget
+        try:
+            from .models import BudgetApprovalLine as BAL
+            lines = list(budget.lines.all())
+            ready_lines = []
+            for bl in lines:
+                cc_required = bool(getattr(budget, 'cost_center_id', None)) or bool((getattr(bl, 'metadata', {}) or {}).get('cost_center_id'))
+                cc_ok = (not cc_required) or (getattr(bl, 'cc_decision', None) == getattr(BudgetLine, 'CCDecision').APPROVED)
+                remarked = bool((getattr(bl, 'moderator_remarks', None) or '').strip()) or (getattr(bl, 'moderator_state', None) == getattr(BudgetLine, 'ModeratorState').REMARKED)
+                not_held = not getattr(bl, 'is_held_for_review', False)
+                if cc_ok and (remarked or not_held):
+                    ready_lines.append(bl)
+
+            pending_final_approvals = BudgetApproval.objects.filter(
+                budget=budget,
+                approver_type=BudgetApproval.ApproverType.BUDGET_MODULE_OWNER,
+                status=BudgetApproval.Status.PENDING,
+            )
+
+            for ap in pending_final_approvals:
+                for bl in ready_lines:
+                    BAL.objects.get_or_create(
+                        approval=ap,
+                        line=bl,
+                        defaults={"stage": BAL.Stage.FINAL_APPROVAL, "status": BAL.LineStatus.PENDING}
+                    )
+        except Exception:
+            pass
 
         # Notify intended approvers when the final-approval task is created
         try:
@@ -987,15 +1031,23 @@ class BudgetReviewPeriodService:
         # Disable review period
         budget.review_enabled = False
 
-        # Auto-forward non-held items to final approval: mark as not_reviewed
+        # Auto-forward non-held items to final approval: ensure scoped approval lines exist
         try:
+            from .models import BudgetApprovalLine as BAL, BudgetApproval as BA
+            # Ensure a pending final approval exists (will also be created below)
+            final_qs = BA.objects.filter(budget=budget, approver_type=BA.ApproverType.BUDGET_MODULE_OWNER, status=BA.Status.PENDING)
+            finals = list(final_qs) if final_qs.exists() else []
+            if not finals:
+                # create generic final if none; details handled in request_final_approval
+                pass
             auto_lines = budget.lines.filter(is_held_for_review=False)
-            for bl in auto_lines:
-                meta = getattr(bl, 'metadata', {}) or {}
-                if not meta.get('not_reviewed'):
-                    meta['not_reviewed'] = True
-                    bl.metadata = meta
-                    bl.save(update_fields=["metadata", "updated_at"])
+            for ap in finals:
+                for bl in auto_lines:
+                    BAL.objects.get_or_create(
+                        approval=ap,
+                        line=bl,
+                        defaults={"stage": BAL.Stage.FINAL_APPROVAL, "status": BAL.LineStatus.PENDING}
+                    )
         except Exception:
             pass
 
@@ -1076,7 +1128,11 @@ class BudgetModeratorService:
         budget_line.moderator_remarks = remark_text
         budget_line.moderator_remarks_by = user
         budget_line.moderator_remarks_at = timezone.now()
-        budget_line.save(update_fields=["moderator_remarks", "moderator_remarks_by", "moderator_remarks_at", "updated_at"])
+        try:
+            budget_line.moderator_state = BudgetLine.ModeratorState.REMARKED
+        except Exception:
+            pass
+        budget_line.save(update_fields=["moderator_remarks", "moderator_remarks_by", "moderator_remarks_at", "moderator_state", "updated_at"])
 
         # Increment template usage if template was used
         if remark_template_id:
@@ -1086,28 +1142,6 @@ class BudgetModeratorService:
                 template.save(update_fields=["usage_count"])
             except BudgetRemarkTemplate.DoesNotExist:
                 pass
-
-        # Workflow change: when a moderator remarks an item, ensure a final approval task
-        # exists for this budget (so it appears under Final Approvals for module owners).
-        budget = budget_line.budget
-        from .models import BudgetApproval as BA
-        # Avoid duplicates and skip if already finalized/active
-        terminal_statuses = {
-            Budget.STATUS_APPROVED,
-            Budget.STATUS_AUTO_APPROVED,
-            Budget.STATUS_ACTIVE,
-        }
-        if budget and budget.status not in terminal_statuses:
-            exists = BA.objects.filter(
-                budget=budget,
-                approver_type=BA.ApproverType.BUDGET_MODULE_OWNER,
-                status=BA.Status.PENDING,
-            ).exists()
-            if not exists:
-                logger.info(f"Requesting final approval for budget {budget.id}")
-                # This will also move budget to PENDING_FINAL_APPROVAL
-                BudgetApprovalService.request_final_approval(budget)
-                logger.info(f"Final approval requested for budget {budget.id}")
 
         return budget_line
 
@@ -1313,11 +1347,16 @@ class BudgetModeratorService:
 
                 if budget.status in allowed_states:
                     budget_line.sent_back_for_review = True
+                    try:
+                        budget_line.cc_decision = BudgetLine.CCDecision.SENT_BACK
+                    except Exception:
+                        pass
                     budget_line.held_reason = reason
                     budget_line.held_by = user
                     budget_line.held_until_date = budget.review_end_date if budget.review_end_date else None
                     budget_line.save(update_fields=[
                         "sent_back_for_review",
+                        "cc_decision",
                         "held_reason",
                         "held_by",
                         "held_until_date",

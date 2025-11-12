@@ -169,7 +169,27 @@ const ModeratorDashboard = () => {
         const ccLabel = ccId ? costCenterMap[String(ccId)] || `Cost Center ${ccId}` : 'Company-wide';
         return { ...r, _budget_id: r.budget, _cc_label: ccLabel };
       });
-      setLines(merged);
+      const filtered = merged.filter((r) => {
+        const ccDecision = String(r.cc_decision || '').toUpperCase();
+        if (ccDecision === 'APPROVED') return true;
+        // Backward compatibility: fall back to metadata flag if new field missing
+        if (!ccDecision && r?.metadata?.approved) return true;
+        // For company-wide budgets without CC requirement, allow through
+        if (!r?.metadata?.cost_center_id && !r?.cc_decision && !r?.metadata?.approved) {
+          return true;
+        }
+        return false;
+      });
+      const pendingForModerator = filtered.filter((r) => {
+        const finalDecision = String(r.final_decision || '').toUpperCase();
+        if (finalDecision === 'APPROVED' || finalDecision === 'REJECTED') return false;
+        if (!finalDecision && r?.metadata?.final_approved) return false;
+        const modState = String(r.moderator_state || '').toUpperCase();
+        if (modState === 'REMARKED') return false;
+        if (!modState && (r?.metadata?.reviewed || r?.metadata?.moderator_approved)) return false;
+        return true;
+      });
+      setLines(pendingForModerator);
 
       // Ensure we have budget details for all budget IDs referenced by lines (for status gating)
       const presentIds = new Set(Object.keys(baseMap));
@@ -204,18 +224,25 @@ const ModeratorDashboard = () => {
 
   const onMarkReviewed = useCallback(async () => {
     if (!selectedBudget) return;
+    const targets = selectedRowKeys?.length ? selectedRowKeys : (lines || []).map((l) => l.id).filter(Boolean);
+    if (!targets.length) {
+      message.warning('Select at least one line to mark as reviewed.');
+      return;
+    }
     setMarking(true);
     try {
+      await Promise.all(targets.map((id) => addModeratorRemark(id, { remark_text: 'Approved - Looks Good' })));
+      setSelectedRowKeys([]);
+      await loadLines();
       await completeModeratorReview(selectedBudget, {});
+      await Promise.all([loadBudgets(), loadSummary()]);
       message.success('Marked as reviewed');
-      loadBudgets();
-      loadSummary();
-      // Do not reload lines here; keep header visible and clear items
-      setLines([]);
+    } catch (e) {
+      message.error(e?.response?.data?.detail || 'Failed to mark reviewed');
     } finally {
       setMarking(false);
     }
-  }, [selectedBudget, summary, loadBudgets, loadSummary, loadLines]);
+  }, [selectedBudget, selectedRowKeys, lines, loadLines, loadBudgets, loadSummary]);
 
   const loadCostCenters = useCallback(async () => {
     try {
@@ -352,7 +379,7 @@ const ModeratorDashboard = () => {
           const rows = data?.results || data || [];
           const m = {};
           rows.forEach((r) => {
-            const key = r.item_code || r.item_name;
+            const key = r.budget_item_code || r.budget_item_name;
             if (!key) return;
             m[key] = r.value_limit;
           });
@@ -379,9 +406,9 @@ const ModeratorDashboard = () => {
       let rows = [...filtered];
       const f = tableFilters || {};
       // Item search filter (first value)
-      const itemSearch = Array.isArray(f.item_name) && f.item_name[0] ? String(f.item_name[0]).toLowerCase() : '';
+      const itemSearch = Array.isArray(f.budget_item_name) && f.budget_item_name[0] ? String(f.budget_item_name[0]).toLowerCase() : '';
       if (itemSearch) {
-        rows = rows.filter((r) => (String(r.item_name || '').toLowerCase().includes(itemSearch) || String(r.item_code || '').toLowerCase().includes(itemSearch)));
+        rows = rows.filter((r) => (String(r.budget_item_name || '').toLowerCase().includes(itemSearch) || String(r.budget_item_code || '').toLowerCase().includes(itemSearch)));
       }
       // Class filter
       if (Array.isArray(f.procurement_class) && f.procurement_class.length) {
@@ -423,11 +450,11 @@ const ModeratorDashboard = () => {
 
       const body = rows.map((r) => {
         const cc = r._cc_label || costCenterLabel;
-        const pb0v = pb0 ? (prevLinesMap[String(pb0.id)] || {})[(r.item_code || r.item_name)] : undefined;
-        const pb1v = pb1 ? (prevLinesMap[String(pb1.id)] || {})[(r.item_code || r.item_name)] : undefined;
+        const pb0v = pb0 ? (prevLinesMap[String(pb0.id)] || {})[(r.budget_item_code || r.budget_item_name)] : undefined;
+        const pb1v = pb1 ? (prevLinesMap[String(pb1.id)] || {})[(r.budget_item_code || r.budget_item_name)] : undefined;
         const parts = [
-          `"${String(r.item_name || '').replace(/"/g,'""')}"`,
-          `"${String(r.item_code || '').replace(/"/g,'""')}"`,
+          `"${String(r.budget_item_name || '').replace(/"/g,'""')}"`,
+          `"${String(r.budget_item_code || '').replace(/"/g,'""')}"`,
           r.procurement_class || '',
           `"${String(r.category || '').replace(/"/g,'""')}"`,
           `"${String(cc || '').replace(/"/g,'""')}"`,
@@ -456,9 +483,9 @@ const ModeratorDashboard = () => {
       // Reuse same filtered logic as CSV
       let rows = [...filtered];
       const f = tableFilters || {};
-      const itemSearch = Array.isArray(f.item_name) && f.item_name[0] ? String(f.item_name[0]).toLowerCase() : '';
+      const itemSearch = Array.isArray(f.budget_item_name) && f.budget_item_name[0] ? String(f.budget_item_name[0]).toLowerCase() : '';
       if (itemSearch) {
-        rows = rows.filter((r) => (String(r.item_name || '').toLowerCase().includes(itemSearch) || String(r.item_code || '').toLowerCase().includes(itemSearch)));
+        rows = rows.filter((r) => (String(r.budget_item_name || '').toLowerCase().includes(itemSearch) || String(r.budget_item_code || '').toLowerCase().includes(itemSearch)));
       }
       if (Array.isArray(f.procurement_class) && f.procurement_class.length) {
         const set = new Set(f.procurement_class);
@@ -493,12 +520,12 @@ const ModeratorDashboard = () => {
       const htmlRows = rows.map((r) => {
         const cc = r._cc_label || costCenterLabel;
         const up = r?.unit_price != null ? r.unit_price : (r?.manual_unit_price != null ? r.manual_unit_price : r?.standard_price);
-        const pb0v = pb0 ? (prevLinesMap[String(pb0.id)] || {})[(r.item_code || r.item_name)] : undefined;
-        const pb1v = pb1 ? (prevLinesMap[String(pb1.id)] || {})[(r.item_code || r.item_name)] : undefined;
+        const pb0v = pb0 ? (prevLinesMap[String(pb0.id)] || {})[(r.budget_item_code || r.budget_item_name)] : undefined;
+        const pb1v = pb1 ? (prevLinesMap[String(pb1.id)] || {})[(r.budget_item_code || r.budget_item_name)] : undefined;
         const cells = [
           cc,
-          r.item_name || '',
-          r.item_code || '',
+          r.budget_item_name || '',
+          r.budget_item_code || '',
           r.procurement_class || '',
           r.category || '',
           Number(r.qty_limit || 0),
@@ -587,7 +614,7 @@ const ModeratorDashboard = () => {
       render: (v, r) => (
         <Space direction="vertical" size={0}>
           <span>{v}</span>
-          <span style={{ color: '#999', fontSize: 12 }}>{r.item_code}</span>
+          <span style={{ color: '#999', fontSize: 12 }}>{r.budget_item_code}</span>
         </Space>
       ),
       filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters }) => (
@@ -610,7 +637,7 @@ const ModeratorDashboard = () => {
       ),
       onFilter: (value, record) => {
         const q = String(value || '').toLowerCase();
-        return String(record.item_name || '').toLowerCase().includes(q) || String(record.item_code || '').toLowerCase().includes(q);
+        return String(record.budget_item_name || '').toLowerCase().includes(q) || String(record.budget_item_code || '').toLowerCase().includes(q);
       },
     },
     {
@@ -687,7 +714,7 @@ const ModeratorDashboard = () => {
       key: 'prev_budget_0',
       render: (_, r) => {
         const m = prevLinesMap[String(prevBudgets[0].id)] || {};
-        const key = r.item_code || r.item_name;
+        const key = r.budget_item_code || r.budget_item_name;
         const v = m[key];
         return v != null ? Number(v).toLocaleString() : '-';
       }
@@ -697,7 +724,7 @@ const ModeratorDashboard = () => {
       key: 'prev_budget_1',
       render: (_, r) => {
         const m = prevLinesMap[String(prevBudgets[1].id)] || {};
-        const key = r.item_code || r.item_name;
+        const key = r.budget_item_code || r.budget_item_name;
         const v = m[key];
         return v != null ? Number(v).toLocaleString() : '-';
       }
@@ -871,7 +898,7 @@ const ModeratorDashboard = () => {
         </Modal>
 
         <Drawer
-          title={'Variance Audit - ' + (auditForLine?.item_name || '')}
+          title={'Variance Audit - ' + (auditForLine?.budget_item_name || '')}
           open={auditOpen}
           width={640}
           onClose={() => { setAuditOpen(false); setAuditForLine(null); setAuditRows([]); }}
@@ -900,7 +927,7 @@ const ModeratorDashboard = () => {
     </Spin>
     
     <Modal
-      title={aiForLine ? `AI Insights · ${aiForLine.item_name}` : 'AI Insights'}
+      title={aiForLine ? `AI Insights · ${aiForLine.budget_item_name}` : 'AI Insights'}
       onCancel={() => { setAiModalOpen(false); setAiForLine(null); setAiInfo(null); }}
       footer={null}
     >

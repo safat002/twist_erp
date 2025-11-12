@@ -10,6 +10,7 @@ from .viewsets import (
     PaymentViewSet,
     FinanceReportsViewSet,
     CurrencyViewSet,
+    InventoryPostingRuleViewSet,
 )
 from .views.financial_statement_views import FinancialStatementViewSet
 from .extra_views.reconciliation_views import GLReconciliationViewSet
@@ -26,6 +27,7 @@ router.register(r'reports', FinanceReportsViewSet, basename='finance-reports')
 router.register(r'financial-statements', FinancialStatementViewSet, basename='financial-statements')
 router.register(r'gl-reconciliation', GLReconciliationViewSet, basename='gl-reconciliation')
 router.register(r'currencies', CurrencyViewSet, basename='finance-currencies')
+router.register(r'inventory-posting-rules', InventoryPostingRuleViewSet, basename='inventory-posting-rule')
 
 urlpatterns = [
     path('', include(router.urls)),

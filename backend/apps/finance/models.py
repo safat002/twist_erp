@@ -171,6 +171,8 @@ class JournalEntry(models.Model):
     debit_amount = models.DecimalField(max_digits=20, decimal_places=2, default=0)
     credit_amount = models.DecimalField(max_digits=20, decimal_places=2, default=0)
     description = models.CharField(max_length=255, blank=True)
+    cost_center = models.ForeignKey('budgeting.CostCenter', on_delete=models.PROTECT, null=True, blank=True, related_name='journal_entries')
+    project = models.ForeignKey('projects.Project', on_delete=models.PROTECT, null=True, blank=True, related_name='journal_entries')
 
     class Meta:
         ordering = ['voucher', 'line_number']
@@ -181,11 +183,29 @@ class InventoryPostingRule(models.Model):
     TRANSACTION_CHOICES = [
         ('RECEIPT', 'Stock Receipt'),
         ('ISSUE', 'Stock Issue'),
-        ('TRANSFER', 'Transfer'),
+        ('TRANSFER_OUT', 'Transfer Out'),
+        ('TRANSFER_IN', 'Transfer In'),
         ('ADJUSTMENT', 'Adjustment'),
+        ('SCRAP', 'Scrap'),
     ]
 
     company = models.ForeignKey('companies.Company', on_delete=models.PROTECT, related_name='inventory_posting_rules')
+    budget_item = models.ForeignKey(
+        'budgeting.BudgetItemCode',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='inventory_posting_rules',
+        help_text="Specific budget item for this posting rule"
+    )
+    item = models.ForeignKey(
+        'inventory.Item',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='inventory_posting_rules',
+        help_text="Legacy item reference (deprecated, prefer budget item)"
+    )
     # Optional scoping
     category = models.ForeignKey(
         'inventory.ItemCategory',
@@ -195,12 +215,29 @@ class InventoryPostingRule(models.Model):
         related_name='inventory_posting_rules',
         help_text="Item category for this posting rule"
     )
+    sub_category = models.ForeignKey(
+        'inventory.ItemCategory',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='inventory_posting_rules_sub',
+        help_text="Item sub-category for this posting rule"
+    )
     warehouse_type = models.CharField(max_length=20, blank=True, default='')
+    warehouse = models.ForeignKey(
+        'inventory.Warehouse',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='inventory_posting_rules',
+        help_text="Specific warehouse for this rule"
+    )
     transaction_type = models.CharField(max_length=20, choices=TRANSACTION_CHOICES, blank=True, default='')
     # Accounts
     inventory_account = models.ForeignKey('finance.Account', on_delete=models.PROTECT, related_name='+')
     cogs_account = models.ForeignKey('finance.Account', on_delete=models.PROTECT, null=True, blank=True, related_name='+')
     is_active = models.BooleanField(default=True)
+    priority = models.PositiveIntegerField(default=100, help_text="Lower numbers win when multiple rules match")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -208,12 +245,22 @@ class InventoryPostingRule(models.Model):
         indexes = [
             models.Index(fields=['company', 'warehouse_type', 'transaction_type']),
             models.Index(fields=['company', 'category']),
+            models.Index(fields=['company', 'warehouse']),
+            models.Index(fields=['company', 'budget_item']),
+            models.Index(fields=['company', 'item']),
+            models.Index(fields=['company', 'priority']),
         ]
 
     def __str__(self) -> str:
         parts = [getattr(self.company, 'code', self.company_id)]
+        if self.budget_item_id:
+            parts.append(f"item:{self.budget_item.code}")
         if self.category_id:
             parts.append(f"cat:{getattr(self.category, 'code', self.category_id)}")
+        if self.sub_category_id:
+            parts.append(f"sub:{getattr(self.sub_category, 'code', self.sub_category_id)}")
+        if self.warehouse_id:
+            parts.append(f"wh:{getattr(self.warehouse, 'code', self.warehouse_id)}")
         if self.warehouse_type:
             parts.append(f"wh:{self.warehouse_type}")
         if self.transaction_type:

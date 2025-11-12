@@ -50,11 +50,21 @@ class ValuationService:
 
         return ItemValuationMethod.objects.filter(
             company=company,
-            product=product,
+            budget_item=product,
             warehouse=warehouse,
             effective_date__lte=transaction_date,
             is_active=True
         ).order_by('-effective_date').first()
+    @staticmethod
+    def _prevent_expired(product, warehouse=None):
+        try:
+            config = product.get_fefo_config(warehouse=warehouse)
+            if config and config.enforce_fefo:
+                return config.block_issue_if_expired
+            profile = product.get_operational_profile()
+            return bool(getattr(profile, 'requires_expiry_tracking', False))
+        except Exception:
+            return getattr(product, 'prevent_expired_issuance', True)
 
     @staticmethod
     @transaction.atomic
@@ -96,7 +106,7 @@ class ValuationService:
         # Get next FIFO sequence for this product/warehouse
         max_seq = CostLayer.objects.filter(
             company=company,
-            product=product,
+            budget_item=product,
             warehouse=warehouse
         ).aggregate(max_seq=Sum('fifo_sequence'))['max_seq'] or 0
 
@@ -105,7 +115,7 @@ class ValuationService:
         # Create the cost layer
         layer = CostLayer.objects.create(
             company=company,
-            product=product,
+            budget_item=product,
             warehouse=warehouse,
             receipt_date=receipt_date,
             qty_received=qty,
@@ -144,18 +154,15 @@ class ValuationService:
         # Get open cost layers ordered by FIFO sequence (oldest first)
         from django.utils import timezone as _tz
         today = _tz.now().date()
-        prevent_expired = getattr(product, 'prevent_expired_issuance', True)
-        prevent_expired = getattr(product, 'prevent_expired_issuance', True)
+        prevent_expired = ValuationService._prevent_expired(product, warehouse)
         layers = CostLayer.objects.filter(
             company=company,
-            product=product,
+            budget_item=product,
             warehouse=warehouse,
             stock_state='RELEASED',
             is_closed=False,
             qty_remaining__gt=0
         )
-        if prevent_expired:
-            layers = layers.filter(Q(expiry_date__isnull=True) | Q(expiry_date__gte=today))
         if prevent_expired:
             layers = layers.filter(Q(expiry_date__isnull=True) | Q(expiry_date__gte=today))
         layers = layers.order_by('expiry_date', 'fifo_sequence', 'receipt_date', 'id')
@@ -212,10 +219,10 @@ class ValuationService:
         # Get open cost layers ordered by LIFO (newest first)
         from django.utils import timezone as _tz
         today = _tz.now().date()
-        prevent_expired = getattr(product, 'prevent_expired_issuance', True)
+        prevent_expired = ValuationService._prevent_expired(product, warehouse)
         layers = CostLayer.objects.filter(
             company=company,
-            product=product,
+            budget_item=product,
             warehouse=warehouse,
             stock_state='RELEASED',
             is_closed=False,
@@ -276,10 +283,10 @@ class ValuationService:
         # Get all open layers
         from django.utils import timezone as _tz
         today = _tz.now().date()
-        prevent_expired = getattr(product, 'prevent_expired_issuance', True)
+        prevent_expired = ValuationService._prevent_expired(product, warehouse)
         layers = CostLayer.objects.filter(
             company=company,
-            product=product,
+            budget_item=product,
             warehouse=warehouse,
             stock_state='RELEASED',
             is_closed=False,
@@ -357,7 +364,7 @@ class ValuationService:
         # but the cost is always the standard
         layers = CostLayer.objects.filter(
             company=company,
-            product=product,
+            budget_item=product,
             warehouse=warehouse,
             stock_state='RELEASED',
             is_closed=False,
@@ -513,10 +520,10 @@ class ValuationService:
             # Return cost of oldest layer
             from django.utils import timezone as _tz
             today = _tz.now().date()
-            prevent_expired = getattr(product, 'prevent_expired_issuance', True)
+            prevent_expired = ValuationService._prevent_expired(product, warehouse)
             qs = CostLayer.objects.filter(
                 company=company,
-                product=product,
+                budget_item=product,
                 warehouse=warehouse,
                 stock_state='RELEASED',
                 is_closed=False,
@@ -534,10 +541,10 @@ class ValuationService:
             # Return cost of newest layer
             from django.utils import timezone as _tz
             today = _tz.now().date()
-            prevent_expired = getattr(product, 'prevent_expired_issuance', True)
+            prevent_expired = ValuationService._prevent_expired(product, warehouse)
             qs = CostLayer.objects.filter(
                 company=company,
-                product=product,
+                budget_item=product,
                 warehouse=warehouse,
                 stock_state='RELEASED',
                 is_closed=False,
@@ -557,7 +564,7 @@ class ValuationService:
             today = _tz.now().date()
             layers = CostLayer.objects.filter(
                 company=company,
-                product=product,
+                budget_item=product,
                 warehouse=warehouse,
                 stock_state='RELEASED',
                 is_closed=False,
@@ -593,7 +600,7 @@ class ValuationService:
         """
         layers = CostLayer.objects.filter(
             company=company,
-            product=product,
+            budget_item=product,
             warehouse=warehouse,
             is_closed=False,
             qty_remaining__gt=0

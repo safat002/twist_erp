@@ -31,6 +31,7 @@ from .models import (
     JournalVoucher,
     Payment,
     Currency,
+    InventoryPostingRule,
 )
 from .serializers import (
     AccountSerializer,
@@ -41,6 +42,7 @@ from .serializers import (
     JournalVoucherSerializer,
     PaymentSerializer,
     CurrencySerializer,
+    InventoryPostingRuleSerializer,
 )
 from .services.invoice_service import InvoiceService
 from .services.journal_service import JournalService
@@ -1168,3 +1170,48 @@ class CurrencyViewSet(CompanyScopedMixin, viewsets.ModelViewSet):
         ) or getattr(company, "base_currency", None)
         count = Currency.objects.filter(company=company).count()
         return Response({"enabled": enabled, "base_currency": base, "count": count})
+
+
+class InventoryPostingRuleViewSet(CompanyScopedMixin, viewsets.ModelViewSet):
+    queryset = InventoryPostingRule.objects.select_related(
+        'budget_item',
+        'item',
+        'category',
+        'sub_category',
+        'warehouse',
+        'inventory_account',
+        'cogs_account',
+    )
+    serializer_class = InventoryPostingRuleSerializer
+
+    def get_queryset(self):  # type: ignore[override]
+        qs = super().get_queryset()
+        company = self.get_company()
+        if company:
+            qs = qs.filter(company=company)
+        else:
+            qs = qs.none()
+        txn = self.request.query_params.get('transaction_type')
+        if txn:
+            qs = qs.filter(transaction_type=txn.upper())
+        budget_item = self.request.query_params.get('budget_item')
+        if budget_item:
+            qs = qs.filter(budget_item_id=budget_item)
+        return qs.order_by('priority', 'id')
+
+    def list(self, request, *args, **kwargs):  # type: ignore[override]
+        qs = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(qs, many=True)
+        return Response(serializer.data)
+
+    def perform_create(self, serializer):  # type: ignore[override]
+        self.ensure_perm('finance_manage_coa')
+        serializer.save()
+
+    def perform_update(self, serializer):  # type: ignore[override]
+        self.ensure_perm('finance_manage_coa')
+        serializer.save()
+
+    def perform_destroy(self, instance):  # type: ignore[override]
+        self.ensure_perm('finance_manage_coa')
+        super().perform_destroy(instance)

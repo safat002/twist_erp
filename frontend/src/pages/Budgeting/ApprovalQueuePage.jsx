@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Card, Table, Space, Button, Modal, Input, message, Tag, Select, Tabs, Checkbox, Divider, Empty } from 'antd';
 
 import {
@@ -59,8 +59,11 @@ const ApprovalQueuePage = () => {
   const statusTag = (s) => {
     const map = {
       pending: { color: 'gold', text: 'Pending' },
+      pending_final: { color: 'gold', text: 'Pending Final' },
+      cc_approved: { color: 'cyan', text: 'CC Approved' },
       approved: { color: 'green', text: 'Approved' },
       rejected: { color: 'red', text: 'Rejected' },
+      partially_approved: { color: 'blue', text: 'Partially Approved' },
       sent_back: { color: 'orange', text: 'Sent Back' },
     };
     const it = map[s] || { color: 'default', text: s };
@@ -76,7 +79,7 @@ const ApprovalQueuePage = () => {
     return '';
   };
 
-  const renderBudgetType = (row) => (row.budget_type ? String(row.budget_type).toUpperCase() : (typeFromBudgetName(row.budget_name) || 'ï¿½'));
+  const renderBudgetType = (row) => (row.budget_type ? String(row.budget_type).toUpperCase() : (typeFromBudgetName(row.budget_name) || '�'));
 
   const load = async () => {
     setLoading(true);
@@ -93,8 +96,7 @@ const ApprovalQueuePage = () => {
 
   useEffect(() => { load(); }, []);
 
-  const doAction = async (record, actionFn) => {
-  // Handle Name Approval when a registry Draft was surfaced via fallback
+  // Handle name approvals (registry fallback -> request then approve)
   const doNameApproval = async (record, approve = true) => {
     setProcessingId(record.id);
     try {
@@ -104,7 +106,6 @@ const ApprovalQueuePage = () => {
       } catch (err) {
         const detail = err?.response?.data?.detail || '';
         if (/not pending name approval/i.test(String(detail))) {
-          // Convert to PENDING_NAME_APPROVAL then retry
           await requestNameApproval(record.budget_id);
           await act(record.budget_id, { comments: comment });
         } else {
@@ -120,6 +121,8 @@ const ApprovalQueuePage = () => {
       setProcessingId(null);
     }
   };
+
+  const doAction = async (record, actionFn) => {
     setProcessingId(record.id);
     try {
       await actionFn(record.budget_id, { comments: comment });
@@ -139,7 +142,12 @@ const ApprovalQueuePage = () => {
       let rows = [];
       if (record.approver_type === 'budget_module_owner') {
         const { data } = await fetchApprovalTaskDetails(record.approval_id);
-        rows = data.remarked_lines || [];
+        rows = data.scoped_lines || data.remarked_lines || [];
+        if (record.cost_center_id) {
+          rows = rows.filter(
+            (r) => String(r?.metadata?.cost_center_id || r?.budget?.cost_center_id || '') === String(record.cost_center_id)
+          );
+        }
       } else {
         const params = { budget: record.cc_budget_id || record.budget_id, page_size: 500 };
         if (record.cost_center_id) params.cost_center = record.cost_center_id;
@@ -175,7 +183,7 @@ const ApprovalQueuePage = () => {
     try {
       const { data } = await fetchApproval(record.approval_id);
       setSelectedApprovalTask(data);
-      setRemarkedLines(data.remarked_lines || []);
+      setRemarkedLines(data.scoped_lines || data.remarked_lines || []);
       setFinalApprovalModalOpen(true);
       setSelectedLineKeys([]);
     } catch (e) {
@@ -228,7 +236,7 @@ const ApprovalQueuePage = () => {
   const columnsName = [
     { title: 'Budget', dataIndex: 'budget_name' },
     { title: 'Type', dataIndex: 'budget_type', render: (_, r) => renderBudgetType(r) },
-    { title: 'Status', dataIndex: 'status', render: (v) => statusTag(v) },
+    { title: 'Status', dataIndex: 'display_status', render: (v, r) => statusTag(v || r.status) },
     { title: 'Submitted', dataIndex: 'created_at', render: (v) => (v ? new Date(v).toLocaleString() : '') },
     {
       title: 'Actions',
@@ -249,7 +257,7 @@ const ApprovalQueuePage = () => {
     { title: 'Budget', dataIndex: 'budget_name' },
     { title: 'Type', dataIndex: 'budget_type', render: (_, r) => renderBudgetType(r) },
     { title: 'Cost Center', dataIndex: 'cost_center' },
-    { title: 'Status', dataIndex: 'status', render: (v) => statusTag(v) },
+    { title: 'Status', render: (_, r) => statusTag(r.display_status || r.status) },
     { title: 'Submitted', dataIndex: 'created_at', render: (v) => (v ? new Date(v).toLocaleString() : '') },
     {
       title: 'Actions',
@@ -287,7 +295,8 @@ const ApprovalQueuePage = () => {
     { title: 'Budget', dataIndex: 'budget_name' },
     { title: 'Type', dataIndex: 'budget_type', render: (_, r) => renderBudgetType(r) },
     { title: 'Cost Center', dataIndex: 'cost_center' },
-    { title: 'Status', dataIndex: 'status', render: (v) => statusTag(v) },
+    { title: 'Status', dataIndex: 'display_status', render: (v) => statusTag(v) },
+    { title: 'Pending', key: 'pending', render: (_, r) => `${r.pending_count || 0} of ${r.total_count || 0}` },
     { title: 'Submitted', dataIndex: 'created_at', render: (v) => (v ? new Date(v).toLocaleString() : '') },
     {
       title: 'Actions',
@@ -306,8 +315,8 @@ const ApprovalQueuePage = () => {
 
   const modalFilteredLines = useMemo(() => {
     return (modifyLines || []).filter((r) => {
-      if (itemSearch && !(r.item_name || '').toLowerCase().includes(itemSearch.toLowerCase())) return false;
-      if (lineFilters.category !== 'all' && (r.item_category_name || r.sub_category_name || r.category_name || r.category) !== lineFilters.category) return false;
+      if (itemSearch && !(r.budget_item_name || '').toLowerCase().includes(itemSearch.toLowerCase())) return false;
+      if (lineFilters.category !== 'all' && (r.budget_item_category_name || r.sub_category_name || r.category_name || r.category) !== lineFilters.category) return false;
       if (lineFilters.procurement_class !== 'all' && r.procurement_class !== lineFilters.procurement_class) return false;
       if (lineFilters.changedOnly && !(Number(r._new_qty) !== Number(r.qty_limit) || Number(r._new_value) !== Number(r.value_limit) || (r._reason || '').length)) return false;
       if (lineFilters.sentBackOnly && !r.sent_back_for_review) return false;
@@ -436,7 +445,13 @@ const ApprovalQueuePage = () => {
               message.success('Changes saved');
             }
 
-            if (currentApprovalTask.approver_type === 'cost_center_owner') {
+            const selectedLineIds = (lineSelectedKeys || []).filter(Boolean);
+            const approvalId = currentApprovalTask?.approval_id;
+
+            if (approvalId && selectedLineIds.length) {
+              await approveBudgetLines(approvalId, selectedLineIds);
+              message.success('Selected lines approved');
+            } else if (currentApprovalTask.approver_type === 'cost_center_owner') {
               const canApprove = Boolean(!currentApprovalTask.budget_status || currentApprovalTask.budget_status === 'PENDING_CC_APPROVAL');
               if (canApprove) {
                 // Refresh current lines, keeping CC scope if any
@@ -467,6 +482,7 @@ const ApprovalQueuePage = () => {
             setModifyOpen(false);
             setModifyLines([]);
             setModifyBudgetId(null);
+            setLineSelectedKeys([]);
             setComment('');
             load();
           } catch (e) {
@@ -492,7 +508,7 @@ const ApprovalQueuePage = () => {
                 ...Array.from(
                   new Set(
                     (modifyLines || [])
-                      .map((x) => x.item_category_name || x.sub_category_name || x.category_name || x.category)
+                      .map((x) => x.budget_item_category_name || x.sub_category_name || x.category_name || x.category)
                       .filter(Boolean)
                   )
                 ).map((c) => ({ value: c, label: c })),
@@ -559,6 +575,31 @@ const ApprovalQueuePage = () => {
             >
               Approve Selected
             </Button>
+            {currentApprovalTask?.approver_type === 'budget_module_owner' && (
+              <Button
+                disabled={!lineSelectedKeys.length}
+                type="primary"
+                onClick={async () => {
+                  try {
+                    await moderatorApproveLines({ budget_line_ids: lineSelectedKeys });
+                    message.success('Selected lines approved by moderator');
+                    // Reload lines
+                    const { data } = await fetchBudgetLines({ budget: modifyBudgetId, cost_center: modifyCostCenter_id, page_size: 500 });
+                    let rows = data?.results || data || [];
+                    if (modifyCostCenterId) {
+                      const metaFiltered = rows.filter((r) => String(r?.metadata?.cost_center_id || '') === String(modifyCostCenterId));
+                      if (metaFiltered.length > 0) rows = metaFiltered;
+                    }
+                    setModifyLines(rows.map((r) => ({ ...r, _new_qty: r.qty_limit, _new_value: r.value_limit, _reason: '' })));
+                    setLineSelectedKeys([]);
+                  } catch (e) {
+                    message.error(e?.response?.data?.detail || 'Failed to approve');
+                  }
+                }}
+              >
+                Approve Selected (Moderator)
+              </Button>
+            )}
             <Button
               danger
               disabled={!lineSelectedKeys.length || currentApprovalTask?.budget_status === 'ACTIVE'}
@@ -624,7 +665,7 @@ const ApprovalQueuePage = () => {
                 title: 'Item',
                 dataIndex: 'item_name',
                 filteredValue: itemSearch ? [itemSearch] : null,
-                onFilter: (v, r) => (r.item_name || '').toLowerCase().includes(String(v).toLowerCase()),
+                onFilter: (v, r) => (r.budget_item_name || '').toLowerCase().includes(String(v).toLowerCase()),
               },
               {
                 title: 'Item Category',
@@ -632,12 +673,12 @@ const ApprovalQueuePage = () => {
                 filters: Array.from(
                   new Set(
                     (modifyLines || [])
-                      .map((x) => x.item_category_name || x.sub_category_name || x.category_name || x.category)
+                      .map((x) => x.budget_item_category_name || x.sub_category_name || x.category_name || x.category)
                       .filter(Boolean)
                   )
                 ).map((c) => ({ text: c, value: c })),
-                onFilter: (v, r) => (r.item_category_name || r.sub_category_name || r.category_name || r.category) === v,
-                render: (_, r) => r.item_category_name || r.sub_category_name || r.category_name || r.category || '',
+                onFilter: (v, r) => (r.budget_item_category_name || r.sub_category_name || r.category_name || r.category) === v,
+                render: (_, r) => r.budget_item_category_name || r.sub_category_name || r.category_name || r.category || '',
               },
               {
                 title: 'Sub-Category',
@@ -756,6 +797,8 @@ const ApprovalQueuePage = () => {
 };
 
 export default ApprovalQueuePage;
+
+
 
 
 

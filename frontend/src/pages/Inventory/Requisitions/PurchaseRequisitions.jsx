@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Button, Card, DatePicker, Form, Input, InputNumber, Modal, Select, Space, Table, Tag, Typography, message, Checkbox } from 'antd';
 import { PlusOutlined, CloseOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -235,8 +235,8 @@ const PurchaseRequisitions = ({ openNew = false, onCloseNew }) => {
       status: 'SUBMITTED',
       lines: (values.lines || []).map((ln, idx) => ({
         line_no: idx + 1,
-        item_id: ln.item_id,
-        item_name: budgetItems.find((p) => String(p.id) === String(ln.item_id))?.name || '',
+        item_id: ln.budget_item_id,
+        item_name: budgetItems.find((p) => String(p.id) === String(ln.budget_item_id))?.name || '',
         quantity: Number(ln.quantity) || 0,
         uom: ln.uom || 'EA',
         notes: ln.notes || '',
@@ -298,7 +298,7 @@ const PurchaseRequisitions = ({ openNew = false, onCloseNew }) => {
                 purpose: r.purpose || '',
               }));
               const header = 'Number,Date,Needed By,Status,Items,Purpose\n';
-              const body = rows.map((x) => `${x.number},${x.date},${x.needed_by},${x.status},${x.items},"${(x.purpose || '').replace(/"/g,'""')}"`).join('\n');
+              const body = rows.map((x) => `${x.number},${x.date},${x.needed_by},${x.status},${x.budget_items},"${(x.purpose || '').replace(/"/g,'""')}"`).join('\n');
               const blob = new Blob([header + body], { type: 'text/csv;charset=utf-8;' });
               const url = URL.createObjectURL(blob);
               const a = document.createElement('a');

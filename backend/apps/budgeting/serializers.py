@@ -157,6 +157,14 @@ class BudgetLineSerializer(serializers.ModelSerializer):
             "moderator_remarks_by_display",
             "moderator_remarks_at",
             "cc_owner_modification_notes",
+            # Canonical line-wise workflow states
+            "cc_decision",
+            "cc_decision_by",
+            "cc_decision_at",
+            "moderator_state",
+            "final_decision",
+            "final_decision_by",
+            "final_decision_at",
             # AI projections
             "projected_consumption_value",
             "projected_consumption_confidence",
@@ -191,6 +199,7 @@ class BudgetLineSerializer(serializers.ModelSerializer):
             "modified_by_display",
             "held_by_display",
             "moderator_remarks_by_display",
+            # leave workflow timestamps writable by server only via actions
             "status",
             "can_delete",
             "created_at",
@@ -298,18 +307,38 @@ class BudgetLineSerializer(serializers.ModelSerializer):
 
     def get_status(self, obj: BudgetLine) -> str:
         try:
+            # Prefer canonical fields
+            fd = getattr(obj, 'final_decision', None)
+            try:
+                if fd == BudgetLine.FinalDecision.APPROVED:
+                    return 'approved'
+                if fd == BudgetLine.FinalDecision.REJECTED:
+                    return 'rejected'
+            except Exception:
+                pass
+
+            cd = getattr(obj, 'cc_decision', None)
+            try:
+                if cd == BudgetLine.CCDecision.APPROVED:
+                    return 'cc_approved'
+                if cd == BudgetLine.CCDecision.SENT_BACK or getattr(obj, 'sent_back_for_review', False):
+                    return 'sent_back'
+            except Exception:
+                pass
+
+            # Legacy metadata fallbacks
             meta = getattr(obj, 'metadata', {}) or {}
-            if meta.get('approved'):
+            if meta.get('final_approved'):
                 return 'approved'
+            if meta.get('approved'):
+                return 'cc_approved'
             if meta.get('rejected'):
                 return 'rejected'
             if meta.get('submitted'):
                 return 'submitted'
-            if getattr(obj, 'sent_back_for_review', False):
-                return 'needs_review'
-            return 'draft'
+            return 'pending'
         except Exception:
-            return 'draft'
+            return 'pending'
 
     def get_can_delete(self, obj: BudgetLine) -> bool:
         request = self.context.get('request')
@@ -908,10 +937,13 @@ class BudgetSnapshotSerializer(serializers.ModelSerializer):
 class BudgetItemCodeSerializer(serializers.ModelSerializer):
     uom_name = serializers.SerializerMethodField()
     uom_code = serializers.SerializerMethodField()
+    stock_uom_name = serializers.SerializerMethodField()
     category_id = serializers.PrimaryKeyRelatedField(source='category_ref', queryset=BudgetItemCategory.objects.all(), required=False, allow_null=True, write_only=True)
     sub_category_id = serializers.PrimaryKeyRelatedField(source='sub_category_ref', queryset=BudgetItemSubCategory.objects.all(), required=False, allow_null=True, write_only=True)
     category_name = serializers.SerializerMethodField()
     sub_category_name = serializers.SerializerMethodField()
+    department_name = serializers.SerializerMethodField()
+    status_display = serializers.SerializerMethodField()
 
     class Meta:
         model = BudgetItemCode
@@ -920,6 +952,7 @@ class BudgetItemCodeSerializer(serializers.ModelSerializer):
             "company",
             "code",
             "name",
+            "description",
             "category",
             "category_id",
             "category_name",
@@ -928,12 +961,36 @@ class BudgetItemCodeSerializer(serializers.ModelSerializer):
             "uom",
             "uom_name",
             "uom_code",
+            "stock_uom",
+            "stock_uom_name",
+            "item_type",
             "standard_price",
+            "valuation_rate",
+            "cost_price",
+            "standard_cost",
+            "valuation_method",
+            "track_inventory",
+            "is_batch_tracked",
+            "is_serial_tracked",
+            "requires_fefo",
+            "is_tradable",
+            "prevent_expired_issuance",
+            "expiry_warning_days",
+            "reorder_level",
+            "reorder_quantity",
+            "lead_time_days",
+            "inventory_account",
+            "expense_account",
+            "status",
+            "status_display",
+            "department",
+            "department_name",
+            "created_by",
             "is_active",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["company", "code", "created_at", "updated_at"]
+        read_only_fields = ["company", "code", "created_at", "updated_at", "status_display"]
 
     def get_uom_name(self, obj):
         if obj.uom:
@@ -943,6 +1000,29 @@ class BudgetItemCodeSerializer(serializers.ModelSerializer):
     def get_uom_code(self, obj):
         if obj.uom:
             return obj.uom.code
+        return None
+
+    def get_stock_uom_name(self, obj):
+        if obj.stock_uom:
+            return obj.stock_uom.name
+        return None
+
+    def get_department_name(self, obj):
+        if obj.department:
+            return obj.department.name
+        return None
+
+    def get_status_display(self, obj):
+        return obj.get_status_display() if hasattr(obj, 'get_status_display') else obj.status
+
+    def get_category_name(self, obj):
+        if obj.category_ref:
+            return obj.category_ref.name
+        return obj.category
+
+    def get_sub_category_name(self, obj):
+        if obj.sub_category_ref:
+            return obj.sub_category_ref.name
         return None
 
     def _generate_item_code(self, company) -> str:
@@ -1231,4 +1311,3 @@ class BudgetPricePolicySerializer(serializers.ModelSerializer):
             setattr(instance, k, v)
         instance.save()
         return instance
-

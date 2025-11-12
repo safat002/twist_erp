@@ -1,0 +1,74 @@
+find: cannot delete ‘./backend/apps/policies/__pycache__/views.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/policies/__pycache__/__init__.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/procurement/migrations/__pycache__/0009_rename_proc_pr_draft_compan_bf18f3_idx_procurement_company_cda163_idx_and_more.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/procurement/migrations/__pycache__/0010_alter_product_fk_to_item.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/procurement/migrations/__pycache__/0011_supplierblackoutwindow.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/procurement/migrations/__pycache__/__init__.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/procurement/__pycache__/admin.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/procurement/__pycache__/apps.cpython-310.pyc’: Permission denied
+find: cannot delete ‘./backend/apps/procurement/__pycache__/permissions.cpython-310.pyc’: Permission denied
+find: cannot delete ‘./backend/apps/procurement/__pycache__/serializers.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/procurement/__pycache__/urls.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/procurement/__pycache__/views.cpython-310.pyc’: Permission denied
+find: cannot delete ‘./backend/apps/production/migrations/__pycache__/0001_initial.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/production/migrations/__pycache__/0002_alter_product_fk_to_item.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/production/migrations/__pycache__/0003_fix_workordercomponent_materialissueline.cpython-310.pyc’: Permission denied
+find: cannot delete ‘./backend/apps/production/migrations/__pycache__/0004_alter_materialissueline_options.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/production/migrations/__pycache__/0005_unified_item_production.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/production/migrations/__pycache__/__init__.cpython-310.pyc’: Permission denied
+find: cannot delete ‘./backend/apps/production/__pycache__/models.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/production/__pycache__/permissions.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/production/__pycache__/serializers.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/production/__pycache__/urls.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/production/__pycache__/views.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/production/__pycache__/__init__.cpython-310.pyc’: Permission denied
+find: cannot delete ‘./backend/apps/projects/__pycache__/admin.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/projects/__pycache__/apps.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/projects/__pycache__/models.cpython-310.pyc’: Permission denied
+find: cannot delete ‘./backend/apps/projects/__pycache__/permissions.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/projects/__pycache__/serializers.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/projects/__pycache__/signals.cpython-310.pyc’: Permission denied
+find: cannot delete ‘./backend/apps/projects/__pycache__/urls.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/projects/__pycache__/views.cpython-310.pyc’: Permission denied
+find: cannot delete ‘./backend/apps/projects/__pycache__/__init__.cpython-310.pyc’: No such file or directory
+find: ‘./backend/apps/report_builder/migrations/__pycache__’: No such file or directory
+find: cannot delete ‘./backend/apps/report_builder/services/__pycache__/metadata_sync.cpython-310.pyc’: Permission denied
+find: cannot delete ‘./backend/apps/report_builder/services/__pycache__/query_engine.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/report_builder/services/__pycache__/registry.cpython-310.pyc’: Permission denied
+find: cannot delete ‘./backend/apps/report_builder/services/__pycache__/__init__.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/report_builder/__pycache__/urls.cpython-310.pyc’: Permission denied
+find: cannot delete ‘./backend/apps/report_builder/__pycache__/views.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/report_builder/__pycache__/__init__.cpython-310.pyc’: Permission denied
+find: cannot delete ‘./backend/apps/sales/migrations/__pycache__/0001_initial.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/sales/migrations/__pycache__/0002_customer_company_group_salesorder_company_group.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/sales/migrations/__pycache__/0003_remove_customer_company_group_and_more.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/sales/migrations/__pycache__/0004_customer_customer_type.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/sales/migrations/__pycache__/0005_taxcategory_productcategory_product_and_more.cpython-310.pyc’: Permission denied
+find: cannot delete ‘./backend/apps/sales/models/__pycache__/sales_order.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/sales/models/__pycache__/sales_order_line.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/sales/models/__pycache__/__init__.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/sales/serializers/__pycache__/sales_order_serializers.cpython-310.pyc’: Permission denied
+find: cannot delete ‘./backend/apps/sales/views/__pycache__/sales_order_views.cpython-310.pyc’: Permission denied
+find: cannot delete ‘./backend/apps/sales/views/__pycache__/__init__.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/sales/__pycache__/__init__.cpython-310.pyc’: Permission denied
+find: cannot delete ‘./backend/apps/security/middleware/__pycache__/permission_context_middleware.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/tasks/migrations/__pycache__/0002_taskitem_recurrence.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/tasks/migrations/__pycache__/0003_usercalendarlink.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/tasks/migrations/__pycache__/0004_usercalendarlink_created_by_and_more.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/tasks/migrations/__pycache__/0005_usercalendarcredential.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/tasks/migrations/__pycache__/0006_usercalendarcredential_created_by_and_more.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/tasks/__pycache__/signals.cpython-310.pyc’: Permission denied
+find: cannot delete ‘./backend/apps/tasks/__pycache__/urls.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/tasks/__pycache__/views.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/tasks/__pycache__/__init__.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/users/migrations/__pycache__/0002_user_company_groups_user_default_company_group_and_more.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/users/migrations/__pycache__/0003_user_admin_theme.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/users/migrations/__pycache__/0004_userorganizationalaccess.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/users/migrations/__pycache__/__init__.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/apps/users/__pycache__/__init__.cpython-310.pyc’: Permission denied
+find: ‘./backend/apps/workflows/migrations/__pycache__’: No such file or directory
+find: cannot delete ‘./backend/apps/workflows/__pycache__/views.cpython-310.pyc’: Permission denied
+find: cannot delete ‘./backend/apps/workflows/__pycache__/__init__.cpython-310.pyc’: No such file or directory
+find: cannot delete ‘./backend/core/__pycache__/wsgi.cpython-310.pyc’: Permission denied
+find: ‘./backend/embedded_db/__pycache__’: No such file or directory
+find: ‘./backend/__pycache__’: No such file or directory

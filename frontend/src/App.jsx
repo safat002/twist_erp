@@ -29,17 +29,25 @@ import GeneralLedger from './pages/Finance/Reports/GeneralLedger';
 import ARAging from './pages/Finance/Reports/ARAging';
 import APAging from './pages/Finance/Reports/APAging';
 import VATReturn from './pages/Finance/Reports/VATReturn';
+import GLPostingRules from './pages/Finance/GLPostingRules';
 
 // Inventory
 import InventoryWorkspace from './pages/Inventory/InventoryWorkspace';
 import ProductsList from './pages/Inventory/Products/ProductsList';
+import ItemDetail from './pages/Inventory/Products/ItemDetail';
 import WarehousesList from './pages/Inventory/Warehouses/WarehousesList';
 import StockMovements from './pages/Inventory/StockMovements/StockMovements';
+import GoodsReceiptManagement from './pages/Inventory/GoodsReceipts/GoodsReceiptManagementNew';
+import MaterialIssueManagement from './pages/Inventory/MaterialIssues/MaterialIssueManagement';
 import InternalRequisitions from './pages/Inventory/Requisitions/InternalRequisitions';
 import PurchaseRequisitions from './pages/Inventory/Requisitions/PurchaseRequisitions';
 import RequisitionsHub from './pages/Inventory/Requisitions/RequisitionsHub';
 import { ValuationSettings, CostLayersView, ValuationReport } from './pages/Inventory/Valuation';
 import LandedCostAdjustment from './pages/Inventory/Valuation/LandedCostAdjustment';
+import LandedCostVoucherManagement from './pages/Inventory/LandedCost/LandedCostVoucherManagement';
+import RTVManagement from './pages/Inventory/ReturnToVendor/RTVManagement';
+import QCManagement from './pages/Inventory/QualityControl/QCManagement';
+import StockHoldManagement from './pages/Inventory/QualityControl/StockHoldManagement';
 
 // Sales & CRM
 import SalesWorkspace from './pages/Sales/SalesWorkspace';
@@ -180,7 +188,8 @@ const MainApp = () => {
 
           <Route path="/finance" element={<FeatureGuard module="finance"><FinanceWorkspace /></FeatureGuard>} />
 
-          <Route path="/finance/accounts" element={<FeatureGuard module="finance" feature="chart_of_accounts"><AccountsList /></FeatureGuard>} />
+            <Route path="/finance/accounts" element={<FeatureGuard module="finance" feature="chart_of_accounts"><AccountsList /></FeatureGuard>} />
+            <Route path="/finance/gl-posting-rules" element={<FeatureGuard module="finance" feature="inventory_posting_rules"><GLPostingRules /></FeatureGuard>} />
 
           <Route path="/finance/journals" element={<FeatureGuard module="finance" feature="journal_vouchers"><JournalVouchersList /></FeatureGuard>} />
 
@@ -213,6 +222,7 @@ const MainApp = () => {
           <Route path="/inventory" element={<FeatureGuard module="inventory"><InventoryWorkspace /></FeatureGuard>} />
 
           <Route path="/inventory/products" element={<FeatureGuard module="inventory" feature="products"><ProductsList /></FeatureGuard>} />
+          <Route path="/inventory/items/:itemId" element={<FeatureGuard module="inventory" feature="products"><ItemDetail /></FeatureGuard>} />
 
           <Route path="/inventory/warehouses" element={<FeatureGuard module="inventory"><WarehousesList /></FeatureGuard>} />
 
@@ -232,7 +242,17 @@ const MainApp = () => {
 
           <Route path="/inventory/valuation/landed-cost" element={<FeatureGuard module="inventory"><LandedCostAdjustment /></FeatureGuard>} />
 
+          <Route path="/inventory/landed-cost-vouchers" element={<FeatureGuard module="inventory"><LandedCostVoucherManagement /></FeatureGuard>} />
 
+          <Route path="/inventory/return-to-vendor" element={<FeatureGuard module="inventory"><RTVManagement /></FeatureGuard>} />
+
+          <Route path="/inventory/quality-control" element={<FeatureGuard module="inventory"><QCManagement /></FeatureGuard>} />
+
+          <Route path="/inventory/qc/stock-holds" element={<FeatureGuard module="inventory"><StockHoldManagement /></FeatureGuard>} />
+
+          <Route path="/inventory/goods-receipts" element={<FeatureGuard module="inventory"><GoodsReceiptManagement /></FeatureGuard>} />
+
+          <Route path="/inventory/material-issues" element={<FeatureGuard module="inventory"><MaterialIssueManagement /></FeatureGuard>} />
 
           {/* Sales Module */}
 
@@ -273,10 +293,6 @@ const MainApp = () => {
           <Route path="/procurement/suppliers" element={<FeatureGuard module="procurement" feature="vendors"><SuppliersList /></FeatureGuard>} />
 
           <Route path="/procurement/orders" element={<FeatureGuard module="procurement" feature="purchase_orders"><PurchaseOrdersList /></FeatureGuard>} />
-
-          
-
-
 
           {/* Production Module */}
 

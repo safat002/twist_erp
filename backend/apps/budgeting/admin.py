@@ -250,10 +250,10 @@ class BudgetLineAdmin(admin.ModelAdmin):
                             pass
             except Exception:
                 pass
-            # Rename item field label to "Item Name" and keep item_code visible
+            # Rename budget_item field label to "Item Name" and keep item_code visible
             try:
-                if 'item' in self.fields:
-                    self.fields['item'].label = 'Item Name'
+                if 'budget_item' in self.fields:
+                    self.fields['budget_item'].label = 'Item Name'
             except Exception:
                 pass
 
@@ -281,10 +281,10 @@ class BudgetLineAdmin(admin.ModelAdmin):
                             pass
             except Exception:
                 pass
-            # Rename item field label to "Item Name"
+            # Rename budget_item field label to "Item Name"
             try:
-                if 'item' in self.fields:
-                    self.fields['item'].label = 'Item Name'
+                if 'budget_item' in self.fields:
+                    self.fields['budget_item'].label = 'Item Name'
             except Exception:
                 pass
 
@@ -328,19 +328,19 @@ class BudgetLineAdmin(admin.ModelAdmin):
                 missing = {}
                 if not getattr(obj, 'product_id', None):
                     missing['product'] = 'Product is required for operational/production budgets.'
-                if not getattr(obj, 'item_id', None):
-                    missing['item'] = 'Item is required for operational/production budgets.'
+                if not getattr(obj, 'budget_item_id', None):
+                    missing['budget_item'] = 'Budget item code is required for operational/production budgets.'
                 if missing:
                     raise ValidationError(missing)
         except ValidationError:
             raise
         except Exception:
             pass
-        # If item is selected, set item_code and item_name automatically
+        # If budget_item is selected, set item_code and item_name automatically
         try:
-            if getattr(obj, 'item_id', None):
-                obj.item_code = getattr(obj.item, 'code', obj.item_code)
-                obj.item_name = getattr(obj.item, 'name', obj.item_name)
+            if getattr(obj, 'budget_item_id', None):
+                obj.item_code = getattr(obj.budget_item, 'code', obj.item_code)
+                obj.item_name = getattr(obj.budget_item, 'name', obj.item_name)
         except Exception:
             pass
         try:
@@ -375,10 +375,10 @@ class BudgetLineAdmin(admin.ModelAdmin):
                 kwargs['queryset'] = qs
             except Exception:
                 pass
-        if db_field.name == 'item':
+        if db_field.name == 'budget_item':
             try:
-                from apps.inventory.models import Item
-                qs = Item.objects.order_by('code')
+                from apps.budgeting.models import BudgetItemCode
+                qs = BudgetItemCode.objects.order_by('code')
                 company = getattr(request, 'company', None)
                 if company is not None:
                     qs = qs.filter(company=company)
@@ -661,9 +661,9 @@ class BudgetUnitOfMeasureAdmin(BaseUOMAdmin):
     list_display = ["code", "name", "is_active", "company_group"]
     list_filter = ["is_active", "company__company_group"]
     # Hide company on the form; it is auto-resolved on save
-    exclude = getattr(BaseUOMAdmin, 'exclude', []) + ["company"]
+    exclude = (getattr(BaseUOMAdmin, 'exclude', None) or []) + ["company"]
     # Show group context read-only alongside standard read-only fields
-    readonly_fields = getattr(BaseUOMAdmin, 'readonly_fields', []) + ["company_group"]
+    readonly_fields = (getattr(BaseUOMAdmin, 'readonly_fields', None) or []) + ["company_group"]
 
     def company_group(self, obj):
         return getattr(getattr(obj, "company", None), "company_group", None)

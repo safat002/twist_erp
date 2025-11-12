@@ -229,9 +229,9 @@ class PaymentAdmin(admin.ModelAdmin):
 
 @admin.register(InventoryPostingRule)
 class InventoryPostingRuleAdmin(admin.ModelAdmin):
-    list_display = ['company', 'category', 'warehouse_type', 'transaction_type', 'inventory_account', 'cogs_account', 'is_active']
+    list_display = ['company', 'budget_item', 'category', 'warehouse_type', 'transaction_type', 'inventory_account', 'cogs_account', 'is_active']
     list_filter = ['company', 'warehouse_type', 'transaction_type', 'is_active']
-    search_fields = ['company__code', 'category__code']
+    search_fields = ['company__code', 'category__code', 'budget_item__code']
 
 
 @admin.register(FiscalPeriod)

@@ -22,6 +22,8 @@
     --card-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
     --hover-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     --transition: all 0.3s ease;
+    /* Customizable sidebar width */
+    --sidebar-width: 280px;
 }
 
 /* ===== GENERAL IMPROVEMENTS ===== */
@@ -37,6 +39,8 @@ body {
 .content-wrapper {
     padding: 20px;
     min-height: calc(100vh - 120px);
+    /* Expand body area to fully align with wider sidebar */
+    width: calc(100% - var(--sidebar-width)) !important;
 }
 
 /* ===== NAVBAR ENHANCEMENTS ===== */
@@ -44,6 +48,8 @@ body {
     background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%) !important;
     border-bottom: 3px solid var(--secondary-color);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    padding-left: 0 !important; /* remove left inner padding */
+    padding-right: 0 !important; /* remove right inner padding */
 }
 
 .navbar-nav .nav-link {
@@ -71,6 +77,56 @@ body {
     box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
 }
 
+/* Increase left sidebar width and keep layout aligned */
+.main-sidebar,
+.main-sidebar::before {
+    width: var(--sidebar-width) !important;
+}
+
+.content-wrapper,
+.main-footer,
+.main-header {
+    margin-left: var(--sidebar-width) !important;
+}
+
+/* Respect collapsed mode */
+body.sidebar-mini.sidebar-collapse .main-sidebar,
+body.sidebar-mini.sidebar-collapse .main-sidebar::before {
+    width: 4.6rem !important;
+}
+
+body.sidebar-mini.sidebar-collapse .content-wrapper,
+body.sidebar-mini.sidebar-collapse .main-footer,
+body.sidebar-mini.sidebar-collapse .main-header {
+    margin-left: 4.6rem !important;
+}
+
+/* Make content containers span the full width (removes inner gutters that create perceived gaps) */
+.content-wrapper .container,
+.content-wrapper .container-fluid,
+.content-wrapper .row,
+.content-wrapper .col,
+.content-wrapper .col-12 {
+    max-width: 100% !important;
+    width: 100% !important;
+}
+
+.content-wrapper .container,
+.content-wrapper .container-fluid {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+}
+
+/* Ensure the navbar fills full width and removes container gutters */
+.main-header .container,
+.main-header .container-fluid,
+.main-header .navbar .container-fluid {
+    max-width: 100% !important;
+    width: 100% !important;
+    padding-right: 0 !important;
+    padding-left: 0 !important;
+}
+
 .sidebar-dark-primary .nav-sidebar > .nav-item > .nav-link.active {
     background-color: rgba(52, 152, 219, 0.3) !important;
     border-left: 4px solid var(--secondary-color);
@@ -79,9 +135,11 @@ body {
 
 .nav-sidebar .nav-link {
     border-radius: 4px;
-    margin: 2px 8px;
+    margin: 2px 0; /* remove left/right margins */
     transition: var(--transition);
     color: #ffffff !important;
+    padding-left: 0 !important; /* remove left padding */
+    padding-right: 0 !important; /* remove right padding */
 }
 
 .nav-sidebar .nav-link:hover {
@@ -103,6 +161,9 @@ body {
 /* Nested menu items */
 .nav-sidebar .nav-treeview > .nav-item > .nav-link {
     color: rgba(255, 255, 255, 0.9) !important;
+    margin: 2px 0 !important; /* remove left/right margins */
+    padding-left: 0 !important; /* remove left padding */
+    padding-right: 0 !important; /* remove right padding */
 }
 
 .nav-sidebar .nav-treeview > .nav-item > .nav-link:hover {
@@ -124,6 +185,18 @@ body {
 
 .brand-link .brand-text {
     color: #ffffff !important;
+}
+
+/* Hide brand text in the navbar/sidebar header (keep logo only) */
+.brand-link .brand-text,
+.main-header .navbar-brand,
+.main-header .brand-link .brand-text {
+    display: none !important;
+}
+
+/* Avoid text overflow in wider sidebar */
+.nav-sidebar .nav-link p {
+    white-space: normal;
 }
 
 /* Sidebar user panel */
@@ -159,6 +232,14 @@ body {
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    padding-left: 0 !important; /* remove left padding */
+    padding-right: 0 !important; /* remove right padding */
+}
+
+/* Remove brand horizontal padding in sidebar header */
+.main-sidebar .brand-link {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
 }
 
 /* Sidebar chevron/arrow icons */

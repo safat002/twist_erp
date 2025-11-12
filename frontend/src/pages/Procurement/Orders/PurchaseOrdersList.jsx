@@ -106,7 +106,7 @@ const normalizePurchaseOrders = (records = []) =>
     const lines = Array.isArray(po.lines) ? po.lines : [];
     const firstLine = lines[0] || {};
     const category =
-      po.request_type_display || firstLine.item_name || firstLine.budget_line_name || po.category || '-';
+      po.request_type_display || firstLine.budget_item_name || firstLine.budget_line_name || po.category || '-';
     const amount = Number(po.total_amount ?? po.amount ?? 0);
     const currency = po.currency || 'USD';
     const statusKeyRaw = (po.status || po.status_key || '').toString().toLowerCase();
@@ -250,7 +250,7 @@ const PurchaseOrdersList = () => {
     try {
       const { data } = await api.get('/api/v1/budgets/lines/', { params: { cost_center: costCenterId } });
       const list = Array.isArray(data?.results) ? data.results : (Array.isArray(data) ? data : []);
-      setCreateBudgetLines(list.map((bl) => ({ value: bl.id, label: `${bl.item_code || ''} ${bl.item_name || ''}`.trim() })));
+      setCreateBudgetLines(list.map((bl) => ({ value: bl.id, label: `${bl.budget_item_code || ''} ${bl.budget_item_name || ''}`.trim() })));
     } catch (e) {
       setCreateBudgetLines([]);
     }

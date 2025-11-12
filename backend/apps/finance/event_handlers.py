@@ -1,4 +1,7 @@
 
+from collections import defaultdict
+from decimal import Decimal
+
 from django.db import transaction
 from django.utils import timezone
 from apps.finance.services.journal_service import JournalService
@@ -6,6 +9,12 @@ from apps.inventory.models import StockMovement
 from apps.finance.models import Account, Journal
 from apps.finance.services.posting_rules import resolve_inventory_accounts
 from shared.event_bus import event_bus
+
+
+def _line_dimensions(line, movement):
+    cost_center = getattr(line, 'cost_center', None) or getattr(movement, 'cost_center', None)
+    project = getattr(line, 'project', None) or getattr(movement, 'project', None)
+    return cost_center, project
 
 def handle_stock_received(sender, **kwargs):
     """
@@ -19,7 +28,11 @@ def handle_stock_received(sender, **kwargs):
     with transaction.atomic():
         movement = StockMovement.objects.select_related(
             'company', 'to_warehouse'
-        ).prefetch_related('lines__product__inventory_account').get(pk=stock_movement_id)
+        ).prefetch_related(
+            'lines__item__inventory_account',
+            'lines__cost_center',
+            'lines__project',
+        ).get(pk=stock_movement_id)
 
         if not movement or movement.movement_type != 'RECEIPT':
             return
@@ -38,35 +51,49 @@ def handle_stock_received(sender, **kwargs):
             print(f"Error: General Journal not configured for company {company.name}")
             return
 
-        total_value = sum(line.quantity * line.rate for line in movement.lines.all())
+        debit_buckets = defaultdict(Decimal)
+        total_credit = Decimal('0')
 
-        if total_value <= 0:
+        for line in movement.lines.all():
+            quantity = line.quantity or Decimal('0')
+            rate = line.rate or Decimal('0')
+            value = quantity * rate
+            if value <= 0:
+                continue
+            product = line.item
+            inv_acct, _ = resolve_inventory_accounts(
+                company=company,
+                product=product,
+                warehouse=getattr(movement, 'to_warehouse', None),
+                transaction_type='RECEIPT'
+            )
+            inventory_account = inv_acct or getattr(product, 'inventory_account', None)
+            if not inventory_account:
+                continue
+            cost_center, project = _line_dimensions(line, movement)
+            debit_buckets[(inventory_account, cost_center, project)] += value
+            total_credit += value
+
+        if total_credit <= 0:
             return
 
-        # Resolve inventory account via posting rules
-        first_line = movement.lines.first()
-        inv_acct, _ = resolve_inventory_accounts(
-            company=company,
-            product=getattr(first_line, 'product', None),
-            warehouse=getattr(movement, 'to_warehouse', None),
-            transaction_type='RECEIPT'
-        )
-        inventory_account = inv_acct or first_line.product.inventory_account
-
-        entries_data = [
-            {
-                'account': inventory_account,
-                'debit': total_value,
+        entries_data = []
+        for (account, cost_center, project), amount in debit_buckets.items():
+            entries_data.append({
+                'account': account,
+                'debit': amount,
                 'credit': 0,
-                'description': f'Inventory from GRN {movement.reference}'
-            },
-            {
-                'account': grni_account,
-                'debit': 0,
-                'credit': total_value,
-                'description': f'GRNI for {movement.reference}'
-            }
-        ]
+                'description': f'Inventory from GRN {movement.reference}',
+                'cost_center': cost_center,
+                'project': project,
+            })
+
+        entries_data.append({
+            'account': grni_account,
+            'debit': 0,
+            'credit': total_credit,
+            'description': f'GRNI for {movement.reference}',
+        })
 
         JournalService.create_journal_voucher(
             company=company,
@@ -90,7 +117,12 @@ def handle_stock_shipped(sender, **kwargs):
     with transaction.atomic():
         movement = StockMovement.objects.select_related(
             'company'
-        ).prefetch_related('lines__product__inventory_account', 'lines__product__expense_account').get(pk=stock_movement_id)
+        ).prefetch_related(
+            'lines__item__inventory_account',
+            'lines__item__expense_account',
+            'lines__cost_center',
+            'lines__project',
+        ).get(pk=stock_movement_id)
 
         if not movement or movement.movement_type != 'ISSUE':
             return
@@ -103,38 +135,52 @@ def handle_stock_shipped(sender, **kwargs):
             print(f"Error: Sales Journal not configured for company {company.name}")
             return
 
-        total_cost = sum(abs(line.quantity) * line.rate for line in movement.lines.all())
+        debit_buckets = defaultdict(Decimal)
+        credit_buckets = defaultdict(Decimal)
 
-        if total_cost <= 0:
+        for line in movement.lines.all():
+            quantity = abs(line.quantity or Decimal('0'))
+            rate = line.rate or Decimal('0')
+            value = quantity * rate
+            if value <= 0:
+                continue
+            product = line.item
+            inv_acct, cogs_acct = resolve_inventory_accounts(
+                company=company,
+                product=product,
+                warehouse=getattr(movement, 'from_warehouse', None),
+                transaction_type='ISSUE'
+            )
+            cogs_account = cogs_acct or getattr(product, 'expense_account', None)
+            inventory_account = inv_acct or getattr(product, 'inventory_account', None)
+            if not cogs_account or not inventory_account:
+                continue
+            cost_center, project = _line_dimensions(line, movement)
+            debit_buckets[(cogs_account, cost_center, project)] += value
+            credit_buckets[(inventory_account, cost_center, project)] += value
+
+        if not debit_buckets:
             return
 
-        # For simplicity, we use the accounts from the first product line.
-        # A more robust implementation would group by different expense/inventory accounts.
-        product = movement.lines.first().product
-        # Resolve via rules for ISSUE
-        inv_acct, cogs_acct = resolve_inventory_accounts(
-            company=company,
-            product=product,
-            warehouse=getattr(movement, 'from_warehouse', None),
-            transaction_type='ISSUE'
-        )
-        cogs_account = cogs_acct or product.expense_account
-        inventory_account = inv_acct or product.inventory_account
-
-        entries_data = [
-            {
-                'account': cogs_account,
-                'debit': total_cost,
+        entries_data = []
+        for (account, cost_center, project), amount in debit_buckets.items():
+            entries_data.append({
+                'account': account,
+                'debit': amount,
                 'credit': 0,
-                'description': f'COGS for shipment {movement.reference}'
-            },
-            {
-                'account': inventory_account,
+                'description': f'COGS for shipment {movement.reference}',
+                'cost_center': cost_center,
+                'project': project,
+            })
+        for (account, cost_center, project), amount in credit_buckets.items():
+            entries_data.append({
+                'account': account,
                 'debit': 0,
-                'credit': total_cost,
-                'description': f'Inventory reduction for shipment {movement.reference}'
-            }
-        ]
+                'credit': amount,
+                'description': f'Inventory reduction for shipment {movement.reference}',
+                'cost_center': cost_center,
+                'project': project,
+            })
 
         JournalService.create_journal_voucher(
             company=company,
@@ -158,7 +204,11 @@ def handle_transfer_out(sender, **kwargs):
         return
 
     with transaction.atomic():
-        movement = StockMovement.objects.select_related('company').prefetch_related('lines__product__inventory_account').get(pk=stock_movement_id)
+        movement = StockMovement.objects.select_related('company').prefetch_related(
+            'lines__item__inventory_account',
+            'lines__cost_center',
+            'lines__project',
+        ).get(pk=stock_movement_id)
         if not movement or movement.movement_type != 'TRANSFER':
             return
 
@@ -175,22 +225,51 @@ def handle_transfer_out(sender, **kwargs):
             print(f"Error: General Journal not configured for company {company.name}")
             return
 
-        total_value = sum(abs(line.quantity) * line.rate for line in movement.lines.all())
-        if total_value <= 0:
+        debit_buckets = defaultdict(Decimal)
+        credit_buckets = defaultdict(Decimal)
+
+        for line in movement.lines.all():
+            quantity = abs(line.quantity or Decimal('0'))
+            rate = line.rate or Decimal('0')
+            value = quantity * rate
+            if value <= 0:
+                continue
+            product = line.item
+            inv_acct, _ = resolve_inventory_accounts(
+                company=company,
+                product=product,
+                warehouse=getattr(movement, 'from_warehouse', None),
+                transaction_type='TRANSFER'
+            )
+            inventory_account = inv_acct or getattr(product, 'inventory_account', None)
+            if not inventory_account:
+                continue
+            cost_center, project = _line_dimensions(line, movement)
+            debit_buckets[(intransit_account, cost_center, project)] += value
+            credit_buckets[(inventory_account, cost_center, project)] += value
+
+        if not debit_buckets:
             return
 
-        first_line = movement.lines.first()
-        inv_acct, _ = resolve_inventory_accounts(
-            company=company,
-            product=getattr(first_line, 'product', None),
-            warehouse=getattr(movement, 'from_warehouse', None),
-            transaction_type='TRANSFER'
-        )
-        inventory_account = inv_acct or first_line.product.inventory_account
-        entries_data = [
-            { 'account': intransit_account, 'debit': total_value, 'credit': 0, 'description': f'Transfer Out {movement.reference}' },
-            { 'account': inventory_account, 'debit': 0, 'credit': total_value, 'description': f'Inventory Transfer Out {movement.reference}' },
-        ]
+        entries_data = []
+        for (account, cost_center, project), amount in debit_buckets.items():
+            entries_data.append({
+                'account': account,
+                'debit': amount,
+                'credit': 0,
+                'description': f'Transfer Out {movement.reference}',
+                'cost_center': cost_center,
+                'project': project,
+            })
+        for (account, cost_center, project), amount in credit_buckets.items():
+            entries_data.append({
+                'account': account,
+                'debit': 0,
+                'credit': amount,
+                'description': f'Inventory Transfer Out {movement.reference}',
+                'cost_center': cost_center,
+                'project': project,
+            })
 
         JournalService.create_journal_voucher(
             company=company,
@@ -214,7 +293,11 @@ def handle_transfer_in(sender, **kwargs):
         return
 
     with transaction.atomic():
-        movement = StockMovement.objects.select_related('company').prefetch_related('lines__product__inventory_account').get(pk=stock_movement_id)
+        movement = StockMovement.objects.select_related('company').prefetch_related(
+            'lines__item__inventory_account',
+            'lines__cost_center',
+            'lines__project',
+        ).get(pk=stock_movement_id)
         if not movement or movement.movement_type != 'TRANSFER':
             return
 
@@ -231,22 +314,51 @@ def handle_transfer_in(sender, **kwargs):
             print(f"Error: General Journal not configured for company {company.name}")
             return
 
-        total_value = sum(abs(line.quantity) * line.rate for line in movement.lines.all())
-        if total_value <= 0:
+        debit_buckets = defaultdict(Decimal)
+        credit_buckets = defaultdict(Decimal)
+
+        for line in movement.lines.all():
+            quantity = abs(line.quantity or Decimal('0'))
+            rate = line.rate or Decimal('0')
+            value = quantity * rate
+            if value <= 0:
+                continue
+            product = line.item
+            inv_acct, _ = resolve_inventory_accounts(
+                company=company,
+                product=product,
+                warehouse=getattr(movement, 'to_warehouse', None),
+                transaction_type='TRANSFER'
+            )
+            inventory_account = inv_acct or getattr(product, 'inventory_account', None)
+            if not inventory_account:
+                continue
+            cost_center, project = _line_dimensions(line, movement)
+            debit_buckets[(inventory_account, cost_center, project)] += value
+            credit_buckets[(intransit_account, cost_center, project)] += value
+
+        if not debit_buckets:
             return
 
-        first_line = movement.lines.first()
-        inv_acct, _ = resolve_inventory_accounts(
-            company=company,
-            product=getattr(first_line, 'product', None),
-            warehouse=getattr(movement, 'to_warehouse', None),
-            transaction_type='TRANSFER'
-        )
-        inventory_account = inv_acct or first_line.product.inventory_account
-        entries_data = [
-            { 'account': inventory_account, 'debit': total_value, 'credit': 0, 'description': f'Transfer In {movement.reference}' },
-            { 'account': intransit_account, 'debit': 0, 'credit': total_value, 'description': f'In-Transit Clearance {movement.reference}' },
-        ]
+        entries_data = []
+        for (account, cost_center, project), amount in debit_buckets.items():
+            entries_data.append({
+                'account': account,
+                'debit': amount,
+                'credit': 0,
+                'description': f'Transfer In {movement.reference}',
+                'cost_center': cost_center,
+                'project': project,
+            })
+        for (account, cost_center, project), amount in credit_buckets.items():
+            entries_data.append({
+                'account': account,
+                'debit': 0,
+                'credit': amount,
+                'description': f'In-Transit Clearance {movement.reference}',
+                'cost_center': cost_center,
+                'project': project,
+            })
 
         JournalService.create_journal_voucher(
             company=company,

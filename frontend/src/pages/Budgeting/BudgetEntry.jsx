@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Card, Table, Space, Button, message, Select, Row, Col, Statistic, Modal, Form, Input, InputNumber } from 'antd';
+import { Card, Table, Space, Button, message, Select, Row, Col, Statistic, Modal, Form, Input, InputNumber, Tag } from 'antd';
 import api from '../../services/api';
 import dayjs from 'dayjs';
 import {
@@ -143,7 +143,7 @@ const BudgetEntry = () => {
         </Col>
         <Col span={14}>
           <Row gutter={12} justify="end">
-            <Col><Statistic title="Budget Items No." value={summary.items || 0} /></Col>
+            <Col><Statistic title="Budget Items No." value={summary.budget_items || 0} /></Col>
             <Col><Statistic title="Budget Value" value={Number(summary.value || 0)} precision={2} /></Col>
             <Col><Statistic title="Used Value" value={Number(summary.used || 0)} precision={2} /></Col>
             <Col><Statistic title="Remaining Value" value={Number(summary.remaining || 0)} precision={2} /></Col>
@@ -223,7 +223,7 @@ const BudgetEntry = () => {
                 showSearch
                 style={{ width: '100%' }}
                 placeholder="Select item code"
-                value={newRow.item_code || undefined}
+                value={newRow.budget_item_code || undefined}
                 optionFilterProp="label"
                 optionLabelProp="label"
                 onChange={async (val) => {
@@ -232,7 +232,7 @@ const BudgetEntry = () => {
                   setNewRow((r) => ({
                     ...r,
                     item_code: val,
-                    item_name: found?.name || r.item_name,
+                    item_name: found?.name || r.budget_item_name,
                     manual_unit_price: typeof found?.standard_price === 'number' ? found.standard_price : r.manual_unit_price,
                   }));
                   if (val) {
@@ -249,15 +249,15 @@ const BudgetEntry = () => {
               />
             ) : (
               <span>
-                {record.item_code}
-                {record.item_name ? ` - ${record.item_name}` : ''}
+                {record.budget_item_code}
+                {record.budget_item_name ? ` - ${record.budget_item_name}` : ''}
               </span>
             )
           },
           {
             title: 'Category',
             dataIndex: 'item_category_name',
-            render: (v, record) => (record._isNew ? '-' : (v || record.item_category_name || record.category_name || record.category || '-')),
+            render: (v, record) => (record._isNew ? '-' : (v || record.budget_item_category_name || record.category_name || record.category || '-')),
           },
           {
             title: 'Sub-Category',
@@ -278,7 +278,7 @@ const BudgetEntry = () => {
                     e.preventDefault();
                     // invoke the same add action as the button
                     try {
-                      if (!newRow.item_code || !newRow.quantity) {
+                      if (!newRow.budget_item_code || !newRow.quantity) {
                         message.error('Item code and quantity are required');
                         return;
                       }
@@ -289,8 +289,8 @@ const BudgetEntry = () => {
                       await addBudgetItem({
                         budget: selectedBudget,
                         cost_center: selectedCC,
-                        item_code: newRow.item_code,
-                        item_name: newRow.item_name,
+                        item_code: newRow.budget_item_code,
+                        item_name: newRow.budget_item_name,
                         quantity: newRow.quantity,
                         manual_unit_price: newRow.manual_unit_price,
                       });
@@ -339,7 +339,19 @@ const BudgetEntry = () => {
           {
             title: 'Status',
             dataIndex: 'status',
-            render: (v) => (v ? String(v).replace('_', ' ') : 'draft'),
+            render: (v) => {
+              let statusText = (v || 'draft').replace('_', ' ');
+              let color = 'default';
+              if (v === 'approved') color = 'green';
+              if (v === 'final_approved') {
+                statusText = 'final approved';
+                color = 'blue';
+              }
+              if (v === 'rejected') color = 'red';
+              if (v === 'submitted') color = 'gold';
+              if (v === 'needs_review') color = 'orange';
+              return <Tag color={color}>{statusText}</Tag>;
+            },
           },
           {
             title: 'Action',
@@ -349,7 +361,7 @@ const BudgetEntry = () => {
                 type="primary"
                 onClick={async () => {
                   try {
-                    if (!newRow.item_code || !newRow.quantity) {
+                    if (!newRow.budget_item_code || !newRow.quantity) {
                       message.error('Item code and quantity are required');
                       return;
                     }
@@ -360,8 +372,8 @@ const BudgetEntry = () => {
                     await addBudgetItem({
                       budget: selectedBudget,
                       cost_center: selectedCC,
-                      item_code: newRow.item_code,
-                      item_name: newRow.item_name,
+                      item_code: newRow.budget_item_code,
+                      item_name: newRow.budget_item_name,
                       quantity: newRow.quantity,
                       manual_unit_price: newRow.manual_unit_price,
                     });
@@ -423,8 +435,8 @@ const BudgetEntry = () => {
             await addBudgetItem({
               budget: selectedBudget,
               cost_center: selectedCC,
-              item_code: v.item_code,
-              item_name: v.item_name,
+              item_code: v.budget_item_code,
+              item_name: v.budget_item_name,
               quantity: v.quantity,
               manual_unit_price: v.manual_unit_price,
             });

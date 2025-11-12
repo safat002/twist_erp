@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Badge,
@@ -820,29 +820,9 @@ const handleOverrideSave = async () => {
         const budgets = b?.data?.results || b?.data || [];
         const ccs = c?.data?.results || c?.data || [];
         setFaCostCenters(ccs);
-        const permittedIds = new Set((ccs || []).map((x) => Number(x.id)));
-        let eligible = [];
-        if (isSuperuser) {
-          // Superusers see all budgets
-          eligible = budgets;
-        } else {
-          // Only include budgets with final-approved items on permitted CCs, or approved budgets with any permitted lines
-          for (const bud of budgets) {
-            try {
-              const res = await fetchBudgetLines({ budget: bud.id, page_size: 1000 });
-              const lines = res?.data?.results || res?.data || [];
-              const linesPermitted = lines.filter((ln) => !ln?.metadata?.cost_center_id || permittedIds.has(Number(ln.metadata.cost_center_id)));
-              const hasFinalFlag = linesPermitted.some((ln) => ln?.metadata?.final_approved === true);
-              const isBudgetApproved = ['APPROVED', 'ACTIVE'].includes(String(bud.status || '').toUpperCase());
-              const hasAnyPermitted = linesPermitted.length > 0;
-              if (hasFinalFlag || (isBudgetApproved && hasAnyPermitted)) {
-                eligible.push(bud);
-              }
-            } catch (_) {}
-          }
-        }
-        setFaBudgets(eligible);
-        if (!faBudgetId && eligible.length) setFaBudgetId(eligible[0].id);
+        // Show all budgets in the selector so registry-only budgets are visible too
+        setFaBudgets(budgets);
+        if (!faBudgetId && budgets.length) setFaBudgetId(budgets[0].id);
         if (!faCostCenterId && ccs.length) setFaCostCenterId(ccs[0].id);
       } catch (_) {}
     };
@@ -852,22 +832,34 @@ const handleOverrideSave = async () => {
 
   useEffect(() => {
     const loadRows = async () => {
-      const budgetIds = Array.isArray(faBudgetId) ? faBudgetId : (faBudgetId ? [faBudgetId] : []);
-      const ccIds = Array.isArray(faCostCenterId) ? faCostCenterId : (faCostCenterId ? [faCostCenterId] : []);
-      if (!budgetIds.length || !ccIds.length) { setFaRows([]); return; }
+      // Fallbacks: if no selection, include all visible budgets/CCs
+      const selectedBudgetIds = Array.isArray(faBudgetId)
+        ? faBudgetId
+        : (faBudgetId ? [faBudgetId] : (faBudgets || []).map((b) => b.id));
+      const selectedCcIds = Array.isArray(faCostCenterId)
+        ? faCostCenterId
+        : (faCostCenterId ? [faCostCenterId] : (faCostCenters || []).map((c) => Number(c.id)));
+      if (!selectedBudgetIds.length) { setFaRows([]); return; }
       setFaLoading(true);
       try {
         const all = [];
-        for (const bid of budgetIds) {
+        for (const bid of selectedBudgetIds) {
           const { data } = await fetchBudgetLines({ budget: bid, page_size: 1000 });
           let rows = data?.results || data || [];
-          // Filter to selected CC ids
-          rows = rows.filter((r) => !r?.metadata?.cost_center_id || ccIds.includes(Number(r.metadata.cost_center_id)));
-          // Final approved only; if budget is fully approved, include all rows
+          // Filter to selected CC ids (if any). Always allow company-wide lines with no cost_center_id metadata.
+          if ((selectedCcIds || []).length) {
+            rows = rows.filter((r) => !r?.metadata?.cost_center_id || selectedCcIds.includes(Number(r.metadata.cost_center_id)));
+          }
+          // Final approved only; if budget is in an eligible status, include all rows
           const bud = (faBudgets || []).find((b) => b.id === bid);
-          const budApproved = bud ? ['APPROVED', 'ACTIVE'].includes(String(bud.status || '').toUpperCase()) : false;
-          if (!budApproved) {
+          const st = String(bud?.status || '').toUpperCase();
+          const eligibleStatuses = new Set(['APPROVED','ACTIVE','CC_APPROVED','MODERATOR_REVIEWED','AUTO_APPROVED','PENDING_FINAL_APPROVAL']);
+          const isEligible = bud ? eligibleStatuses.has(st) : false;
+          if (!isEligible) {
+            const allRows = rows;
             rows = rows.filter((r) => r?.metadata && r.metadata.final_approved === true);
+            // If nothing final-approved yet, fallback to show all rows for visibility
+            if (!rows.length) rows = allRows;
           }
           // annotate budget id
           rows = rows.map((r) => ({ ...r, _budget_id: bid }));
@@ -887,9 +879,9 @@ const handleOverrideSave = async () => {
     try {
       const header = ['Item Code','Item Name','Category','Qty','Unit Price','Value'];
       const lines = faRows.map((r) => [
-        r.item_code || '',
-        (r.item_name || '').replace(/\n|\r|\t/g, ' '),
-        r.item_category_name || r.sub_category_name || r.category_name || r.category || '',
+        r.budget_item_code || '',
+        (r.budget_item_name || '').replace(/\n|\r|\t/g, ' '),
+        r.budget_item_category_name || r.sub_category_name || r.category_name || r.category || '',
         Number(r.qty_limit || 0),
         Number(r.manual_unit_price ?? r.standard_price ?? 0),
         Number(r.value_limit || 0),
@@ -1017,11 +1009,14 @@ const handleOverrideSave = async () => {
                 dataSource={faRows}
                 pagination={{ pageSize: 10 }}
                 columns={[
-                  { title: 'Budget', render: (_, r) => (faBudgets.find((b) => b.id === r._budget_id)?.name || r._budget_id) },
+                  { title: 'Budget', render: (_, r) => {
+                    const b = faBudgets.find((x) => x.id === r._budget_id);
+                    return b?.display_name || b?.name || `Budget ${r._budget_id}`;
+                  } },
                   { title: 'Cost Center', render: (_, r) => (faCostCenters.find((c) => Number(c.id) === Number(r?.metadata?.cost_center_id))?.name || 'Company-wide') },
                   { title: 'Item Code', dataIndex: 'item_code' },
                   { title: 'Item Name', dataIndex: 'item_name' },
-                  { title: 'Category', render: (_, r) => r.item_category_name || r.sub_category_name || r.category_name || r.category || '' },
+                  { title: 'Category', render: (_, r) => r.budget_item_category_name || r.sub_category_name || r.category_name || r.category || '' },
                   { title: 'Procurement Class', dataIndex: 'procurement_class' },
                   { title: 'Qty', dataIndex: 'qty_limit' },
                   { title: 'Unit Price', render: (_, r) => Number(r.manual_unit_price ?? r.standard_price ?? 0).toFixed(2) },
@@ -1055,7 +1050,7 @@ const handleOverrideSave = async () => {
               }}
             />
             {activeBudget ? (
-              <Card title={'Lines · ' + (activeBudget.name || activeBudget.id)} style={{ marginTop: 16 }}>
+              <Card title={'Lines � ' + (activeBudget.name || activeBudget.id)} style={{ marginTop: 16 }}>
                 <Table
                   rowKey="id"
                   dataSource={budgetLines[activeBudget.id] || []}
@@ -1194,7 +1189,7 @@ const handleOverrideSave = async () => {
         </Modal>
 
         <Modal
-          title={activeBudget ? `Clone Budget Â· ${activeBudget.name || activeBudget.id}` : 'Clone Budget'}
+          title={activeBudget ? `Clone Budget · ${activeBudget.name || activeBudget.id}` : 'Clone Budget'}
           open={cloneModalOpen}
           onCancel={() => { setCloneModalOpen(false); cloneForm.resetFields(); }}
           onOk={async () => {
@@ -1396,14 +1391,14 @@ const handleOverrideSave = async () => {
             <Form.Item label="Budget Line" name="budget_line">
               <Select
                 allowClear
-                placeholder="Optional â€“ link to a specific budget line"
+                placeholder="Optional – link to a specific budget line"
                 options={(activeBudget ? (budgetLines[activeBudget.id] || []) : []).map((line) => {
                   const remaining =
                     line.remaining_value ??
                     Number(line.value_limit || 0) - Number(line.consumed_value || 0);
                   return {
                     value: line.id,
-                    label: `${line.item_name} (remaining ${formatCurrency(remaining)})`,
+                    label: `${line.budget_item_name} (remaining ${formatCurrency(remaining)})`,
                   };
                 })}
               />
@@ -1449,7 +1444,7 @@ const handleOverrideSave = async () => {
         >
           <Form layout="vertical" form={usageForm} initialValues={{ usage_type: 'stock_issue', usage_date: dayjs().format('YYYY-MM-DD') }}>
             <Form.Item label="Budget Line" name="budget_line" rules={[{ required: true }]}>
-              <Select options={(activeBudget ? (budgetLines[activeBudget.id] || []) : []).map((line) => ({ value: line.id, label: line.item_name }))} />
+              <Select options={(activeBudget ? (budgetLines[activeBudget.id] || []) : []).map((line) => ({ value: line.id, label: line.budget_item_name }))} />
             </Form.Item>
             <Form.Item label="Usage Type" name="usage_type" rules={[{ required: true }]}>
               <Select
@@ -1485,6 +1480,7 @@ const handleOverrideSave = async () => {
 };
 
 export default BudgetingWorkspace;
+
 
 
 

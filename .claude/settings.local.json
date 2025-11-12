@@ -13,7 +13,17 @@
       "Bash(python manage.py runserver:*)",
       "Bash(timeout /t 3)",
       "Bash(python manage.py shell:*)",
-      "Bash(python -c:*)"
+      "Bash(python -c:*)",
+      "Bash(python manage.py makemigrations:*)",
+      "Bash(python manage.py migrate:*)",
+      "Bash(python manage.py check:*)",
+      "Bash(npm run build:*)",
+      "Bash(apps/inventory/admin.py)",
+      "Bash(python manage.py showmigrations:*)",
+      "Bash(\"C:\\Users\\Safat\\OneDrive - Bitopi Group\\Desktop\\twist_erp\\PHASE3_COMPLETE.md\")",
+      "Bash(find:*)",
+      "Bash(python manage.py collectstatic:*)",
+      "Bash(if exist \"__pycache__\" rd /s /q \"__pycache__\")"
     ],
     "deny": [],
     "ask": []

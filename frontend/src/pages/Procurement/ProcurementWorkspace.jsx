@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Row,
   Col,
@@ -22,6 +23,7 @@ import {
   ArrowDownOutlined,
   ShoppingCartOutlined,
   GatewayOutlined,
+  InboxOutlined,
 } from '@ant-design/icons';
 import { Column, Area } from '@ant-design/charts';
 import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
@@ -280,6 +282,7 @@ const eventStatusColors = {
 
 const ProcurementWorkspace = () => {
   const { currentCompany } = useCompany();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [kpis, setKpis] = useState(INITIAL_KPIS);
   const [categorySpend, setCategorySpend] = useState(INITIAL_CATEGORY_SPEND);
@@ -325,7 +328,7 @@ const ProcurementWorkspace = () => {
         if (
           payload.approval_board &&
           payload.approval_board.columns &&
-          payload.approval_board.items
+          payload.approval_board.budget_items
         ) {
           setApprovalBoard(payload.approval_board);
         } else {
@@ -398,7 +401,7 @@ const ProcurementWorkspace = () => {
 
   const spendConfig = useMemo(() => {
     const safeData = (Array.isArray(categorySpend) ? categorySpend : []).map((item) => ({
-      ...item,
+      ...budget_item,
       value: Number(item?.value) || 0,
     }));
     return {
@@ -490,7 +493,7 @@ const ProcurementWorkspace = () => {
         return prev;
       }
       if (startColumn === finishColumn) {
-        const newItemIds = Array.from(startColumn.itemIds);
+        const newItemIds = Array.from(startColumn.budget_itemIds);
         newItemIds.splice(source.index, 1);
         newItemIds.splice(destination.index, 0, draggableId);
         return {
@@ -501,11 +504,11 @@ const ProcurementWorkspace = () => {
           },
         };
       }
-      const startItemIds = Array.from(startColumn.itemIds);
+      const startItemIds = Array.from(startColumn.budget_itemIds);
       startItemIds.splice(source.index, 1);
       const newStartColumn = { ...startColumn, itemIds: startItemIds };
 
-      const finishItemIds = Array.from(finishColumn.itemIds);
+      const finishItemIds = Array.from(finishColumn.budget_itemIds);
       finishItemIds.splice(destination.index, 0, draggableId);
       const newFinishColumn = { ...finishColumn, itemIds: finishItemIds };
 
@@ -530,6 +533,30 @@ const ProcurementWorkspace = () => {
         Orchestrate spend, approvals, and supplier risk with the Twist ERP procurement workspace.
         Monitor savings, automate compliance, and streamline sourcing decisions.
       </Paragraph>
+
+      <Space style={{ marginBottom: 24 }} size="middle">
+        <Button
+          type="primary"
+          size="large"
+          icon={<InboxOutlined />}
+          onClick={() => navigate('/inventory/goods-receipts')}
+        >
+          Create Goods Receipt (GRN)
+        </Button>
+        <Button
+          icon={<PlusOutlined />}
+          size="large"
+          onClick={() => navigate('/procurement/orders')}
+        >
+          New Purchase Order
+        </Button>
+        <Button
+          icon={<ShoppingCartOutlined />}
+          size="large"
+        >
+          New Requisition
+        </Button>
+      </Space>
 
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         {kpis.map((item) => (
@@ -695,8 +722,8 @@ const ProcurementWorkspace = () => {
                               padding: 4,
                             }}
                           >
-                            {column.itemIds.map((itemId, index) => {
-                              const request = approvalBoard.items[itemId];
+                            {column.budget_itemIds.map((itemId, index) => {
+                              const request = approvalBoard.budget_items[itemId];
                               if (!request) {
                                 return null;
                               }

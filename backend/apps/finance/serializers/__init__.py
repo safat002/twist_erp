@@ -11,10 +11,12 @@ from .financial_statement_serializers import (
     IncomeStatementRequestSerializer,
     ExportFormatSerializer,
 )
+from .posting_rule_serializers import InventoryPostingRuleSerializer
 
 __all__ = [
     'TrialBalanceRequestSerializer',
     'BalanceSheetRequestSerializer',
     'IncomeStatementRequestSerializer',
     'ExportFormatSerializer',
+    'InventoryPostingRuleSerializer',
 ]

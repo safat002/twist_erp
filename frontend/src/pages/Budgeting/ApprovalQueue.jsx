@@ -195,9 +195,9 @@ const ApprovalQueue = () => {
   // Filtered lines inside modal (respecting toolbar filters)
   const modalFilteredLines = useMemo(() => {
     return modifyLines.filter((r) => {
-      if (itemSearch && !(r.item_name || '').toLowerCase().includes(itemSearch.toLowerCase())) return false;
+      if (itemSearch && !(r.budget_item_name || '').toLowerCase().includes(itemSearch.toLowerCase())) return false;
       // Use same category resolution logic
-      const itemCategory = r.item_category_name || r.category_name || r.category || '';
+      const itemCategory = r.budget_item_category_name || r.category_name || r.category || '';
       if (lineFilters.category !== 'all' && itemCategory !== lineFilters.category) return false;
       if (lineFilters.procurement_class !== 'all' && r.procurement_class !== lineFilters.procurement_class) return false;
       if (lineFilters.changedOnly && !(Number(r._new_qty) !== Number(r.qty_limit) || Number(r._new_value) !== Number(r.value_limit) || (r._reason || '').length)) return false;
@@ -304,7 +304,7 @@ const ApprovalQueue = () => {
               onChange={(v) => setLineFilters((f) => ({ ...f, category: v }))}
               options={[
                 { value: 'all', label: 'All Item Categories' },
-                ...Array.from(new Set(modifyLines.map((x) => x.item_category_name || x.category_name || x.category || '').filter(Boolean))).map((c) => ({ value: c, label: c }))
+                ...Array.from(new Set(modifyLines.map((x) => x.budget_item_category_name || x.category_name || x.category || '').filter(Boolean))).map((c) => ({ value: c, label: c }))
               ]}
             />
             <Select
@@ -407,19 +407,19 @@ const ApprovalQueue = () => {
                 title: 'Item',
                 dataIndex: 'item_name',
                 filteredValue: itemSearch ? [itemSearch] : null,
-                onFilter: (v, r) => (r.item_name || '').toLowerCase().includes(String(v).toLowerCase()),
+                onFilter: (v, r) => (r.budget_item_name || '').toLowerCase().includes(String(v).toLowerCase()),
               },
               {
                 title: 'Item Category',
                 key: 'item_category',
                 filters: Array.from(new Set(modifyLines.map((x) => {
                   // Priority: item_category_name > category_name > category
-                  return x.item_category_name || x.category_name || x.category || '';
+                  return x.budget_item_category_name || x.category_name || x.category || '';
                 }).filter(Boolean))).map((c) => ({ text: c, value: c })),
-                onFilter: (v, r) => (r.item_category_name || r.category_name || r.category || '') === v,
+                onFilter: (v, r) => (r.budget_item_category_name || r.category_name || r.category || '') === v,
                 render: (_, r) => {
                   // Display item category from item code
-                  const cat = r.item_category_name || r.category_name || r.category || '-';
+                  const cat = r.budget_item_category_name || r.category_name || r.category || '-';
                   return cat;
                 },
               },

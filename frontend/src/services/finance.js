@@ -3,6 +3,18 @@ import api from './api';
 export const fetchAccounts = (params = {}) =>
   api.get('/api/v1/finance/accounts/', { params });
 
+export const fetchInventoryPostingRules = (params = {}) =>
+  api.get('/api/v1/finance/inventory-posting-rules/', { params });
+
+export const createInventoryPostingRule = (payload) =>
+  api.post('/api/v1/finance/inventory-posting-rules/', payload);
+
+export const updateInventoryPostingRule = (id, payload) =>
+  api.put(`/api/v1/finance/inventory-posting-rules/${id}/`, payload);
+
+export const deleteInventoryPostingRule = (id) =>
+  api.delete(`/api/v1/finance/inventory-posting-rules/${id}/`);
+
 export const createAccount = (payload) => api.post('/api/v1/finance/accounts/', payload);
 
 export const updateAccount = (id, payload) =>

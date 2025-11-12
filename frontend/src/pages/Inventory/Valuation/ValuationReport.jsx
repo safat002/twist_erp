@@ -108,7 +108,7 @@ const ValuationReport = () => {
 
   // Calculate statistics
   const statistics = useMemo(() => {
-    if (!reportData || !reportData.items) {
+    if (!reportData || !reportData.budget_items) {
       return {
         totalItems: 0,
         totalValue: 0,
@@ -117,7 +117,7 @@ const ValuationReport = () => {
       };
     }
 
-    const items = reportData.items;
+    const items = reportData.budget_items;
     const totalItems = items.length;
     const totalValue = items.reduce((sum, item) => sum + parseFloat(item.total_value || 0), 0);
     const totalQty = items.reduce((sum, item) => sum + parseFloat(item.qty_on_hand || 0), 0);
@@ -133,10 +133,10 @@ const ValuationReport = () => {
 
   // Prepare chart data
   const warehouseChartData = useMemo(() => {
-    if (!reportData || !reportData.items) return [];
+    if (!reportData || !reportData.budget_items) return [];
 
     const warehouseMap = {};
-    reportData.items.forEach((item) => {
+    reportData.budget_items.forEach((item) => {
       const warehouse = item.warehouse_name || 'Unknown';
       if (!warehouseMap[warehouse]) {
         warehouseMap[warehouse] = 0;
@@ -151,10 +151,10 @@ const ValuationReport = () => {
   }, [reportData]);
 
   const methodChartData = useMemo(() => {
-    if (!reportData || !reportData.items) return [];
+    if (!reportData || !reportData.budget_items) return [];
 
     const methodMap = {};
-    reportData.items.forEach((item) => {
+    reportData.budget_items.forEach((item) => {
       const method = item.valuation_method || 'FIFO';
       if (!methodMap[method]) {
         methodMap[method] = 0;
@@ -476,10 +476,10 @@ const ValuationReport = () => {
 
       {/* Main Table */}
       <Card title="Detailed Valuation Report">
-        {reportData && reportData.items && reportData.items.length > 0 ? (
+        {reportData && reportData.budget_items && reportData.budget_items.length > 0 ? (
           <>
             <Table
-              dataSource={reportData.items}
+              dataSource={reportData.budget_items}
               columns={columns}
               rowKey={(record) => `${record.product}-${record.warehouse}`}
               loading={loading}
